@@ -150,11 +150,11 @@ if ($rapor === 'order') {
 } elseif ($rapor === 'campaign') {
     $reportCols = ['Barkod', 'Ürün', 'Kupon', 'İndirim', 'Toplam Kampanya', 'Satış', 'Kampanya/Satış %'];
     $aggMap = [];
-    $rows = db()->query("SELECT barcode, transaction_type, SUM(debt) tutar FROM settlements WHERE user_id = {$u['id']} AND marketplace = " . db()->quote($mp) . " AND transaction_type IN ('Kupon','İndirim','Coupon','Discount') AND transaction_date >= $fromTs GROUP BY barcode, transaction_type")->fetchAll();
+    $rows = db()->query("SELECT barcode, transaction_type, SUM(debt)-SUM(credit) tutar FROM settlements WHERE user_id = {$u['id']} AND marketplace = " . db()->quote($mp) . " AND transaction_type IN ('Kupon','İndirim','Coupon','Discount','CouponCancel','DiscountCancel') AND transaction_date >= $fromTs GROUP BY barcode, transaction_type")->fetchAll();
     foreach ($rows as $r) {
         $bc = $r['barcode'];
         if (!isset($aggMap[$bc])) $aggMap[$bc] = ['kupon' => 0.0, 'indirim' => 0.0];
-        if (in_array($r['transaction_type'], ['Kupon','Coupon'], true)) $aggMap[$bc]['kupon'] += (float)$r['tutar'];
+        if (in_array($r['transaction_type'], ['Kupon','Coupon','CouponCancel'], true)) $aggMap[$bc]['kupon'] += (float)$r['tutar'];
         else $aggMap[$bc]['indirim'] += (float)$r['tutar'];
     }
     $saleMap = [];

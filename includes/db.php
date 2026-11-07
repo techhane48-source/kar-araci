@@ -251,12 +251,14 @@ function migrate(): void
     foreach ([
         'revision' => 'INTEGER NOT NULL DEFAULT 0',
         'last_settlements_sync' => 'INTEGER DEFAULT NULL',
+        'orders_coverage_from' => 'INTEGER DEFAULT NULL',
         'last_sync_error' => 'TEXT DEFAULT NULL',
         'last_sync_error_scope' => 'TEXT DEFAULT NULL',
     ] as $column => $definition) {
         if (!in_array($column, $icols, true)) $pdo->exec("ALTER TABLE integrations ADD COLUMN $column $definition");
     }
     $scols = array_column($pdo->query('PRAGMA table_info(settlements)')->fetchAll(PDO::FETCH_ASSOC), 'name');
+    if (!in_array('provider_transaction_type', $scols, true)) $pdo->exec("ALTER TABLE settlements ADD COLUMN provider_transaction_type TEXT NOT NULL DEFAULT ''");
     if (!in_array('provider_id', $scols, true)) $pdo->exec('ALTER TABLE settlements ADD COLUMN provider_id TEXT DEFAULT NULL');
     $pdo->exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_settlements_provider ON settlements(user_id, marketplace, provider_id)");
     $pdo->exec("CREATE INDEX IF NOT EXISTS idx_settlements_barcode ON settlements(user_id, marketplace, barcode, transaction_type, transaction_date DESC)");
@@ -269,6 +271,18 @@ function migrate(): void
         user_id INTEGER NOT NULL, marketplace TEXT NOT NULL, token TEXT NOT NULL,
         expires_at INTEGER NOT NULL, PRIMARY KEY(user_id, marketplace)
     )");
+
+    $pdo->exec("CREATE TABLE IF NOT EXISTS price_updates (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL,
+        marketplace TEXT NOT NULL, integration_id INTEGER NOT NULL, integration_revision INTEGER NOT NULL,
+        barcode TEXT NOT NULL, batch_id TEXT NOT NULL, request_hash TEXT NOT NULL,
+        sale_price REAL NOT NULL, list_price REAL NOT NULL, status TEXT NOT NULL DEFAULT 'pending',
+        failure_reason TEXT DEFAULT NULL, created_at INTEGER NOT NULL, checked_at INTEGER DEFAULT NULL,
+        UNIQUE(user_id,marketplace,batch_id)
+    )");
+    $pdo->exec("CREATE INDEX IF NOT EXISTS idx_price_updates_user ON price_updates(user_id,marketplace,status)");
+    $pcols3=array_column($pdo->query('PRAGMA table_info(products)')->fetchAll(PDO::FETCH_ASSOC),'name');
+    if (!in_array('list_price',$pcols3,true)) $pdo->exec('ALTER TABLE products ADD COLUMN list_price REAL DEFAULT NULL');
 
     // Eski sürümün bilinen kurulum şifresiyle kalan hesabını devre dışı bırak.
     // Şifresi değiştirilmiş yöneticilere ve normal kullanıcılara dokunma.

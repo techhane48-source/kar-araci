@@ -65,22 +65,22 @@ function sync_products(int $userId,string $marketplace,?object $client=null): ar
 {
     return sync_job($userId,$marketplace,'products',static function($int,$client,$token,$started) use($userId,$marketplace):array {
         $from=0;
-        if ($int['last_sync']) {
+        if ($marketplace!=='trendyol' && $int['last_sync']) {
             $ts=(new DateTimeImmutable($int['last_sync'],new DateTimeZone('UTC')))->getTimestamp();
             if ($ts<=$started) $from=max(0,$ts-120)*1000;
         }
         $rows=sync_response($client->getProducts(500,'',$from,$from?'LAST_MODIFIED_DATE':''),'products');
-        return sync_commit($int,$token,static function($pdo) use($userId,$marketplace,$rows,$started):array {
+        return sync_commit($int,$token,static function($pdo) use($userId,$marketplace,$rows,$started,$int):array {
             $find=$pdo->prepare('SELECT id,name,category,marka FROM products WHERE user_id=? AND marketplace=? AND barcode=?');
-            $update=$pdo->prepare("UPDATE products SET name=?,category=?,price=?,quantity=?,marka=? WHERE id=?");
-            $insert=$pdo->prepare("INSERT INTO products(user_id,marketplace,barcode,name,category,price,quantity,marka,rate,service_fee,stopaj_mode) VALUES (?,?,?,?,?,?,?,?,?,?,?)");
+            $update=$pdo->prepare("UPDATE products SET name=?,category=?,price=?,quantity=?,marka=?,list_price=? WHERE id=?");
+            $insert=$pdo->prepare("INSERT INTO products(user_id,marketplace,barcode,name,category,price,quantity,marka,rate,service_fee,stopaj_mode,kdv,list_price) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)");
             $inserted=0;$updated=0;
             foreach ($rows as $row) {
                 $barcode=trim((string)($row['barcode']??''));
                 if ($barcode==='') throw new SyncFailure('Ürün barkodu eksik; kayıtlar değiştirilmedi.');
                 $price=$row['salePrice']??$row['listPrice']??null;
                 if ($price===null) throw new SyncFailure('Ürün fiyatı eksik.');
-                profit_validate([$price]);
+                profit_validate([$price,$row['listPrice']??$price]);
                 $qty=$row['quantity']??null;
                 if (!is_numeric($qty) || !is_finite((float)$qty) || (float)$qty<0 || (float)$qty>2147483647 || (float)$qty!==floor((float)$qty)) throw new SyncFailure('Ürün stok miktarı geçersiz.');
                 $name=trim((string)($row['title']??''))?:$barcode;
@@ -93,13 +93,18 @@ function sync_products(int $userId,string $marketplace,?object $client=null): ar
                     $name=trim((string)($row['title']??''))?:$old['name'];
                     $category=trim((string)($row['category']??''))?:$old['category'];
                     $brand=trim($brand)!==''?$brand:$old['marka'];
-                    $update->execute([$name,$category,(float)$price,(int)$qty,$brand,$old['id']]);$updated++;
+                    $update->execute([$name,$category,(float)$price,(int)$qty,$brand,$row['listPrice']??$price,$old['id']]);$updated++;
                 }
                 else {
-                    $insert->execute([$userId,$marketplace,$barcode,$name,$category,(float)$price,(int)$qty,$brand,category_rate($category,$marketplace),$marketplace==='trendyol'?trendyol_service_fee():0,$marketplace==='trendyol'?'auto':'manual']);
+                    $rate=$row['commissionRate']??category_rate($category,$marketplace);
+                    $vat=$row['vatRate']??20;
+                    profit_validate([],[$rate,$vat]);
+                    $insert->execute([$userId,$marketplace,$barcode,$name,$category,(float)$price,(int)$qty,$brand,(float)$rate,$marketplace==='trendyol'?trendyol_service_fee():0,$marketplace==='trendyol'?'auto':'manual',(float)$vat,$row['listPrice']??$price]);
                     $inserted++;
                 }
             }
+            $reconcile=$pdo->prepare("UPDATE price_updates SET status='reconciled',checked_at=? WHERE user_id=? AND marketplace=? AND integration_id=? AND integration_revision=? AND barcode=? AND (status='unknown' OR (status='submitting' AND created_at<?))");
+            foreach ($rows as $row) $reconcile->execute([$started,$userId,$marketplace,$int['id'],$int['revision'],$row['barcode'],$started-60]);
             $pdo->prepare('UPDATE integrations SET last_sync=? WHERE user_id=? AND marketplace=?')->execute([gmdate('Y-m-d H:i:s',$started),$userId,$marketplace]);
             return ['ok'=>true,'inserted'=>$inserted,'updated'=>$updated,'skipped'=>0,'total'=>count($rows)];
         });
@@ -111,8 +116,10 @@ function sync_orders(int $userId,string $marketplace,int $days=7,?object $client
     return sync_job($userId,$marketplace,'orders',static function($int,$client,$token,$started) use($userId,$marketplace,$days):array {
         if (!method_exists($client,'getOrders')) throw new SyncFailure('Bu pazaryerinde sipariş senkronu desteklenmiyor.');
         if ($days<1 || $days>365) throw new SyncFailure('Sipariş aralığı 1–365 gün olmalı.');
-        $rows=sync_response($client->getOrders('',date('c',$started-$days*86400),date('c',$started)),'orders');
-        return sync_commit($int,$token,static function($pdo) use($rows,$userId,$marketplace,$started):array {
+        $from=$started-$days*86400;
+        if ($marketplace==='trendyol') $from=max($from,(new DateTimeImmutable(date('c',$started)))->modify('-3 months')->getTimestamp());
+        $rows=sync_response($client->getOrders('',date('c',$from),date('c',$started)),'orders');
+        return sync_commit($int,$token,static function($pdo) use($rows,$userId,$marketplace,$started,$from):array {
             $insert=$pdo->prepare('INSERT INTO orders(user_id,marketplace,order_number,package_number,status,customer_name,total_price,order_date,lines) VALUES (?,?,?,?,?,?,?,?,?)
                 ON CONFLICT(user_id,marketplace,package_number) DO UPDATE SET order_number=excluded.order_number,status=excluded.status,customer_name=excluded.customer_name,total_price=excluded.total_price,order_date=excluded.order_date,lines=excluded.lines');
             foreach ($rows as $row) {
@@ -123,7 +130,7 @@ function sync_orders(int $userId,string $marketplace,int $days=7,?object $client
                 profit_validate([$row['totalPrice']]);
                 $insert->execute([$userId,$marketplace,(string)($row['orderNumber']??''),$package,(string)($row['status']??''),(string)($row['customerName']??''),(float)$row['totalPrice'],$date,json_encode($row['lines'],JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR)]);
             }
-            $pdo->prepare('UPDATE integrations SET last_orders_sync=? WHERE user_id=? AND marketplace=?')->execute([$started,$userId,$marketplace]);
+            $pdo->prepare('UPDATE integrations SET last_orders_sync=?,orders_coverage_from=? WHERE user_id=? AND marketplace=?')->execute([$started,$from,$userId,$marketplace]);
             return ['ok'=>true,'count'=>count($rows)];
         });
     },$client);
@@ -135,7 +142,7 @@ function sync_settlements(int $userId,string $marketplace,int $days=30,?object $
         if (!method_exists($client,'getSettlements')) throw new SyncFailure('Bu pazaryerinde finans senkronu desteklenmiyor.');
         if ($days<1 || $days>365) throw new SyncFailure('Finans aralığı 1–365 gün olmalı.');
         $from=$started-$days*86400;$rows=[];
-        foreach (['Sale','DeliveryFee','Return','Discount','Coupon'] as $type) {
+        foreach (['Sale','DeliveryFee','DeliveryFeeCancel','Return','Discount','DiscountCancel','Coupon','CouponCancel'] as $type) {
             for ($s=$from;$s<$started;$s+=14*86400) {
                 $e=min($s+14*86400,$started);
                 $batch=sync_response($client->getSettlements($type,date('c',$s),date('c',$e)),'settlements');
@@ -153,7 +160,7 @@ function sync_settlements(int $userId,string $marketplace,int $days=30,?object $
         return sync_commit($int,$token,static function($pdo) use($rows,$userId,$marketplace,$from,$started):array {
             // Yalnızca eksiksiz yeniden alınmış dönemin eski kimliksiz kayıtları aktif tablodan arşive taşınır.
             $legacy=$pdo->prepare("SELECT * FROM settlements WHERE user_id=? AND marketplace=? AND provider_id IS NULL AND transaction_date>=? AND transaction_date<=?
-                AND transaction_type IN ('Sale','DeliveryFee','Return','Discount','Coupon','Satış','Kargo','İade','İndirim','Kupon')");
+                AND transaction_type IN ('Sale','DeliveryFee','DeliveryFeeCancel','Return','Discount','DiscountCancel','Coupon','CouponCancel','Satış','Kargo','Teslimat Ücreti','İade','İndirim','Kupon')");
             $legacy->execute([$userId,$marketplace,$from,$started]);$old=$legacy->fetchAll();
             $archive=$pdo->prepare('INSERT OR IGNORE INTO settlement_legacy_archive(source_id,user_id,marketplace,payload) VALUES (?,?,?,?)');
             $delete=$pdo->prepare('DELETE FROM settlements WHERE id=?');
@@ -161,15 +168,15 @@ function sync_settlements(int $userId,string $marketplace,int $days=30,?object $
                 $archive->execute([$row['id'],$userId,$marketplace,json_encode($row,JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR)]);
                 $delete->execute([$row['id']]);
             }
-            $insert=$pdo->prepare('INSERT INTO settlements(user_id,marketplace,provider_id,barcode,transaction_type,commission_rate,commission_amount,seller_revenue,debt,credit,order_number,shipment_package_id,payment_period,transaction_date,order_date)
-                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(user_id,marketplace,provider_id) DO UPDATE SET barcode=excluded.barcode,transaction_type=excluded.transaction_type,commission_rate=excluded.commission_rate,commission_amount=excluded.commission_amount,seller_revenue=excluded.seller_revenue,debt=excluded.debt,credit=excluded.credit,order_number=excluded.order_number,shipment_package_id=excluded.shipment_package_id,payment_period=excluded.payment_period,transaction_date=excluded.transaction_date,order_date=excluded.order_date');
+            $insert=$pdo->prepare('INSERT INTO settlements(user_id,marketplace,provider_id,barcode,transaction_type,commission_rate,commission_amount,seller_revenue,debt,credit,order_number,shipment_package_id,payment_period,transaction_date,order_date,provider_transaction_type)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(user_id,marketplace,provider_id) DO UPDATE SET barcode=excluded.barcode,transaction_type=excluded.transaction_type,commission_rate=excluded.commission_rate,commission_amount=excluded.commission_amount,seller_revenue=excluded.seller_revenue,debt=excluded.debt,credit=excluded.credit,order_number=excluded.order_number,shipment_package_id=excluded.shipment_package_id,payment_period=excluded.payment_period,transaction_date=excluded.transaction_date,order_date=excluded.order_date,provider_transaction_type=excluded.provider_transaction_type');
             foreach ($rows as $id=>$row) {
                 $numbers=[];
                 foreach (['commissionRate','commissionAmount','sellerRevenue','debt','credit'] as $key) {
                     if (!isset($row[$key]) || !is_numeric($row[$key]) || !is_finite((float)$row[$key])) throw new SyncFailure('Finans kaydında geçersiz tutar/oran var.');
                     $numbers[]=(float)$row[$key];
                 }
-                $insert->execute([$userId,$marketplace,(string)$id,(string)($row['barcode']??''),$row['transactionType'],...$numbers,(string)($row['orderNumber']??''),(string)($row['shipmentPackageId']??''),(int)($row['paymentPeriod']??0),$row['transactionDate'],$row['orderDate']]);
+                $insert->execute([$userId,$marketplace,(string)$id,(string)($row['barcode']??''),$row['transactionType'],...$numbers,(string)($row['orderNumber']??''),(string)($row['shipmentPackageId']??''),(int)($row['paymentPeriod']??0),$row['transactionDate'],$row['orderDate'],(string)($row['providerTransactionType']??$row['transactionType'])]);
             }
             // Her barkod için mevcut finans kayıtlarının en güncel geçerli satış komisyonu.
             $rates=$pdo->prepare("UPDATE products SET rate=(SELECT s.commission_rate FROM settlements s WHERE s.user_id=products.user_id AND s.marketplace=products.marketplace AND s.barcode=products.barcode AND s.transaction_type='Sale' AND s.commission_rate BETWEEN 0 AND 100 ORDER BY s.transaction_date DESC,s.provider_id DESC LIMIT 1)

@@ -74,12 +74,13 @@ kaybolursa kullanıcıların bağlantıları çözülemez).
   Eğer bağlantı "SSL sertifika doğrulaması başarısız" hatası verirse, sunucunun
   `php.ini` dosyasına `curl.cainfo` / `openssl.cafile` ile geçerli bir `cacert.pem`
   yolu tanımlayın (Hostinger'da genellikle varsayılan olarak ayarlıdır).
-- Trendyol, ürün filtreleme V1'i 15 Ekim 2026'da kullanım dışı bırakıyor; V2'ye
-  geçiş gerekirse `getProducts()` içindeki endpoint güncellenir.
+- Ürünler V2 onaylı içerik/varyant kataloğundan ve ayrı stok/fiyat servisinden alınır.
+  15 Ekim 2026'da kaldırılan V1 ürün ve sipariş yolları kullanılmaz.
+  Resmî kaynaklar ve doğrulama kapsamı: [Trendyol doğrulaması](docs/TRENDYOL-DOGRULAMA.md).
 
 ## Otomatik senkron (cron)
 
-`scripts/sync.php` bağlı mağazaların ürünlerini, siparişlerini ve finans kayıtlarını senkronize eder. Varsayılan sipariş/finans geçmişi 90 gündür; yalnızca ürünler için `--products-only`, farklı geçmiş için `--days=30` gibi seçenekler kullanılabilir. Hostinger'da
+`scripts/sync.php` bağlı mağazaların ürünlerini, siparişlerini ve finans kayıtlarını senkronize eder. Varsayılan sipariş/finans geçmişi 90 gündür (siparişler ayrıca son 3 takvim ayıyla sınırlanır); yalnızca ürünler için `--products-only`, farklı geçmiş için `--days=30` gibi seçenekler kullanılabilir. Hostinger'da
 **Cron Jobs**'tan saatlik şunu ekleyin:
 
 ```
@@ -214,8 +215,8 @@ kullanır. `PHP_BIN` ile CLI yolunu belirtebilirsiniz. Kısıtlı test ortamlar�
   katalog bilgileri güncellenir; maliyet, KDV, kargo/ek/hizmet gideri, stopaj ve
   iade ayarları korunur. Barkodu olmayan veya stok/fiyatı bozuk kayıt tüm işi
   başarısız yapar. Eski mükerrer barkodlar otomatik silinmez; hata ile bildirilir.
-- Son başarılı ürün imleci işlem başlangıcına kaydedilir; bir sonraki çekimde
-  iki dakika örtüşme uygulanır. Eksik/hatalı sayfada imleç ilerlemez.
+- Son başarılı ürün senkronunun başlangıcı kaydedilir. Her çekimde tam V2 katalog ve stok görünümü alınır. Katalog değişiklik tarihi
+  stok değişikliğini garanti etmediği için artımlı stok varsayılmaz. Eksik/hatalı sayfada başarı zamanı ilerlemez.
 - Bir mağazanın ürün/sipariş/finans işleri ortak, 30 dakikalık kiralı kilitle
   korunur. Ağ çağrıları DB transaction'ı dışında yapılır. Kayıt anında kilit ve
   bağlantı revizyonu tekrar kontrol edilir; süresi dolan veya eski bağlantıya
@@ -240,7 +241,7 @@ kullanır. `PHP_BIN` ile CLI yolunu belirtebilirsiniz. Kısıtlı test ortamlar�
 Cron CLI içindir; HTTP üzerinden çalıştırılamaz. Varsayılan kapsam eski ürün-only
 çalışmaya göre daha çok API isteği yapar. Büyük kataloglarda web düğmesi yerine
 cron kullanın; sıklığı hesap sayısı ve Trendyol limitlerine göre ayarlayın. Bu paket
-kalıcı iş kuyruğu, 429 backoff, gerçek kargo/hakediş mutabakatı veya geçmiş maliyet
+genel senkron iş kuyruğu, 429 backoff, gerçek kargo/hakediş mutabakatı veya geçmiş maliyet
 anlık görüntülerini tamamlamaz. Finans türleri ve `id` alanı gerçek satıcı hesabıyla
 kontrol edilmeden üretim doğrulaması tamamlanmış sayılmaz.
 
@@ -257,3 +258,20 @@ php scripts/test-sync-ui.php
 Bu testler geçici veritabanı ve kontrollü API yanıtları kullanır; gerçek API'ye
 ve üretim verisine bağlanmaz. Ayrı bir PHP çalıştırıcısı için eşzamanlılık testinde
 `PHP_BIN` ayarlayın. Canlı API kimlik bilgilerini testlere eklemeyin.
+
+
+## Trendyol fiyat işlemlerinin takibi
+
+Fiyat isteği yalnızca barkod ve fiyatları gönderir; yerel stok tekrar gönderilmez.
+`price_updates` tablosuna gönderim niyeti ağ çağrısından önce kaydedilir. Batch
+kimliği kabul anlamına gelir; yerel fiyat sadece eşleşen barkodun `SUCCESS` sonucu
+alındığında değiştirilir. Mağaza ekranındaki sonuç kontrolü veya normal cron bu
+sonucu sorgular. Aynı içerik 15 dakika içinde tekrar gönderilmez; belirsiz/bekleyen
+işlem varken aynı barkoda yeni fiyat gönderilmez. Batch sonuçları 4 saat saklandığı
+için cron aralığını buna göre belirleyin. Sonucu belirsiz işlemde tam ürün senkronu
+mağazadaki güncel fiyatı okuyarak engeli kaldırır; bu durum istenen fiyatın başarıyla
+uygulandığı anlamına gelmez. Bağlantı revizyonu değişmiş eski sonuç uygulanmaz.
+
+Ek testler: `php scripts/test-trendyol-pages.php` ve
+`php scripts/test-price-updates.php`. Bunlar izole fixture testleridir; gerçek
+satıcı hesabında kabul testi yerine geçmez.

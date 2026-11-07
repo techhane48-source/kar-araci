@@ -66,30 +66,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $supported) {
             $hasConnection = false;
             $ok = 'Mağaza bağlantısı kaldırıldı.';
         } elseif ($action === 'update_price') {
-            // Fiyat yönetimi: tek ürünün fiyatını Trendyol'a gönder.
-            $barcode = trim($_POST['barcode'] ?? '');
-            $rawPrice = str_replace(',', '.', trim($_POST['new_price'] ?? ''));
-            $quantity = (int)($_POST['quantity'] ?? 0);
-            $curList = (float) str_replace(',', '.', trim($_POST['list_price'] ?? '0'));
-
-            if ($barcode === '' || $rawPrice === '' || !is_numeric($rawPrice)) {
-                $error = 'Geçerli bir ürün ve fiyat girin.';
-            } else {
-                $salePrice = (float)$rawPrice;
-                $listPrice = $curList > $salePrice ? $curList : $salePrice;
-                $client = integration_client($int);
-                $res = $client->updatePriceAndInventory([[
-                    'barcode' => $barcode,
-                    'quantity' => $quantity,
-                    'salePrice' => $salePrice,
-                    'listPrice' => $listPrice,
-                ]]);
-                if ($res['ok']) {
-                    $ok = 'Fiyat Trendyol\'a gönderildi (' . $barcode . ' → ' . tl($salePrice) . ').';
-                } else {
-                    $error = 'Fiyat gönderilemedi: ' . ($res['error'] ?? 'Bilinmeyen hata');
-                }
+            $barcode=trim($_POST['barcode']??'');
+            $raw=str_replace(',','.',trim($_POST['new_price']??''));
+            if (!is_numeric($raw)) $error='Geçerli fiyat girin.';
+            else {
+                $res=submit_price_update((int)$u['id'],$mp,$barcode,(float)$raw);
+                if ($res['ok']) $ok='Fiyat isteği alındı; Trendyol onayı bekleniyor. Onaydan sonra yerel fiyat güncellenecek.';
+                else $error=$res['error'];
             }
+        } elseif ($action === 'check_price_updates') {
+            $res=process_price_updates((int)$u['id'],$mp);
+            if ($res['ok']) $ok="{$res['confirmed']} onaylandı, {$res['failed']} sonuçlandırılamadı/reddedildi, {$res['pending']} bekliyor.";
+            else $error=$res['error'];
         }
     }
 }
@@ -131,9 +119,22 @@ if ($supported && $hasConnection) {
     }
 }
 
+$updates=db()->prepare('SELECT * FROM price_updates WHERE user_id=? AND marketplace=? ORDER BY id DESC LIMIT 20');
+$updates->execute([$u['id'],$mp]);$priceUpdates=$updates->fetchAll();
+
 require __DIR__ . '/../includes/header.php';
 ?>
 <div class="wrap">
+  <?php if ($priceUpdates): ?>
+  <div class="card">
+    <h2>Fiyat Güncelleme Sonuçları</h2>
+    <form method="post"><input type="hidden" name="csrf" value="<?= h(csrf_token()) ?>"><input type="hidden" name="action" value="check_price_updates"><button class="btn-ghost">İşlem sonuçlarını kontrol et</button></form>
+    <table><tr><th>Barkod</th><th>İstenen Fiyat</th><th>Durum</th></tr>
+    <?php foreach ($priceUpdates as $update): ?>
+      <tr><td><?= h($update['barcode']) ?></td><td><?= tl((float)$update['sale_price']) ?></td><td><?= h(['pending'=>'Trendyol onayı bekleniyor','confirmed'=>'Onaylandı','failed'=>'Reddedildi','stale'=>'Bağlantı değişti','unknown'=>'Mağazadan doğrulama gerekiyor','submitting'=>'Gönderim sonucu bekleniyor','reconciled'=>'Mağazadaki güncel fiyat okundu'][$update['status']]??$update['status']) ?><?= $update['failure_reason'] ? ': '.h($update['failure_reason']) : '' ?></td></tr>
+    <?php endforeach; ?></table>
+  </div>
+  <?php endif; ?>
   <h1>Mağaza Bağlama</h1>
   <p class="hint">Pazar yerinizi bağlayın; ürünleriniz, siparişleriniz ve kârlılığınız otomatik işlensin. API bilgileriniz yalnızca size aittir ve şifreli saklanır.</p>
 
@@ -154,10 +155,12 @@ require __DIR__ . '/../includes/header.php';
   <?php elseif ($hasConnection): ?>
     <div class="card">
       <h2>Bağlı Mağaza</h2>
+      <p class="hint">Ürün kataloğu V2 üzerinden, siparişler akış servisiyle çekilir. Sipariş geçmişi Trendyol’un son 3 aylık veri kapsamıyla sınırlıdır.</p>
       <div class="detail-row"><span>Satıcı ID</span><strong><?= h($int['seller_id']) ?></strong></div>
       <div class="detail-row"><span>Ortam</span><strong><?= $int['stage'] ? 'Test (stage)' : 'Üretim' ?></strong></div>
       <div class="detail-row"><span>Ürün senkron başlangıcı (UTC)</span><strong><?= $int['last_sync'] ? h($int['last_sync']) : 'Henüz yok' ?></strong></div>
       <div class="detail-row"><span>Son eksiksiz sipariş senkronu</span><strong><?= $int['last_orders_sync'] ? date('d.m.Y H:i', (int)$int['last_orders_sync']) : 'Henüz yok' ?></strong></div>
+      <?php if ($int['orders_coverage_from']): ?><p class="hint">Son sipariş çekiminin değişiklik tarihi aralığı: <?= date('d.m.Y H:i',(int)$int['orders_coverage_from']) ?> – <?= date('d.m.Y H:i',(int)$int['last_orders_sync']) ?>.</p><?php endif; ?>
       <div class="detail-row"><span>Son eksiksiz finans senkronu</span><strong><?= $int['last_settlements_sync'] ? date('d.m.Y H:i', (int)$int['last_settlements_sync']) : 'Henüz yok' ?></strong></div>
       <?php if ($int['last_sync_error']): ?><p class="flash flash-error">Son senkron tamamlanamadı: <?= h($int['last_sync_error']) ?></p><?php endif; ?>
       <div class="actions" style="margin-top:14px; display:flex; gap:10px; flex-wrap:wrap">
@@ -215,9 +218,9 @@ require __DIR__ . '/../includes/header.php';
                   <input type="hidden" name="csrf" value="<?= csrf_token() ?>">
                   <input type="hidden" name="action" value="update_price">
                   <input type="hidden" name="barcode" value="<?= h($r['barcode']) ?>">
-                  <input type="hidden" name="quantity" value="<?= (int)$r['quantity'] ?>">
-                  <input type="hidden" name="list_price" value="<?= $r['listPrice'] ?>">
-                  <input type="number" step="0.01" min="0" name="new_price" placeholder="<?= $r['price'] ?>"
+
+
+                  <input type="number" step="0.01" min="0.01" name="new_price" placeholder="<?= $r['price'] ?>"
                          value="<?= $r['livePrice'] > 0 ? $r['livePrice'] : '' ?>"
                          required <?= $r['barcode'] === '' ? 'disabled' : '' ?>>
                   <button type="submit" class="btn-primary" <?= $r['barcode'] === '' ? 'disabled' : '' ?>>Gönder</button>

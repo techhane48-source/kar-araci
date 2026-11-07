@@ -1,0 +1,74 @@
+[
+  {
+    "url": "https://developers.trendyol.com/docs/cari-hesap-ekstresi-entegrasyonu.md",
+    "updatedAt": "2026-09-02T11:39:36.000Z",
+    "sha256": "1d5f1a32b21f570eba0b0867003dbb7fb5ee01d0728072206738e3f4d9404713",
+    "retrieved_date_utc": "2026-11-07"
+  },
+  {
+    "url": "https://developers.trendyol.com/docs/ürün-filtreleme-filterproducts.md",
+    "updatedAt": "2026-09-15T13:34:06.000Z",
+    "sha256": "17e96368978682270cf2565f150c9f6b8249988b0fcb961c3b2f4f416371bb1e",
+    "retrieved_date_utc": "2026-11-07"
+  },
+  {
+    "url": "https://developers.trendyol.com/docs/ürün-filtreleme-temel-bilgiler-v2.md",
+    "updatedAt": "2026-01-22T16:04:44.000Z",
+    "sha256": "3fb484110289f7a734d388f0a17cc7f8e8b878e68b0b8142c141d3172eba8510",
+    "retrieved_date_utc": "2026-11-07"
+  },
+  {
+    "url": "https://developers.trendyol.com/docs/ürün-filtreleme-onaylı-ürün-v2.md",
+    "updatedAt": "2026-09-11T11:38:03.000Z",
+    "sha256": "6e5bddfc3b90ef30d6fa2c7f6800e0eb2429169901b7185349544d30e4205786",
+    "retrieved_date_utc": "2026-11-07"
+  },
+  {
+    "url": "https://developers.trendyol.com/docs/ürün-filtreleme-onaylı-ürün-v2-stok-ve-fiyat.md",
+    "updatedAt": "2026-08-07T12:24:47.000Z",
+    "sha256": "80cf6d75d1e812d487df758c025711e38a6e09f72e54e6732f056f7e4aca1178",
+    "retrieved_date_utc": "2026-11-07"
+  },
+  {
+    "url": "https://developers.trendyol.com/docs/sipariş-paketlerini-çekme-getshipmentpackages.md",
+    "updatedAt": "2026-11-02T11:55:57.000Z",
+    "sha256": "ebd40e8c1ee0f2c68927468a255c76296be261402098f7466dace6193934748e",
+    "retrieved_date_utc": "2026-11-07"
+  },
+  {
+    "url": "https://developers.trendyol.com/docs/sipariş-paketlerini-akış-ile-çekme.md",
+    "updatedAt": "2026-11-02T11:56:20.000Z",
+    "sha256": "bcc49395f617ad2aedd0e01d715c63df3010b3b8da6667fc481d7cf389171d09",
+    "retrieved_date_utc": "2026-11-07"
+  },
+  {
+    "url": "https://developers.trendyol.com/docs/stok-ve-fiyat-güncelleme-updatepriceandinventory.md",
+    "updatedAt": "2026-08-07T13:33:06.000Z",
+    "sha256": "c7274c62d44c8c7e63a780eb3bb7ac6c00ae33d2e90b3e64df528a5817bcf1b7",
+    "retrieved_date_utc": "2026-11-07"
+  },
+  {
+    "url": "https://developers.trendyol.com/docs/toplu-i̇şlem-kontrolü-getbatchrequestresult.md",
+    "updatedAt": "2026-10-04T10:43:47.000Z",
+    "sha256": "6f40337ccb81c63544e9cbd36dcce16d38393f22826be5f5fb92f82ebc78fce4",
+    "retrieved_date_utc": "2026-11-07"
+  },
+  {
+    "url": "https://developers.trendyol.com/docs/2-authorization.md",
+    "updatedAt": "2026-04-27T11:32:19.000Z",
+    "sha256": "ba54688c7243dc7c1c87b8e1e42bc6116278c90f7bf341bfa7b5c834da14fe5d",
+    "retrieved_date_utc": "2026-11-07"
+  },
+  {
+    "url": "https://developers.trendyol.com/docs/1-servis-limitleri.md",
+    "updatedAt": "2026-08-25T10:14:44.000Z",
+    "sha256": "f296760246363ffafd55e92466cedd797d4814206c09fd74b5faea853d8a7bfa",
+    "retrieved_date_utc": "2026-11-07"
+  },
+  {
+    "url": "https://developers.trendyol.com/docs/3-canlı-test-ortam-bilgileri.md",
+    "updatedAt": "2026-07-13T06:21:20.000Z",
+    "sha256": "f16505a5f23cab494316733c17454c20a910f0734a76db89f153e46c8aceaef4",
+    "retrieved_date_utc": "2026-11-07"
+  }
+]

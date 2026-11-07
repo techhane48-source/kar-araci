@@ -102,7 +102,7 @@ function calc_product_price(array $p,float $targetProfit=0.0,float $targetMargin
 function order_is_sale(array $order): bool
 {
     $status = strtolower(strtr(trim((string)($order['status']??'')), ['İ'=>'i','ı'=>'i']));
-    return !in_array($status,['cancelled','canceled','returned','undelivered','unsupplied','undeliveredandreturned','iptal','iade'],true);
+    return !in_array($status,['awaiting','verified','unpacked','cancelled','canceled','returned','undelivered','unsupplied','undeliveredandreturned','iptal','iade'],true);
 }
 
 /** Paket tutarı satırların satış ağırlığıyla dağıtılır; her satır kendi KDV/giderleriyle hesaplanır. */

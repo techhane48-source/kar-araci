@@ -198,3 +198,14 @@ PHP sayfaları, ortak hesaplama/kimlik doğrulama/veritabanı katmanı, pazaryer
 3. Merkezi paket politikası, demo sınırları, yenileme ve ödeme mutabakatı.
 4. Gerçek şablonlarla dosya akışları, mağaza fiyat güncelleme sonuçları ve onboarding.
 5. Sandbox/satıcı hesabı doğrulamaları, operasyonel izleme/yedek, hukuk metinleri ve sınırlı ücretli pilot.
+
+## 8 Kasım 2026 — Resmî Trendyol belgeleriyle uyum düzeltmeleri
+
+Resmî geliştirici belgelerine erişildi. Kaldırılmış V1 ürün/sipariş yolları yerine
+V2 içerik/varyant kataloğu, ayrı stok/fiyat görünümü ve sipariş stream servisi
+uygulandı. Finansın Türkçe yanıt türleri korunuyor, iptal türleri alınıyor.
+Fiyat kabulü artık başarı sayılmıyor: kalıcı batch takibi ve ürün SUCCESS kontrolü
+var; eski stok fiyat isteğiyle geri gönderilmiyor. Kaynaklar, doğrulanan sınırlar
+ve gerçek satıcı hesabıyla yapılması gereken kabul koşulları
+[Trendyol doğrulamasında](docs/TRENDYOL-DOGRULAMA.md) listelidir.
+Önceki tarihli V1/artımlı stok notları tarihsel durumdur; güncel davranış bu rapordadır.

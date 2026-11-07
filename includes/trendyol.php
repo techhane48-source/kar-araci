@@ -17,6 +17,7 @@ final class TrendyolClient
     private string $apiSecret;
     private string $base;
     private $transport;
+    private array $lastRequestAt=[];
 
     // Üretim ortamı (varsayılan). Test için stageapigw kullanılabilir.
     public const PROD = 'https://apigw.trendyol.com';
@@ -37,81 +38,79 @@ final class TrendyolClient
      */
     public function testConnection(): array
     {
-        // 1 adet ürün isteyip auth'un doğruluğunu sınamak en ucuz yoldur.
-        $res = $this->request('GET', "/integration/product/sellers/{$this->sellerId}/products", ['size' => '1']);
-        if (isset($res['http']) && $res['http'] === 200) {
-            return ['ok' => true, 'sellerName' => null];
-        }
-
-        if (isset($res['http']) && $res['http'] === 401) {
-            // Ortam uyuşmazlığı olabilir (test kimliği üretimde / üretim kimliği testte).
-            // Diğer ortamı da dene; o tutuyorsa nedeni budur.
-            $otherBase = ($this->base === self::PROD) ? self::STAGE : self::PROD;
-            $saved = $this->base;
-            $this->base = $otherBase;
-            $res2 = $this->request('GET', "/integration/product/sellers/{$this->sellerId}/products", ['size' => '1']);
-            $this->base = $saved;
-
-            if (isset($res2['http']) && $res2['http'] === 200) {
-                if ($otherBase === self::STAGE) {
-                    return ['ok' => false, 'error' => "Kimlik bilgileriniz DOĞRU ama bu bir TEST (stage) kimliği. Bağlantı formundaki \"Test ortamı\" kutusunu İŞARETLEYİN."];
-                }
-                return ['ok' => false, 'error' => "Kimlik bilgileriniz DOĞRU ama bu bir ÜRETİM kimliği. \"Test ortamı\" kutusunu KALDIRIN."];
-            }
-
-            $detail = '';
-            if (!empty($res['raw'])) {
-                $detail = ' Yanıt: ' . mb_substr(trim((string)$res['raw']), 0, 400);
-            }
-            return ['ok' => false, 'error' => 'Kimlik bilgileri hatalı (401). Satıcı ID / API key / API secret değerlerini kontrol edin (her iki ortam da reddetti).' . $detail];
-        }
-        return ['ok' => false, 'error' => ($res['error'] ?? 'Bilinmeyen hata') . " (HTTP {$res['http']})"];
+        $res=$this->request('GET',"/integration/product/sellers/{$this->sellerId}/products/approved",['page'=>'0','size'=>'1']);
+        $page=$this->page($res,0,PHP_INT_MAX,'Bağlantı');
+        if ($page['ok']) return ['ok'=>true,'sellerName'=>null];
+        if (($res['http']??0)===401) return ['ok'=>false,'error'=>'Kimlik bilgileri veya seçilen canlı/test ortamı hatalı (401).'];
+        if ($this->base===self::STAGE && ($res['http']??0)===503) return ['ok'=>false,'error'=>'Test ortamı IP yetkilendirmesini kontrol edin (503).'];
+        return $page;
     }
 
-    /**
-     * Satıcının onaylı/onay bekleyen tüm ürünlerini çeker (sayfalı).
-     * Her ürün: barcode, title, brand, categoryName, price, salePrice, quantity, status, productUrl.
-     *
-     * @param int $maxPage Maksimum sayfa (varsayılan 500 = 100.000 ürün; büyük kataloglar için)
-     */
-    public function getProducts(int $maxPage = 500, string $approvalStatus = '', int $startDateMs = 0, string $dateQueryType = ''): array
+    /** V2 içerik + varyant kataloğu, ayrı stok/fiyat görünümüyle birleştirilir. */
+    public function getProducts(int $maxPage=500,string $approvalStatus='',int $startDateMs=0,string $dateQueryType=''): array
     {
-        $size=200;$base=['size'=>(string)$size];
-        if ($approvalStatus!=='') $base['approvalStatus']=$approvalStatus;
-        if ($startDateMs>0) $base['startDate']=(string)$startDateMs;
-        if ($dateQueryType!=='') $base['dateQueryType']=$dateQueryType;
-        $path="/integration/product/sellers/{$this->sellerId}/products";
-        $probe=$this->page($this->request('GET',$path,array_replace($base,['page'=>'0','size'=>'1'])),0,PHP_INT_MAX,'Ürün');
-        if (!$probe['ok']) return $probe;
-        if ($probe['total']===null) return $this->incomplete('Ürün toplam sayısı API yanıtında bulunamadı.');
-        $total=$probe['total'];$pages=max(1,(int)ceil($total/$size));
-        if ($pages>$maxPage) return $this->incomplete('Ürün sayfa sınırı aşıldı; eksik katalog kaydedilmedi.');
-        $all=[];
-        for ($start=0;$start<$pages;$start+=10) {
-            $requests=[];
-            for ($page=$start;$page<min($start+10,$pages);$page++) $requests[]=['GET',$path,$base+['page'=>(string)$page]];
-            $results=$this->requestParallel($requests);
-            if (count($results)!==count($requests)) return $this->incomplete('Ürün sayfalarının bir kısmı alınamadı.');
-            foreach ($results as $offset=>$result) {
-                $info=$this->page($result,$start+$offset,$maxPage,'Ürün');
-                if (!$info['ok']) return $info;
-                if ($total>0 && $info['pages']!==$pages) return $this->incomplete('Ürün sayfa sayısı değişti; tekrar deneyin.');
-                if ($info['total']!==null && $info['total']!==$total) return $this->incomplete('Katalog çekilirken toplam ürün sayısı değişti; tekrar deneyin.');
-                foreach ($info['items'] as $it) {
-                    if (!is_array($it)) return $this->incomplete('Ürün yanıtı geçersiz.');
-                    $barcode=(string)($it['barcode']??'');
-                    if ($barcode==='' || isset($all[$barcode])) return $this->incomplete('Ürün sayfalarında eksik veya tekrarlanan barkod var.');
-                    $all[$barcode]=[
-                        'barcode'=>$barcode,'title'=>$it['title']??'', 'brand'=>$it['brand']??$it['brandName']??'',
-                        'category'=>$it['categoryName']??'', 'listPrice'=>$it['listPrice']??null,
-                        'salePrice'=>$it['salePrice']??null, 'quantity'=>$it['quantity']??null,
-                        'status'=>$it['status']??'', 'approved'=>$it['approved']??false, 'productUrl'=>$it['productUrl']??'',
-                    ];
-                }
+        if ($approvalStatus!=='' && $approvalStatus!=='APPROVED') return $this->incomplete('Bu katalog yalnızca onaylı ürünleri destekler.');
+        // V2 katalog değişiklik tarihi stok değişikliğini garanti etmez. Her senkronda tam görünüm alınır.
+        $catalog=$this->productContents('/products/approved',$maxPage);
+        if (!$catalog['ok']) return $catalog;
+        $inventory=$this->productContents('/products/approved/inventory-and-price',$maxPage);
+        if (!$inventory['ok']) return $inventory;
+        $stocks=[];
+        foreach ($inventory['content'] as $content) {
+            if (!is_array($content['variants']??null)) return $this->incomplete('V2 stok varyantları eksik.');
+            foreach ($content['variants'] as $variant) {
+                $barcode=$variant['barcode']??null;
+                if (!is_string($barcode) || $barcode==='' || isset($stocks[$barcode])) return $this->incomplete('V2 stok barkodu eksik veya tekrarlı.');
+                $stocks[$barcode]=$variant;
             }
         }
-        if (count($all)!==$total) return $this->incomplete('API ürün sayısı ile alınan kayıt sayısı uyuşmuyor.');
-        return ['ok'=>true,'complete'=>true,'products'=>array_values($all),'count'=>count($all)];
+        $all=[];
+        foreach ($catalog['content'] as $content) {
+            if (!is_array($content['variants']??null) || !$content['variants']) return $this->incomplete('V2 katalog varyantları eksik.');
+            foreach ($content['variants'] as $variant) {
+                $barcode=$variant['barcode']??null;
+                if (!is_string($barcode) || $barcode==='' || isset($all[$barcode]) || !isset($stocks[$barcode])) return $this->incomplete('Katalog ile stok/fiyat barkodları uyuşmuyor; tekrar deneyin.');
+                $stock=$stocks[$barcode];
+                if (!isset($stock['quantity'],$stock['salePrice'],$stock['listPrice'])) return $this->incomplete('V2 stok veya fiyat alanı eksik.');
+                $all[$barcode]=['barcode'=>$barcode,'title'=>$content['title']??'',
+                    'brand'=>$content['brand']['name']??'', 'category'=>$content['category']['name']??'',
+                    'salePrice'=>$stock['salePrice'],'listPrice'=>$stock['listPrice'],'quantity'=>$stock['quantity'],
+                    'vatRate'=>$variant['vatRate']??null,'commissionRate'=>$variant['commission']??null,
+                    'productUrl'=>$variant['productUrl']??'', 'approved'=>true];
+            }
+        }
+        if (count($all)!==count($stocks)) return $this->incomplete('Katalog ve stok görünümü değişti; tekrar deneyin.');
+        return ['ok'=>true,'complete'=>true,'products'=>array_values($all),'count'=>count($all),'contentCount'=>count($catalog['content'])];
+    }
+
+    private function productContents(string $suffix,int $maxPage): array
+    {
+        $path="/integration/product/sellers/{$this->sellerId}".$suffix;
+        $all=[];$total=null;$token=null;$seenTokens=[];$seenIds=[];
+        for ($page=0;$page<$maxPage;$page++) {
+            $params=['size'=>'100','orderByDirection'=>'ASC'];
+            if ($page<100) $params['page']=(string)$page;
+            elseif ($token!==null) $params['nextPageToken']=$token;
+            else return $this->incomplete('10.000 içerik sonrası devam tokenı eksik.');
+            $info=$this->page($this->request('GET',$path,$params),$page<100?$page:null,$maxPage,'V2 ürün');
+            if (!$info['ok']) return $info;
+            if ($info['total']===null) return $this->incomplete('V2 içerik toplamı eksik.');
+            if ($total!==null && $total!==$info['total']) return $this->incomplete('V2 katalog toplamı işlem sırasında değişti.');
+            $total=$info['total'];
+            foreach ($info['items'] as $item) {
+                if (!is_array($item) || !isset($item['contentId']) || isset($seenIds[(string)$item['contentId']])) return $this->incomplete('Eksik veya tekrarlanan V2 içerik.');
+                $seenIds[(string)$item['contentId']]=true;$all[]=$item;
+            }
+            if (count($all)===$total) return ['ok'=>true,'content'=>$all];
+            if (!$info['items'] || count($all)>$total) return $this->incomplete('V2 içerik sayısı uyuşmuyor.');
+            $next=$info['nextPageToken'];
+            if ($page>=99) {
+                if (!is_string($next) || $next==='' || isset($seenTokens[$next])) return $this->incomplete('V2 devam tokenı eksik veya tekrarlı.');
+                $seenTokens[$next]=true;
+            }
+            $token=$next;
+        }
+        return $this->incomplete('V2 ürün sayfa sınırı aşıldı; eksik katalog kaydedilmedi.');
     }
 
     /**
@@ -126,85 +125,68 @@ final class TrendyolClient
         return ['ok' => true, 'product' => $res['body']];
     }
 
-    /**
-     * Siparişleri çeker — RESMİ /integration/order/sellers/{sellerId}/orders ucu.
-     * (Eski /shipment-packages ucu deprecate oldu; 556 "Service Unavailable" dönüyor.)
-     * @param string $status Created | Picking | Invoiced | Shipped | Cancelled | Delivered | UnDelivered | ...
-     */
-    public function getOrders(string $status = '', string $startDate = '', string $endDate = '', int $maxPage = 1000): array
+    /** Resmî polling servisi: en fazla 14 günlük last-modified pencereleri ve opaque cursor. */
+    public function getOrders(string $status='',string $startDate='',string $endDate='',int $maxPage=1000): array
     {
-        $all = [];
-        $size = 200;
-
-        // Zaman aralığı (saniye). Trendyol sipariş ucu ~15 günlük pencereyle sınırlar;
-        // daha geniş aralık istendiğinde 14 günlük parçalara bölüp birleştiriyoruz.
-        $endTs = ($endDate !== '') ? strtotime($endDate) : time();
-        $startTs = ($startDate !== '') ? strtotime($startDate) : ($endTs - 16 * 86400);
-
-        if ($startTs===false || $endTs===false || $startTs >= $endTs) return $this->incomplete('Geçersiz sipariş tarih aralığı.');
-        $chunk = 14 * 86400;
-        for ($cs = $startTs; $cs < $endTs; $cs += $chunk) {
-            $ce = min($cs + $chunk, $endTs);
-            $page = 0; $expectedPages=null; $expectedTotal=null; $received=0; $chunkSeen=[];
-            while (true) {
-                $params = [
-                    'page' => (string)$page,
-                    'size' => (string)$size,
-                    'startDate' => (string)($cs * 1000),
-                    'endDate' => (string)($ce * 1000),
-                ];
-                if ($status !== '') $params['status'] = $status;
-
-                $res = $this->request('GET', "/integration/order/sellers/{$this->sellerId}/orders", $params);
-
-                $info=$this->page($res,$page,$maxPage,'Sipariş');
-                if (!$info['ok']) return $info;
-                $items=$info['items'];
-                if ($expectedPages!==null && $expectedPages!==$info['pages']) return $this->incomplete('Sipariş sayfa sayısı işlem sırasında değişti.');
-                $expectedPages=$info['pages'];
-                if ($expectedTotal!==null && $info['total']!==null && $expectedTotal!==$info['total']) return $this->incomplete('Sipariş toplamı işlem sırasında değişti.');
-                $expectedTotal=$info['total'];
-                $received+=count($items);
-                foreach ($items as $it) {
-                    $pkg = (string)($it['shipmentPackageId'] ?? ($it['id'] ?? ''));
-                    if (isset($chunkSeen[$pkg])) return $this->incomplete('Sipariş sayfalarında tekrarlanan paket var.');
-                    $chunkSeen[$pkg]=true;
-                    if ($pkg==='') return $this->incomplete('Sipariş paket kimliği eksik.');
-
-                    $lines = [];
-                    foreach (($it['lines'] ?? []) as $ol) {
-                        $lines[] = [
-                            'barcode' => $ol['barcode'] ?? ($ol['sku'] ?? ''),
-                            'productName' => $ol['productName'] ?? '',
-                            'quantity' => (int)($ol['quantity'] ?? 0),
-                            'price' => (float)($ol['amount'] ?? ($ol['lineGrossAmount'] ?? 0)) - (float)($ol['lineTotalDiscount'] ?? ($ol['discount'] ?? 0)),
-                            'merchantSku' => $ol['merchantSku'] ?? '',
-                        ];
-                    }
-                    $all[$pkg] = [
-                        'packageNumber' => $pkg,
-                        'orderNumber' => $it['orderNumber'] ?? '',
-                        'status' => $it['status'] ?? ($it['shipmentPackageStatus'] ?? ''),
-                        'customerName' => trim(($it['customerFirstName'] ?? '') . ' ' . ($it['customerLastName'] ?? '')),
-                        'totalPrice' => (float)($it['totalPrice'] ?? ($it['grossAmount'] ?? 0)),
-                        'cargoCompany' => $it['cargoProviderName'] ?? '',
-                        'lines' => $lines,
-                        'orderDate' => $it['orderDate'] ?? null,
-                    ];
+        $end=$endDate!==''?strtotime($endDate):time();
+        $start=$startDate!==''?strtotime($startDate):($end-14*86400);
+        if ($start===false || $end===false || $start>=$end || $maxPage<1) return $this->incomplete('Geçersiz sipariş tarih aralığı veya sayfa sınırı.');
+        $all=[];
+        for ($from=$start*1000;$from<=$end*1000;$from=$to+1) {
+            $to=min($from+14*86400000-1,$end*1000);
+            $base=['size'=>'200','lastModifiedStartDate'=>(string)$from,'lastModifiedEndDate'=>(string)$to];
+            if ($status!=='') $base['packageItemStatuses']=$status;
+            $cursor=null;$seenCursors=[];$windowIds=[];$finished=false;
+            for ($page=0;$page<$maxPage;$page++) {
+                $query=$base;
+                if ($cursor!==null) $query['nextCursor']=$cursor;
+                $res=$this->request('GET',"/integration/order/sellers/{$this->sellerId}/orders/stream",$query);
+                $body=$res['body']??null;
+                if (($res['http']??0)!==200 || !is_array($body) || !is_array($body['content']??null) || !is_bool($body['hasMore']??null)) return $this->incomplete('Sipariş akış yanıtı eksik veya alınamadı (HTTP '.($res['http']??0).').');
+                foreach ($body['content'] as $item) {
+                    $order=$this->normalizeOrder($item);
+                    if (!$order['ok']) return $order;
+                    $id=$order['order']['packageNumber'];
+                    if (isset($windowIds[$id])) return $this->incomplete('Sipariş akışında tekrarlanan paket var.');
+                    $windowIds[$id]=true;
+                    $all[$id]=$order['order'];
                 }
-
-                $page++;
-                if ($page >= $info['pages']) break;
+                if (!$body['hasMore']) { $finished=true;break; }
+                $next=$body['nextCursor']??null;
+                if (!$body['content'] || !is_string($next) || $next==='' || isset($seenCursors[$next])) return $this->incomplete('Sipariş devam cursorı eksik veya tekrarlı.');
+                $seenCursors[$next]=true;$cursor=$next;
             }
-            if ($expectedTotal!==null && $received!==$expectedTotal) return $this->incomplete('Sipariş sayısı alınan kayıtlarla uyuşmuyor.');
+            if (!$finished) return $this->incomplete('Sipariş akış limiti aşıldı; kısmi veri kaydedilmedi.');
         }
-
         return ['ok'=>true,'complete'=>true,'orders'=>array_values($all),'count'=>count($all)];
     }
 
+    private function normalizeOrder(mixed $item): array
+    {
+        if (!is_array($item) || !isset($item['shipmentPackageId'],$item['packageTotalPrice'],$item['orderDate'])
+            || !is_array($item['lines']??null) || !is_numeric($item['orderDate']) || !is_numeric($item['packageTotalPrice'])) return $this->incomplete('V2 sipariş alanları eksik.');
+        $lines=[];
+        foreach ($item['lines'] as $line) {
+            if (!is_array($line) || !is_string($line['barcode']??null) || !isset($line['quantity']) || !is_numeric($line['quantity']) || !is_finite((float)$line['quantity']) || (float)$line['quantity']<1 || (float)$line['quantity']>2147483647 || (float)$line['quantity']!==floor((float)$line['quantity'])) return $this->incomplete('V2 sipariş satırı eksik.');
+            $price=$line['lineUnitPrice']??null;
+            if ($price===null && isset($line['lineGrossAmount'],$line['lineTotalDiscount']) && is_numeric($line['lineGrossAmount']) && is_numeric($line['lineTotalDiscount'])) $price=(float)$line['lineGrossAmount']-(float)$line['lineTotalDiscount'];
+            if (!is_numeric($price) || (float)$price<0) return $this->incomplete('V2 net birim fiyatı eksik veya geçersiz.');
+            $lines[]=['barcode'=>$line['barcode'],'productName'=>$line['productName']??'',
+                'quantity'=>(int)$line['quantity'],'price'=>(float)$price,'merchantSku'=>$line['stockCode']??'',
+                'vatRate'=>$line['vatRate']??null,'commissionRate'=>$line['commission']??null];
+        }
+        // Resmî sipariş belgesi: orderDate GMT+3, createdDate GMT. Standart UTC epoch'a çevir.
+        $date=(int)$item['orderDate']-10800000;
+        if ($date<=0) return $this->incomplete('V2 sipariş tarihi geçersiz.');
+        return ['ok'=>true,'order'=>['packageNumber'=>(string)$item['shipmentPackageId'],
+            'orderNumber'=>(string)($item['orderNumber']??''),'status'=>(string)($item['shipmentPackageStatus']??$item['status']??''),
+            'customerName'=>trim(($item['customerFirstName']??'').' '.($item['customerLastName']??'')),
+            'totalPrice'=>(float)$item['packageTotalPrice'],'lines'=>$lines,'orderDate'=>$date,
+            'cargoCompany'=>(string)($item['cargoProviderName']??'')]];
+    }
+
     /**
-     * Trendyol komisyon oranlarını kategori bazında çeker.
-     * (Sipariş/komisyon dökümü için; kategori ID -> oran eşleşmesi)
+     * Trendyol kategori ağacını çeker; komisyon oranı sağlamaz.
      */
     public function getCategories(): array
     {
@@ -249,11 +231,12 @@ final class TrendyolClient
                 if (!is_array($it) || !isset($it['id']) || !is_scalar($it['id']) || trim((string)$it['id'])==='') return $this->incomplete('Finans işlem kimliği eksik.');
                 if (isset($seenIds[(string)$it['id']])) return $this->incomplete('Finans sayfalarında tekrarlanan işlem var.');
                 $seenIds[(string)$it['id']]=true;
-                if (($it['transactionType']??'')==='Sale' && (!isset($it['commissionRate']) || !is_numeric($it['commissionRate']) || (float)$it['commissionRate']<0 || (float)$it['commissionRate']>100)) return $this->incomplete('Satış komisyon oranı eksik veya geçersiz.');
+                if ($transactionType==='Sale' && (!isset($it['commissionRate']) || !is_numeric($it['commissionRate']) || (float)$it['commissionRate']<0 || (float)$it['commissionRate']>100)) return $this->incomplete('Satış komisyon oranı eksik veya geçersiz.');
                 $all[] = [
                     'providerId' => (string)$it['id'],
                     'barcode' => (string)($it['barcode'] ?? ''),
-                    'transactionType' => (string)($it['transactionType'] ?? ''),
+                    'transactionType' => $transactionType,
+                    'providerTransactionType' => (string)($it['transactionType'] ?? ''),
                     'commissionRate' => $it['commissionRate'] ?? 0,
                     'commissionAmount' => $it['commissionAmount'] ?? 0,
                     'sellerRevenue' => $it['sellerRevenue'] ?? 0,
@@ -280,7 +263,7 @@ final class TrendyolClient
         return ['ok'=>false,'complete'=>false,'error'=>$error];
     }
 
-    private function page(array $response,int $number,int $limit,string $label): array
+    private function page(array $response,?int $number,int $limit,string $label): array
     {
         if ($limit<1) return $this->incomplete('Sayfa sınırı en az 1 olmalı.');
         if (($response['http']??0)!==200) return $this->incomplete($label.' sayfası alınamadı (HTTP '.($response['http']??0).').');
@@ -293,14 +276,24 @@ final class TrendyolClient
         $pages=(int)$body['totalPages'];
         if ($number>0 && $number>=$pages) return $this->incomplete($label.' sayfa aralığı değişti.');
         if ($pages>$limit) return $this->incomplete($label.' sayfa sınırı aşıldı; eksik sonuç kaydedilmedi.');
-        if (isset($body['number']) && (int)$body['number']!==$number) return $this->incomplete($label.' sayfa numarası uyuşmuyor.');
+        if ($number!==null && isset($body['page']) && (int)$body['page']!==$number) return $this->incomplete($label.' sayfa numarası uyuşmuyor.');
+        if ($number!==null && isset($body['number']) && (int)$body['number']!==$number) return $this->incomplete($label.' sayfa numarası uyuşmuyor.');
         $total=null;
         if (isset($body['totalElements'])) {
             $total=filter_var($body['totalElements'],FILTER_VALIDATE_INT,['options'=>['min_range'=>0]]);
             if ($total===false) return $this->incomplete($label.' toplam kayıt sayısı geçersiz.');
         }
         if ((!$body['content'] && ($pages>1 || ($total??0)>0)) || ($body['content'] && $pages===0)) return $this->incomplete($label.' sayfası eksik.');
-        return ['ok'=>true,'items'=>$body['content'],'pages'=>$pages,'total'=>$total];
+        return ['ok'=>true,'items'=>$body['content'],'pages'=>$pages,'total'=>$total,'nextPageToken'=>$body['nextPageToken']??null];
+    }
+
+    private function pace(string $path): void
+    {
+        $group=str_contains($path,'/orders/stream')?'orders':(str_contains($path,'/finance/')?'finance':'products');
+        $interval=['orders'=>5.0,'finance'=>0.65,'products'=>0.21][$group];
+        $wait=($this->lastRequestAt[$group]??0)+$interval-microtime(true);
+        if ($wait>0) usleep((int)ceil($wait*1000000));
+        $this->lastRequestAt[$group]=microtime(true);
     }
 
     /**
@@ -309,6 +302,7 @@ final class TrendyolClient
     private function request(string $method, string $path, array $query = [], ?string $body = null): array
     {
         if ($this->transport!==null) return ($this->transport)($method,$path,$query,$body);
+        $this->pace($path);
         $url = $this->base . $path;
         if ($query) {
             $url .= '?' . http_build_query($query);
@@ -317,7 +311,7 @@ final class TrendyolClient
         $auth = base64_encode($this->apiKey . ':' . $this->apiSecret);
         $headers = [
             'Authorization: Basic ' . $auth,
-            'User-Agent: ' . $this->sellerId . ' - SelfIntegration',
+            'User-Agent: ' . $this->sellerId . ' - KarFiyat',
             'Accept: application/json',
         ];
         if ($body !== null) {
@@ -358,79 +352,42 @@ final class TrendyolClient
         return ['http' => $http, 'body' => $decoded, 'raw' => $body];
     }
 
-    /**
-     * Birden çok GET isteğini curl_multi ile paralel çeker (girdi sırasında döner).
-     * Büyük kataloglarda sayfalama hızını 8-10x artırır.
-     * $requests: [ ['method','path',query], ... ]
-     */
-    private function requestParallel(array $requests): array
-    {
-        if ($this->transport!==null) return array_map(fn($request)=>$this->request(...$request),$requests);
-        $auth = base64_encode($this->apiKey . ':' . $this->apiSecret);
-        $mh = curl_multi_init();
-        $handles = [];
-
-        foreach ($requests as $i => $req) {
-            [$method, $path, $query] = $req;
-            $url = $this->base . $path;
-            if ($query) $url .= '?' . http_build_query($query);
-
-            $ch = curl_init($url);
-            curl_setopt_array($ch, [
-                CURLOPT_RETURNTRANSFER => true,
-                CURLOPT_HTTPHEADER => [
-                    'Authorization: Basic ' . $auth,
-                    'User-Agent: ' . $this->sellerId . ' - SelfIntegration',
-                    'Accept: application/json',
-                ],
-                CURLOPT_TIMEOUT => 30,
-                CURLOPT_CONNECTTIMEOUT => 10,
-                CURLOPT_FOLLOWLOCATION => false,
-                CURLOPT_SSL_VERIFYPEER => true,
-                CURLOPT_CAINFO => __DIR__ . '/cacert.pem',
-            ]);
-            if ($method === 'POST' || $method === 'PUT') {
-                curl_setopt($ch, CURLOPT_CUSTOMREQUEST, $method);
-            }
-            curl_multi_add_handle($mh, $ch);
-            $handles[$i] = $ch;
-        }
-
-        do {
-            $status = curl_multi_exec($mh, $running);
-            if ($running) {
-                usleep(50000); // 50ms
-            }
-        } while ($running && $status === CURLM_OK);
-
-        $results = [];
-        foreach ($handles as $i => $ch) {
-            $body = curl_multi_getcontent($ch);
-            $http = (int)curl_getinfo($ch, CURLINFO_RESPONSE_CODE);
-            $results[$i] = [
-                'http' => $http,
-                'body' => ($body === false) ? null : json_decode($body, true),
-                'raw' => $body,
-            ];
-            curl_multi_remove_handle($mh, $ch);
-            curl_close($ch);
-        }
-        curl_multi_close($mh);
-        ksort($results);
-        return $results;
-    }
-
-    /**
-     * Fiyat ve stok güncelleme (toplu). $items: [['barcode'=>..,'quantity'=>..,'salePrice'=>..,'listPrice'=>..], ...]
-     * Trendyol bu uçla ürün fiyatını satıcı panelinden uzaktan yönetmeyi sağlar.
-     */
+    /** Kabul, uygulama anlamına gelmez; resmî batch kimliği döndürülür. */
     public function updatePriceAndInventory(array $items): array
     {
-        $body = json_encode(['items' => $items], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
-        $res = $this->request('POST', "/integration/inventory/sellers/{$this->sellerId}/products/price-and-inventory", [], $body);
-        if (isset($res['http']) && $res['http'] !== 200) {
-            return ['ok' => false, 'error' => ($res['error'] ?? 'Fiyat güncellenemedi') . " (HTTP {$res['http']})"];
+        if (!$items || count($items)>1000) return $this->incomplete('1–1000 ürün gönderilebilir.');
+        foreach ($items as $item) {
+            if (!is_string($item['barcode']??null) || $item['barcode']==='') return $this->incomplete('Barkod gerekli.');
+            if (isset($item['quantity']) && (!is_int($item['quantity']) || $item['quantity']<0 || $item['quantity']>20000)) return $this->incomplete('Stok 0–20.000 arasında olmalı.');
+            $hasSale=isset($item['salePrice']);$hasList=isset($item['listPrice']);
+            if ($hasSale!==$hasList) return $this->incomplete('Satış ve liste fiyatı birlikte gönderilmeli.');
+            if ($hasSale && (!is_numeric($item['salePrice']) || !is_numeric($item['listPrice']) || !is_finite((float)$item['salePrice']) || !is_finite((float)$item['listPrice']) || (float)$item['salePrice']<=0 || (float)$item['listPrice']<(float)$item['salePrice'])) return $this->incomplete('Geçersiz satış/liste fiyatı.');
+            if (!$hasSale && !isset($item['quantity'])) return $this->incomplete('Fiyat veya stok değişikliği gerekli.');
         }
-        return ['ok' => true];
+        $body=json_encode(['items'=>$items],JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES|JSON_THROW_ON_ERROR);
+        $res=$this->request('POST',"/integration/inventory/sellers/{$this->sellerId}/products/price-and-inventory",[],$body);
+        $batch=$res['body']['batchRequestId']??null;
+        if (!in_array($res['http']??0,[200,201,202],true) || !is_string($batch) || $batch==='') return ['ok'=>false,'uncertain'=>!in_array($res['http']??0,[400,401,403,409,422,429],true),'error'=>'Fiyat isteği için batch kimliği alınamadı (HTTP '.($res['http']??0).'). İsteği otomatik tekrarlamayın.'];
+        return ['ok'=>true,'pending'=>true,'batchRequestId'=>$batch];
+    }
+
+    public function getBatchRequestResult(string $batchId,string $barcode): array
+    {
+        if ($batchId==='' || $barcode==='') return $this->incomplete('İşlem kimliği ve barkod gerekli.');
+        $res=$this->request('GET',"/integration/product/sellers/{$this->sellerId}/products/batch-requests/".rawurlencode($batchId));
+        $body=$res['body']??null;
+        if (($res['http']??0)!==200 || !is_array($body) || !is_array($body['items']??null) || (isset($body['batchRequestId']) && $body['batchRequestId']!==$batchId)) return $this->incomplete('Trendyol işlem sonucu alınamadı. Batch sonuçları 4 saat saklanır.');
+        foreach ($body['items'] as $item) {
+            if (($item['requestItem']['barcode']??'')!==$barcode) continue;
+            $state=$item['status']??'';
+            if ($state==='SUCCESS') return ['ok'=>true,'finished'=>true,'success'=>true];
+            if ($state==='FAILURE' || ($item['failureReasons']??[])) {
+                $reasons=[];
+                foreach (($item['failureReasons']??[]) as $reason) if (is_string($reason)) $reasons[]=$reason;
+                return ['ok'=>true,'finished'=>true,'success'=>false,'error'=>implode('; ',$reasons)?:'Trendyol ürün güncellemesini reddetti.'];
+            }
+            return ['ok'=>true,'finished'=>false];
+        }
+        return ['ok'=>true,'finished'=>false];
     }
 }

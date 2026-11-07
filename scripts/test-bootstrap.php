@@ -3,6 +3,7 @@ declare(strict_types=1);
 $path=tempnam(sys_get_temp_dir(),'kf-bootstrap-');
 putenv('KARFIYAT_DB='.$path);
 require_once __DIR__.'/../includes/auth.php';
+session_boot();
 register_shutdown_function(static function() use($path):void {
     foreach ([$path,$path.'-wal',$path.'-shm'] as $file) if(is_file($file)) unlink($file);
 });

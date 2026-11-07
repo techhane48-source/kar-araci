@@ -28,14 +28,15 @@ foreach([1,2] as $id) {
     db()->prepare("INSERT INTO products(user_id,name,barcode,marketplace,category,rate,cost,price,cargo,kdv,extra_fee,service_fee,stopaj,stopaj_mode,return_rate) VALUES(?,'Original','A','trendyol','Local',17,200,300,40,0,4,0,2,'manual',5)")->execute([$id]);
 }
 $client=new FixtureClient;
-$client->products=[['barcode'=>'A','title'=>'API A','category'=>'Giyim','salePrice'=>0,'listPrice'=>999,'quantity'=>0,'brand'=>'Brand'],['barcode'=>'B','title'=>'API B','category'=>'Giyim','salePrice'=>400,'quantity'=>7]];
+$client->products=[['barcode'=>'A','title'=>'API A','category'=>'Giyim','salePrice'=>0,'listPrice'=>999,'quantity'=>0,'brand'=>'Brand'],['barcode'=>'B','title'=>'API B','category'=>'Giyim','salePrice'=>400,'quantity'=>7,'vatRate'=>0,'commissionRate'=>0]];
 $before=integration();$r=sync_products(1,'trendyol',$client);
 check($r['ok'] && $r['inserted']===1 && $r['updated']===1,'Yeni ürün eklenir ve mevcut ürün güncellenir');
 $a=db()->query("SELECT * FROM products WHERE user_id=1 AND barcode='A'")->fetch();
 check((float)$a['price']===0.0 && (int)$a['quantity']===0 && $a['name']==='API A','Sıfır fiyat/stok korunur; liste fiyatına geri dönülmez');
 check((float)$a['cost']===200.0 && (float)$a['kdv']===0.0 && (float)$a['service_fee']===0.0 && (float)$a['rate']===17.0 && $a['stopaj_mode']==='manual' && (float)$a['stopaj']===2.0 && (float)$a['extra_fee']===4.0 && (float)$a['return_rate']===5.0 && (float)$a['cargo']===40.0,'Satıcının maliyet, KDV, komisyon ve gider ayarları korunur');
 check((float)scalar("SELECT price FROM products WHERE user_id=2 AND barcode='A'")===300.0,'Başka mağaza/kullanıcı ürünü etkilenmez');
-check($client->calls[0][1][2]===(strtotime($before['last_sync'].' UTC')-120)*1000,'Artımlı imleç örtüşmeli alınır');
+check($client->calls[0][1][2]===0,'V2 stok doğruluğu için tam görünüm alınır');
+check((float)scalar("SELECT kdv FROM products WHERE user_id=1 AND barcode='B'")===0.0 && (float)scalar("SELECT rate FROM products WHERE user_id=1 AND barcode='B'")===0.0,'Yeni ürün V2 varyantının sıfır KDV ve komisyonuyla başlar');
 $r=sync_products(1,'trendyol',$client);
 check($r['ok'] && (int)scalar('SELECT COUNT(*) FROM products WHERE user_id=1')===2,'Tekrar ürün senkronu mükerrer ürün oluşturmaz');
 $cursor=integration()['last_sync'];$client->failure='products';

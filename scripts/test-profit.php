@@ -26,6 +26,7 @@ foreach (['auto','manual'] as $mode) {
         check($lower['profit']<($margin>0 ? ($r['price']-0.01)*$margin/100 : $target),"$mode hedefi sağlayan en düşük kuruş seçilir");
     }
 }
+foreach (['Awaiting','Verified','UnPacked'] as $status) check(!order_is_sale(['status'=>$status]),"$status satış sayılmaz");
 $q=array_replace($p,['barcode'=>'B','name'=>'Ürün B','category'=>'Gıda','cost'=>100,'price'=>300,'cargo'=>10,'rate'=>10,'kdv'=>10,'extra_fee'=>4,'service_fee'=>2,'stopaj'=>1,'return_rate'=>2]);
 $order=['status'=>'Delivered','total_price'=>1100.0,'lines'=>[['barcode'=>'A','quantity'=>2,'price'=>400],['barcode'=>'B','quantity'=>1,'price'=>300]]];
 $by=['A'=>$p,'B'=>$q];

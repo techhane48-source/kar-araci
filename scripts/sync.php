@@ -11,6 +11,7 @@ $ok=0;$fail=0;
 foreach ($integrations as $int) {
     $tasks=['products'=>static fn()=>sync_products((int)$int['user_id'],$int['marketplace'])];
     if (!array_key_exists('products-only',$options)) {
+        $tasks['price-status']=static fn()=>process_price_updates((int)$int['user_id'],$int['marketplace']);
         $tasks['orders']=static fn()=>sync_orders((int)$int['user_id'],$int['marketplace'],$days);
         $tasks['settlements']=static fn()=>sync_settlements((int)$int['user_id'],$int['marketplace'],$days);
     }
