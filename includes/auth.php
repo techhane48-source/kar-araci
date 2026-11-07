@@ -30,7 +30,8 @@ function csrf_token(): string
 function csrf_verify(?string $token): bool
 {
     session_boot();
-    return is_string($token) && hash_equals($_SESSION['csrf'] ?? '', $token);
+    return is_string($token) && $token !== '' && !empty($_SESSION['csrf'])
+        && hash_equals($_SESSION['csrf'], $token);
 }
 
 function current_user(): ?array

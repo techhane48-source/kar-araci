@@ -76,6 +76,9 @@ final class IyzicoClient
         if ($resp === false) {
             return ['ok' => false, 'error' => 'Bağlantı hatası: ' . $err];
         }
+        if ($http < 200 || $http >= 300) {
+            return ['ok' => false, 'error' => 'Ödeme servisi isteği başarısız.'];
+        }
         return ['ok' => true, 'http' => $http, 'body' => json_decode($resp, true)];
     }
 

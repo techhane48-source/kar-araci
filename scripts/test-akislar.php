@@ -79,7 +79,10 @@ function extract_csrf(string $body): string
 
 // --- Not: DB temizliği test DIŞINDA yapılır (sunucu yeniden başlatılarak).
 //     Test kendi PDO bağlantısını kurarken WAL dosyalarını da temizlememek için buraya dokunma. ---
-$dbPath = dirname(__DIR__) . '/data/app.sqlite';
+$dbPath = getenv('KARFIYAT_DB');
+if (!$dbPath || $dbPath === dirname(__DIR__) . '/data/app.sqlite') {
+    throw new RuntimeException('Test için KARFIYAT_DB ile ayrı bir veritabanı seçin.');
+}
 
 // 1. Ana sayfa (DB kurulumunu tetikler)
 $r = req('GET', "$base/");
@@ -101,22 +104,31 @@ $r = req('POST', "$base/kayit.php", [
 check($r['status'] === 302, "Kayıt başarılı -> 302 yönlendirme");
 $jar = merge_jar($jar, $r['headers']);
 
+$denied = req('POST', "$base/api-save.php", [
+    'body' => '{}', 'headers' => ["Cookie: $jar", 'Content-Type: application/json'],
+]);
+check($denied['status'] === 403, 'CSRF olmadan ürün kaydı reddedilir');
+$denied = req('POST', "$base/kar-marji.php", [
+    'body' => http_build_query(['repricing'=>1, 'apply'=>1]), 'headers'=>["Cookie: $jar"],
+]);
+check($denied['status'] === 403, 'CSRF olmadan toplu fiyatlama reddedilir');
+
 // 3. Ürün kaydet (API)
 $r = req('GET', "$base/index.php", ['headers' => ["Cookie: $jar"]]);
 check($r['status'] === 200, "Giriş yapılmış ana sayfa 200");
 
 $r = req('POST', "$base/api-save.php", [
     'body' => json_encode(['marketplace' => 'trendyol', 'category' => 'Giyim', 'name' => 'Kadın Bot', 'cost' => 200, 'price' => 400, 'cargo' => 50, 'rate' => 21.36]),
-    'headers' => ["Cookie: $jar", 'Content-Type: application/json'],
+    'headers' => ["Cookie: $jar", 'Content-Type: application/json', "X-CSRF-Token: $csrf"],
 ]);
 check($r['status'] === 200, "api-save 200");
 $j = json_decode($r['body'], true);
 check(($j['ok'] ?? false) === true, "Ürün kaydedildi: " . ($j['error'] ?? 'ok'));
 
-// 4. Dashboard kârlılık
-$r = req('GET', "$base/dashboard.php", ['headers' => ["Cookie: $jar"]]);
-check($r['status'] === 200, "Dashboard 200");
-check(str_contains($r['body'], 'Kadın Bot'), "Dashboard'da ürün görünüyor");
+// 4. Ürün kârlılığı
+$r = req('GET', "$base/urunler.php", ['headers' => ["Cookie: $jar"]]);
+check($r['status'] === 200, "Ürünler 200");
+check(str_contains($r['body'], 'Kadın Bot'), "Ürün listesinde kayıt görünüyor");
 check(str_contains($r['body'], '₺53,80'), "Net kâr 53,80 TL hesaplandı (Giyim %21,36)");
 
 // 5. Ödeme bildir (önce IBAN ayarla admin olarak)
@@ -134,6 +146,12 @@ $adminJar = cookies($r['headers']);
 // Admin ilk giriş -> şifre değiştirmeye zorlanır
 $r = req('GET', "$base/admin.php", ['headers' => ["Cookie: $adminJar"]]);
 check(str_contains($r['body'], 'Varsayılan şifre'), "Admin varsayılan şifreyle kilitlenir");
+
+$locked = req('POST', "$base/admin.php", [
+    'body'=>http_build_query(['csrf'=>extract_csrf($r['body']), 'action'=>'settings', 'iban'=>'BAD']),
+    'headers'=>["Cookie: $adminJar"],
+]);
+check($locked['status'] === 403, 'Varsayılan şifreyle yönetim işlemi reddedilir');
 
 // Şifre değiştir
 $csrf = extract_csrf($r['body']);
@@ -183,17 +201,18 @@ check(!empty($plan['plan_expires']), "Pro bitiş tarihi atandı: {$plan['plan_ex
 $r2 = req('GET', "$base/kayit.php");
 $csrf2 = extract_csrf($r2['body']);
 $jar2 = cookies($r2['headers']);
-req('POST', "$base/kayit.php", [
+$registered = req('POST', "$base/kayit.php", [
     'body' => http_build_query(['csrf' => $csrf2, 'name' => 'Başkası', 'email' => 'other@example.com', 'password' => 'secret456']),
     'headers' => ["Cookie: $jar2"],
 ]);
-$jar2 = cookies($r2['headers']);
+$jar2 = merge_jar($jar2, $registered['headers']);
 
 // other@example.com, test@example.com'un ürününü silmeye çalışsın
 $victimPid = $pdo->query("SELECT id FROM products WHERE user_id = (SELECT id FROM users WHERE email='test@example.com') LIMIT 1")->fetchColumn();
-$r = req('GET', "$base/dashboard.php", ['headers' => ["Cookie: $jar2"]]);
-$csrf = extract_csrf($r['body']);
-req('POST', "$base/dashboard.php", [
+$r = req('GET', "$base/urunler.php", ['headers' => ["Cookie: $jar2"]]);
+$csrf = $csrf2;
+check($csrf !== '', 'İkinci kullanıcı CSRF tokenı mevcut');
+req('POST', "$base/urunler.php", [
     'body' => http_build_query(['csrf' => $csrf, 'action' => 'delete', 'pid' => $victimPid]),
     'headers' => ["Cookie: $jar2"],
 ]);
@@ -202,17 +221,18 @@ check((int)$still === 1, "IDOR engellendi (başkasının ürünü silinemedi)");
 
 // 9. Ücretsiz plan 5 ürün limiti (other@example.com)
 for ($i = 0; $i < 5; $i++) {
-    req('POST', "$base/api-save.php", [
+    $saved = req('POST', "$base/api-save.php", [
         'body' => json_encode(['marketplace' => 'trendyol', 'category' => 'Giyim', 'name' => "Ürün $i", 'cost' => 10, 'price' => 20, 'cargo' => 5, 'service_fee' => 1, 'stopaj' => 0, 'return_rate' => 1]),
-        'headers' => ["Cookie: $jar2", 'Content-Type: application/json'],
+        'headers' => ["Cookie: $jar2", 'Content-Type: application/json', "X-CSRF-Token: $csrf"],
     ]);
+    check((json_decode($saved['body'], true)['ok'] ?? false) === true, "Ücretsiz ürün $i kaydedilir");
 }
 $r = req('POST', "$base/api-save.php", [
     'body' => json_encode(['marketplace' => 'trendyol', 'category' => 'Giyim', 'name' => '6. ürün', 'cost' => 10, 'price' => 20, 'cargo' => 5, 'service_fee' => 1, 'stopaj' => 0, 'return_rate' => 1]),
-    'headers' => ["Cookie: $jar2", 'Content-Type: application/json'],
+    'headers' => ["Cookie: $jar2", 'Content-Type: application/json', "X-CSRF-Token: $csrf"],
 ]);
 $j = json_decode($r['body'], true);
-check(($j['ok'] ?? false) === false, "Ücretsiz plan 6. ürünü reddeder: " . ($j['error'] ?? ''));
+check(($j['ok'] ?? false) === false && ($j['redirect'] ?? '') === 'odeme.php', "Ücretsiz plan 6. ürünü reddeder: " . ($j['error'] ?? ''));
 
 // --- Temizlik test DIŞINDA yapılır: sunucuyu durdur, data/*.sqlite* sil, yeniden başlat ---
 echo "\n" . ($fail === 0 ? "TÜM TESTLER GEÇTİ" : "$fail TEST BAŞARISIZ") . "\n";

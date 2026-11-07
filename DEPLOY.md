@@ -76,3 +76,41 @@ php /home/KULLANICI_ADI/scripts/sync.php
 - **Demo hesabı**: ana sayfadaki "Demo Hesabını Gör" butonu.
 - **Partner programı**: Hesabım'daki yönlendirme linkiyle gelen her Pro abonelikte %15 hakediş.
 - **Chrome eklentisi**: `chrome-eklenti/` klasörünü `chrome://extensions` → "Paketlenmemiş öğe yükle" ile kur.
+
+## Ödeme güvenliği güncellemesi
+
+- Kartlı ödeme başlatılırken `checkout_sessions` tablosuna kullanıcı, sepet,
+  tam token ve beklenen TRY tutarı kaydedilir. Yeni tablo ilk istekte oluşur.
+- Callback, oturum çerezine ihtiyaç duymadan iyzico API sonucunu bu kayıtla
+  eşleştirir. Başarılı durum, fraud onayı, sepet, tutar, para birimi ve ödeme ID
+  kontrol edilir. Kullanıcı callback isteğindeki oturumdan seçilmez.
+- Kart ve havale aktivasyonları SQLite yazma işlemi içinde tamamlanır;
+  ödeme, abonelik ve partner hakedişi birlikte kaydedilir veya geri alınır.
+- Güncelleme öncesi başlatılmış ve `checkout_sessions` kaydı olmayan kart
+  ödemeleri otomatik onaylanmaz. Dağıtım sırasında açık ödeme akışlarını
+  tamamlayın; beklenmeyen tahsilatları iyzico panelinden kontrol edin.
+- Canlıya geçmeden önce iyzico sandbox hesabıyla ödeme başlatma ve dönüş
+  akışını ayrıca doğrulayın. Yerel testler sağlayıcıya bağlanmaz.
+
+## Testleri ayrı veritabanında çalıştırma
+
+PHP CLI için `pdo_sqlite`, `mbstring` ve HTTP/CSV testi için `curl` gerekir.
+Üretim veritabanında test çalıştırmayın. Her akış testi için yeni bir klasör kullanın:
+
+```bash
+TEST_DIR=$(mktemp -d)
+export KARFIYAT_DB="$TEST_DIR/app.sqlite"
+php -S 127.0.0.1:8090 -t public_html
+```
+
+Ayrı terminalde, aynı `KARFIYAT_DB` değerini ayarladıktan sonra:
+
+```bash
+php scripts/test-akislar.php
+php scripts/test-toplu-analiz.php
+php scripts/totp-test.php
+php scripts/test-billing.php
+```
+
+`test-billing.php` kendi geçici veritabanını oluşturur ve temizler. Diğer
+betiklerde sunucu ve test süreci aynı test veritabanına bağlanmalıdır.

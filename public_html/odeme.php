@@ -28,6 +28,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'repor
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'iyzico_pay') {
     if (!csrf_verify($_POST['csrf'] ?? null)) {
         flash_set('error', 'Oturum süresi doldu.');
+    } elseif (!is_finite($price) || $price <= 0) {
+        flash_set('error', 'Geçerli bir üyelik ücreti tanımlanmamış.');
     } elseif (!$iyzicoReady) {
         flash_set('error', 'Kartlı ödeme henüz yapılandırılmadı.');
     } else {
@@ -55,7 +57,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'iyzic
                 require_once __DIR__ . '/../includes/iyzico.php';
                 $scheme = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
                 $callbackUrl = $scheme . '://' . ($_SERVER['HTTP_HOST'] ?? 'localhost') . '/iyzico-callback.php';
-                $basketId = 'KF-' . $u['id'] . '-' . date('ymdHis');
+                $basketId = 'KF-' . $u['id'] . '-' . bin2hex(random_bytes(16));
                 $buyer = [
                     'id' => 'U' . $u['id'],
                     'name' => mb_substr($bName, 0, 30),
@@ -98,7 +100,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'iyzic
                 ];
                 $client = new IyzicoClient($iyzicoKey, $iyzicoSecret, $iyzicoSandbox);
                 $res = $client->initializeCheckoutForm($params);
-                if ($res['ok'] && ($res['paymentPageUrl'] ?? '') !== '') {
+                if ($res['ok'] && ($res['paymentPageUrl'] ?? '') !== '' && ($res['token'] ?? '') !== '') {
+                    db()->prepare('INSERT INTO checkout_sessions (token, user_id, basket_id, amount) VALUES (?, ?, ?, ?)')
+                        ->execute([$res['token'], $u['id'], $basketId, $params['price']]);
                     header('Location: ' . $res['paymentPageUrl']);
                     exit;
                 }

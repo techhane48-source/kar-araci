@@ -35,6 +35,11 @@ if ($u['must_change_password'] && !($_POST['action'] ?? '')) {
     exit;
 }
 
+if ($u['must_change_password'] && ($_POST['action'] ?? '') !== 'password') {
+    http_response_code(403);
+    exit('Önce varsayılan yönetici şifresini değiştirin.');
+}
+
 $notice = '';
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!csrf_verify($_POST['csrf'] ?? null)) {
@@ -62,30 +67,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $payment = $pay->fetch();
             if ($payment) {
                 if ($action === 'approve') {
-                    $amount = (float) $payment['amount'];
-                    // 1 aylık Pro tanımla (mevcut pro süresi varsa üzerine ekle)
-                    $target = db()->prepare("SELECT plan_expires, referred_by FROM users WHERE id = ?");
-                    $target->execute([$payment['user_id']]);
-                    $t = $target->fetch();
-                    $base = ($t['plan_expires'] && $t['plan_expires'] >= date('Y-m-d')) ? $t['plan_expires'] : date('Y-m-d');
-                    $expires = date('Y-m-d', strtotime($base . ' +1 month'));
-                    db()->prepare("UPDATE users SET plan = 'pro', plan_expires = ? WHERE id = ?")
-                        ->execute([$expires, $payment['user_id']]);
-                    db()->prepare("UPDATE payments SET status = 'approved', reviewed_at = datetime('now') WHERE id = ?")
-                        ->execute([$pid]);
-
-                    // Partner hakedişi: yönlendiren kullanıcıya %15 (KDV hariç yaklaşık)
-                    if (!empty($t['referred_by'])) {
-                        $commission = $amount * 0.15;
-                        $month = date('Y-m');
-                        db()->prepare("INSERT INTO partner_commissions (partner_id, referred_user_id, amount, month, status)
-                                       VALUES (?, ?, ?, ?, 'pending')")
-                            ->execute([(int)$t['referred_by'], (int)$payment['user_id'], $commission, $month]);
-                    }
-
+                    $expires = approve_bank_payment($pid);
                     $notice = "Ödeme onaylandı, Pro plan $expires tarihine kadar aktif.";
                 } else {
-                    db()->prepare("UPDATE payments SET status = 'rejected', reviewed_at = datetime('now') WHERE id = ?")
+                    db()->prepare("UPDATE payments SET status = 'rejected', reviewed_at = datetime('now') WHERE id = ? AND status = 'pending'")
                         ->execute([$pid]);
                     $notice = 'Ödeme reddedildi.';
                 }

@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/auth.php';
 require_once __DIR__ . '/crypto.php';
+require_once __DIR__ . '/billing.php';
 
 // ---- İş mantığı: komisyon oranları + kâr hesabı ----
 

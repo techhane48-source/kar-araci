@@ -79,6 +79,17 @@ function migrate(): void
         reviewed_at TEXT DEFAULT NULL
     )");
 
+    $pdo->exec("CREATE TABLE IF NOT EXISTS checkout_sessions (
+        token TEXT PRIMARY KEY,
+        user_id INTEGER NOT NULL REFERENCES users(id),
+        basket_id TEXT NOT NULL UNIQUE,
+        amount TEXT NOT NULL,
+        currency TEXT NOT NULL DEFAULT 'TRY',
+        payment_id TEXT UNIQUE,
+        status TEXT NOT NULL DEFAULT 'pending',
+        created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    )");
+
     $pdo->exec("CREATE TABLE IF NOT EXISTS posts (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         title TEXT NOT NULL,
