@@ -1,0 +1,14 @@
+{
+  "name": "karfiyat-crawler",
+  "version": "1.0.0",
+  "description": "Kâr&Fiyat Pazar Zekası — rakip fiyat takibi tarayıcı servisi (headless Chrome + puppeteer-core).",
+  "private": true,
+  "main": "crawl.js",
+  "scripts": {
+    "start": "node crawl.js",
+    "once": "node crawl.js --once"
+  },
+  "dependencies": {
+    "puppeteer-core": "^22.0.0"
+  }
+}

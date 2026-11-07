@@ -1,0 +1,5 @@
+crawler/node_modules/
+data/app.sqlite
+data/.enc-key
+*.zip
+ maybe

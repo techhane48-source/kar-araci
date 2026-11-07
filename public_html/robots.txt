@@ -1,0 +1,12 @@
+User-agent: *
+Allow: /
+Disallow: /dashboard.php
+Disallow: /odeme.php
+Disallow: /hesabim.php
+Disallow: /admin.php
+Disallow: /api-save.php
+Disallow: /cikis.php
+Disallow: /demo.php
+Disallow: /giris.php
+Disallow: /kayit.php
+Disallow: /magaza.php

@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Giriş — Kâr&amp;Fiyat</title>
+<meta name="description" content="Pazaryeri net kâr hesabı ve fiyat optimizasyonu">
+<link rel="icon" type="image/svg+xml" href="assets/favicon.svg">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/style.css?v=10">
+</head>
+<body>
+<header class="site-header">
+  <div class="header-inner">
+    <a href="index.php" class="logo"><span class="logo-mark">K</span>Kâr<span>&</span>Fiyat</a>
+    <nav class="main-nav">
+      <a href="index.php#hesapla">Hesapla</a>
+      <a href="index.php#ozellikler">Özellikler</a>
+      <a href="index.php#fiyatlandirma">Fiyatlandırma</a>
+      <a href="index.php#sss">SSS</a>
+      <a href="blog.php">Blog</a>
+    </nav>
+    <div class="nav-auth">
+              <a href="giris.php" class="btn-ghost">Giriş Yap</a>
+        <a href="kayit.php" class="btn-primary">Ücretsiz Başla</a>
+          </div>
+  </div>
+</header>
+<main class="site-main">
+<div class="wrap">
+  <div class="card auth-card">
+          <h2>Giriş yap</h2>
+      <div class="flash flash-error" style="margin:0 0 16px">E-posta veya şifre hatalı.</div>      <form method="post" autocomplete="off">
+        <input type="hidden" name="csrf" value="49ab5c1fa80b378a306da694cc59518ecca2344701870d04797b396220d90ff1">
+        <input type="hidden" name="next" value="">
+        <div class="row">
+          <label>E-posta</label>
+          <input type="email" name="email" value="umitasln047@gmail.com" required>
+        </div>
+        <div class="row">
+          <label>Şifre</label>
+          <input type="password" name="password" required>
+        </div>
+        <button type="submit" class="btn-primary" style="width:100%">Giriş Yap</button>
+      </form>
+      <div class="auth-alt">Hesabın yok mu? <a href="kayit.php">Ücretsiz kayıt ol</a></div>
+      </div>
+</div>
+</main>
+<footer class="site-footer">
+  <div class="footer-inner">
+    <div class="footer-brand"><span class="logo-mark">K</span>Kâr<span>&</span>Fiyat</div>
+    <div class="footer-note">Pazaryeri satıcısının net kâr hesabı ve fiyat optimizasyonu. Komisyon oranları 2025–2026 güncel kategori tarifelerinden derlenmiştir; kesin rakam için kendi satıcı panelinizi doğrulayın.</div>
+    <div class="footer-links">
+      <a href="index.php">Hesapla</a>
+              <a href="giris.php">Giriş</a>
+        <a href="kayit.php">Kayıt</a>
+            <a href="kvkk.php">KVKK</a>
+      <a href="kosullar.php">Kullanım Koşulları</a>
+    </div>
+    <div class="footer-note">Komisyon oranları 2025–2026 güncel kategori tarifelerinden derlenmiştir; kesin rakam için kendi satıcı panelinizi doğrulayın.</div>
+  </div>
+</footer>
+</body>
+</html>

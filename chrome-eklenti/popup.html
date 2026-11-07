@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8">
+<style>
+  :root{--bg:#fff;--border:#e2e8e4;--fg:#1a2e22;--muted:#5b6f63;--accent:#16a34a;--red:#dc2626;--card2:#f4f8f5}
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:var(--bg);color:var(--fg);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;width:340px;padding:16px;font-size:13px}
+  h1{font-size:16px;font-weight:800;margin-bottom:2px}
+  h1 span{color:var(--accent)}
+  .sub{color:var(--muted);font-size:11.5px;margin-bottom:14px}
+  .row{margin-bottom:10px}
+  label{display:block;font-size:11px;color:var(--muted);margin-bottom:3px;font-weight:600}
+  select,input{width:100%;background:#fff;border:1px solid var(--border);color:var(--fg);padding:7px 9px;border-radius:7px;font-size:13px;outline:none}
+  select:focus,input:focus{border-color:var(--accent)}
+  .two{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+  .result{background:linear-gradient(135deg,var(--accent),#15803d);color:#fff;border-radius:10px;padding:14px;margin-top:12px;text-align:center}
+  .result .val{font-size:26px;font-weight:800;margin-top:2px}
+  .result .val.neg{color:#fee2e2}
+  .result .lbl{font-size:11px;opacity:.9}
+  .detail{margin-top:12px;border-top:1px solid var(--border);padding-top:10px;color:var(--muted);font-size:11.5px;line-height:1.7}
+  .pos{color:var(--accent);font-weight:700}.neg{color:var(--red);font-weight:700}
+</style>
+</head>
+<body>
+<h1>Kâr<span>&</span>Fiyat</h1>
+<div class="sub">Net kârını fiyat kararı verdiğin ekranda gör.</div>
+
+<div class="row">
+  <label>Pazaryeri</label>
+  <select id="mp">
+    <option value="trendyol">Trendyol</option>
+    <option value="hepsiburada">Hepsiburada</option>
+    <option value="amazon">Amazon TR</option>
+    <option value="n11">n11</option>
+  </select>
+</div>
+<div class="row">
+  <label>Kategori</label>
+  <select id="cat"></select>
+</div>
+<div class="two">
+  <div class="row"><label>Alış (₺)</label><input type="number" id="cost" value="200"></div>
+  <div class="row"><label>Satış (₺)</label><input type="number" id="price" value="400"></div>
+</div>
+<div class="two">
+  <div class="row"><label>Kargo (₺)</label><input type="number" id="cargo" value="50"></div>
+  <div class="row"><label>İade %</label><input type="number" id="ret" value="3"></div>
+</div>
+
+<div class="result">
+  <div class="lbl" id="lbl">Net Kâr</div>
+  <div class="val" id="val">—</div>
+</div>
+<div class="detail" id="detail"></div>
+
+<script>
+const CAT = [
+  {name:"Giyim",t:21.36,h:18,a:15,n:20.34},
+  {name:"Ayakkabı & Çanta",t:21.36,h:19.49,a:15,n:18},
+  {name:"Aksesuar / Bijuteri",t:22.37,h:18,a:15,n:18},
+  {name:"Kol Saati",t:21.36,h:18,a:15,n:18},
+  {name:"Cep Telefonu",t:7,h:7,a:10,n:12},
+  {name:"Telefon Aksesuarı",t:16.5,h:25,a:11,n:15},
+  {name:"Bilgisayar",t:7.5,h:12,a:6,n:12},
+  {name:"Televizyon",t:8,h:6.8,a:10,n:10},
+  {name:"Elektronik (genel)",t:15.5,h:12,a:6,n:12},
+  {name:"Beyaz Eşya",t:11,h:10,a:7,n:12},
+  {name:"Küçük Ev Aletleri",t:15,h:15,a:11,n:12},
+  {name:"Mobilya",t:20.34,h:20,a:20,n:18},
+  {name:"Ev Tekstili",t:20.34,h:18,a:15,n:18},
+  {name:"Mutfak / Züccaciye",t:19.32,h:18,a:15,n:18},
+  {name:"Anne & Bebek",t:16.5,h:14,a:10,n:16},
+  {name:"Oyuncak",t:16.5,h:18,a:10,n:18},
+  {name:"Kozmetik / Parfüm",t:16.5,h:17,a:12.7,n:18},
+  {name:"Spor Ürünleri",t:21.36,h:12,a:10,n:16},
+  {name:"Petshop",t:15.25,h:15,a:12.7,n:15},
+  {name:"Kitap / Kırtasiye",t:15,h:12,a:10.2,n:15},
+  {name:"Altın",t:15,h:6,a:10,n:10},
+  {name:"Gıda",t:15,h:12,a:12.7,n:15},
+  {name:"Diğer",t:15,h:18,a:10,n:18},
+];
+const key={trendyol:"t",hepsiburada:"h",amazon:"a",n11:"n"};
+const sel=id=>document.getElementById(id);
+function buildCat(){
+  sel("cat").innerHTML = CAT.map((c,i)=>`<option value="${i}">${c.name}</option>`).join("");
+}
+function tl(v){
+  if(!isFinite(v)) return "—";
+  const s=v<0?"-":"";
+  return s+"₺"+Math.abs(v).toLocaleString("tr-TR",{maximumFractionDigits:2});
+}
+function calc(){
+  const mp=sel("mp").value, i=+sel("cat").value;
+  let rate=CAT[i][key[mp]];
+  if(mp==="n11") rate+=2;
+  const cost=+sel("cost").value||0, price=+sel("price").value||0;
+  const cargo=+sel("cargo").value||0, ret=+sel("ret").value||0;
+  const packing=5; // varsayılan
+  const returnCost=(ret/100)*(cargo*2+packing);
+  const commission=price*(rate/100);
+  const profit=price-cost-commission-cargo-packing-returnCost;
+  const margin=price>0?(profit/price)*100:0;
+  const v=sel("val");
+  v.textContent=tl(profit);
+  v.classList.toggle("neg",profit<0);
+  sel("detail").innerHTML =
+    `Komisyon (%${rate.toFixed(2)}): <span class="neg">-${tl(commission)}</span><br>`+
+    `Kargo: <span class="neg">-${tl(cargo)}</span> · İade: <span class="neg">-${tl(returnCost)}</span><br>`+
+    `Kâr marjı: <span class="${margin<0?"neg":"pos"}">%${margin.toFixed(1)}</span>`;
+}
+sel("cat").addEventListener("change",calc);
+["mp","cost","price","cargo","ret"].forEach(id=>sel(id).addEventListener("input",calc));
+buildCat();
+calc();
+</script>
+</body>
+</html>

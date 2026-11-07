@@ -1,0 +1,7 @@
+# Apache koruması (public_html kökü)
+Options -Indexes
+
+# includes/ ve data/ web kökünün dışında tutulur; yine de yanlış konumda kalırsa erişimi kapat
+<FilesMatch "\.(sqlite|db|sql)$">
+  Require all denied
+</FilesMatch>
