@@ -27,18 +27,37 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $ok = 'Şifre güncellendi.';
             }
         } elseif ($action === '2fa_setup') {
-            // 2FA sırrı üret (henüz aktifleştirilmez)
-            $secret = totp_base32_encode(random_bytes(20));
-            db()->prepare("UPDATE users SET totp_secret = ?, totp_enabled = 0 WHERE id = ?")->execute([$secret, $u['id']]);
-            $_SESSION['2fa_setup_secret'] = $secret;
-            $u = current_user();
+            if ($u['totp_enabled']) {
+                $error = 'Yeni kurulumdan önce mevcut doğrulama koduyla 2FA’yı kapatın.';
+            } elseif (!password_verify($_POST['current'] ?? '', $u['password_hash'])) {
+                $error = 'Mevcut şifre hatalı.';
+            } else {
+                // Onaylanmamış sır yalnızca bu oturumda, süreli olarak tutulur.
+                $_SESSION['2fa_setup'] = [
+                    'user_id' => (int)$u['id'],
+                    'secret' => totp_base32_encode(random_bytes(20)),
+                    'expires_at' => time() + 600,
+                ];
+            }
         } elseif ($action === '2fa_confirm') {
-            $secret = $_SESSION['2fa_setup_secret'] ?? $u['totp_secret'] ?? '';
+            $setup = $_SESSION['2fa_setup'] ?? null;
             $code = trim($_POST['code'] ?? '');
-            if ($secret && totp_verify($secret, $code)) {
-                db()->prepare("UPDATE users SET totp_enabled = 1 WHERE id = ?")->execute([$u['id']]);
-                unset($_SESSION['2fa_setup_secret']);
-                $ok = 'İki faktörlü doğrulama aktifleştirildi.';
+            if ($u['totp_enabled']) {
+                $error = '2FA zaten aktif. Yeni kurulumdan önce mevcut kodla kapatın.';
+                unset($_SESSION['2fa_setup']);
+            } elseif (!$setup || $setup['user_id'] !== (int)$u['id'] || $setup['expires_at'] < time()) {
+                $error = 'Kurulum süresi doldu. Şifrenizle yeniden başlatın.';
+                unset($_SESSION['2fa_setup']);
+            } elseif (totp_verify($setup['secret'], $code)) {
+                $stmt = db()->prepare("UPDATE users SET totp_enabled = 1, totp_secret = ?, auth_version = auth_version + 1 WHERE id = ? AND totp_enabled = 0");
+                $stmt->execute([$setup['secret'], $u['id']]);
+                unset($_SESSION['2fa_setup']);
+                if ($stmt->rowCount() === 1) {
+                    $_SESSION['auth_version'] = (int)$u['auth_version'] + 1;
+                    $ok = 'İki faktörlü doğrulama aktifleştirildi.';
+                } else {
+                    $error = 'Hesabın güvenlik ayarları değişti. Sayfayı yenileyin.';
+                }
             } else {
                 $error = 'Kod hatalı. Tekrar deneyin.';
             }
@@ -46,15 +65,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         } elseif ($action === '2fa_disable') {
             $code = trim($_POST['code'] ?? '');
             if ($u['totp_secret'] && totp_verify($u['totp_secret'], $code)) {
-                db()->prepare("UPDATE users SET totp_enabled = 0, totp_secret = NULL WHERE id = ?")->execute([$u['id']]);
-                $ok = 'İki faktörlü doğrulama kapatıldı.';
+                $stmt = db()->prepare("UPDATE users SET totp_enabled = 0, totp_secret = NULL, auth_version = auth_version + 1 WHERE id = ? AND totp_enabled = 1 AND totp_secret = ?");
+                $stmt->execute([$u['id'], $u['totp_secret']]);
+                unset($_SESSION['2fa_setup']);
+                if ($stmt->rowCount() === 1) {
+                    $_SESSION['auth_version'] = (int)$u['auth_version'] + 1;
+                    $ok = 'İki faktörlü doğrulama kapatıldı.';
+                } else {
+                    $error = 'Hesabın güvenlik ayarları değişti. Sayfayı yenileyin.';
+                }
             } else {
                 $error = 'Kod hatalı, kapatılamadı.';
             }
             $u = current_user();
         }
     }
-    $u = current_user();
+    $u = require_login();
 }
 
 // Partner kodu (yoksa üret)
@@ -77,6 +103,14 @@ $partnerStats = db()->prepare(
 );
 $partnerStats->execute([$u['id']]);
 $ps = $partnerStats->fetch();
+
+// Önceki sürümün onaylanmamış kurulumunu oturumdan taşıma.
+unset($_SESSION['2fa_setup_secret']);
+$setup = $_SESSION['2fa_setup'] ?? null;
+if ($setup && ($setup['user_id'] !== (int)$u['id'] || $setup['expires_at'] < time())) {
+    unset($_SESSION['2fa_setup']);
+    $setup = null;
+}
 
 $pageTitle = 'Hesabım — ' . APP_NAME;
 require __DIR__ . '/../includes/header.php';
@@ -119,8 +153,8 @@ require __DIR__ . '/../includes/header.php';
           <div class="row"><label>Kapatmak için mevcut kodu gir</label><input type="text" name="code" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" required></div>
           <button type="submit" class="btn-danger">2FA'yı Kapat</button>
         </form>
-      <?php elseif (($_SESSION['2fa_setup_secret'] ?? '') !== '' || ($u['totp_secret'] ?? '') !== ''): ?>
-        <?php $setupSecret = $_SESSION['2fa_setup_secret'] ?? $u['totp_secret']; ?>
+      <?php elseif ($setup): ?>
+        <?php $setupSecret = $setup['secret']; ?>
         <div class="row">
           <label>1) Kimlik doğrulayıcı uygulamasına bu anahtarı gir (veya QR tara):</label>
           <div class="pay-ref" style="word-break:break-all"><?= h($setupSecret) ?></div>
@@ -140,6 +174,7 @@ require __DIR__ . '/../includes/header.php';
         <form method="post">
           <input type="hidden" name="csrf" value="<?= h(csrf_token()) ?>">
           <input type="hidden" name="action" value="2fa_setup">
+          <div class="row"><label>Mevcut Şifre</label><input type="password" name="current" autocomplete="current-password" required></div>
           <button type="submit" class="btn-ghost">2FA Kur</button>
         </form>
       <?php endif; ?>

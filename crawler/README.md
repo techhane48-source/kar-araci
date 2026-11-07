@@ -12,7 +12,7 @@ cd crawler
 npm install        # puppeteer-core (küçük; Chrome'u sistemden kullanır, ayrı indirmez)
 ```
 
-Chrome veya Edge sistemde kurulu olmalı. Otomatik bulunur (Chrome → Edge sırasıyla);
+Node.js 22.13+ ve Chrome/Edge gerekir. Windows’ta Chrome → Edge sırasıyla otomatik bulunur; Linux’ta `CHROME_PATH=/usr/bin/chromium` gibi açık bir yol ayarlayın.
 farklı bir yol için `CHROME_PATH` ortam değişkeni ver.
 
 ## Çalıştırma
@@ -62,3 +62,25 @@ Böylece Node sürekli açık tutulmaz; Windows her turda tek seferlik çalışt
   paylaşır. Kısa yazma süreleri nedeniyle kilit çakışması nadirdir.
 - **DOM değişimi:** Trendyol sınıf adlarını değiştirirse `extract()` içindeki seçicileri
   güncellemen gerekir. `debug-trendyol.js` sayfadaki gerçek yapıyı döker.
+
+## Ağ güvenliği ve testler
+
+Ortak `../config/tracker-policy.json` dosyasını servisle birlikte dağıtın. Yalnızca
+listedeki HTTPS hostları ve genel IPv4 adresleri kullanılır. Her turda doğrulanan
+IP’ler sabitlenir; Chrome çıkışları bu adreslere 443 tüneli açan yerel proxy'den
+geçer. URL yönlendirmeleri, WebSocket ve alt kaynaklar da bu sınıra tabidir.
+Politika dışı eski takipler atlanır. Site yeni bir CDN kullanırsa izin listesi
+incelenerek güncellenmelidir; canlı fiyat çıkarımını ayrıca doğrulayın.
+
+Chrome sandbox'ı üretimde açık tutulur. Servisi sandbox destekleyen, ayrı ve
+sınırlı yetkili bir kullanıcıyla çalıştırın.
+
+```bash
+npm test
+# Chrome + openssl varsa yerel HTTPS fixture'ıyla tarayıcı testi de çalışır:
+CHROME_PATH=/usr/bin/chromium npm test
+```
+
+Chrome yolu verilmezse tarayıcı testi atlanır; politika/proxy testleri yine çalışır.
+Kısıtlı test ortamlarında yalnızca yerel fixture testi için
+`KARFIYAT_TEST_NO_SANDBOX=1` kullanılabilir. Bu seçenek üretim crawler'ını değiştirmez.

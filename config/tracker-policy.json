@@ -1,0 +1,18 @@
+{
+  "page_hosts": [
+    "trendyol.com", "www.trendyol.com",
+    "hepsiburada.com", "www.hepsiburada.com",
+    "amazon.com.tr", "www.amazon.com.tr",
+    "n11.com", "www.n11.com",
+    "ciceksepeti.com", "www.ciceksepeti.com",
+    "pttavm.com", "www.pttavm.com",
+    "aliexpress.com", "www.aliexpress.com", "tr.aliexpress.com"
+  ],
+  "asset_hosts": ["cdn.dsmcdn.com", "cdn.trendyol.com"],
+  "blocked_ipv4_cidrs": [
+    "0.0.0.0/8", "10.0.0.0/8", "100.64.0.0/10", "127.0.0.0/8",
+    "169.254.0.0/16", "172.16.0.0/12", "192.0.0.0/24", "192.0.2.0/24",
+    "192.168.0.0/16", "198.18.0.0/15", "198.51.100.0/24",
+    "203.0.113.0/24", "224.0.0.0/4", "240.0.0.0/4"
+  ]
+}

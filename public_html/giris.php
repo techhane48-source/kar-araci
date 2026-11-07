@@ -19,6 +19,7 @@ if ($pending && $_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? ''
             session_boot();
             session_regenerate_id(true);
             $_SESSION['uid'] = (int)$pending['id'];
+            $_SESSION['auth_version'] = (int)($pending['auth_version'] ?? 0);
             unset($_SESSION['2fa_pending']);
             if ($pending['is_admin'] && $pending['must_change_password']) {
                 e_redirect('admin.php');
@@ -47,6 +48,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') !== '2fa')
                 session_boot();
                 $_SESSION['2fa_pending'] = [
                     'id' => (int)$u['id'],
+                    'auth_version' => (int)$u['auth_version'],
                     'totp_secret' => $u['totp_secret'],
                     'is_admin' => (int)$u['is_admin'],
                     'must_change_password' => (int)$u['must_change_password'],
@@ -57,6 +59,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') !== '2fa')
                 session_boot();
                 session_regenerate_id(true);
                 $_SESSION['uid'] = (int)$u['id'];
+                $_SESSION['auth_version'] = (int)$u['auth_version'];
                 if ($u['is_admin'] && $u['must_change_password']) {
                     e_redirect('admin.php');
                 }

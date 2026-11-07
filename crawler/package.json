@@ -5,6 +5,7 @@
   "private": true,
   "main": "crawl.js",
   "scripts": {
+    "test": "node --test security.test.js browser-security.test.js",
     "start": "node crawl.js",
     "once": "node crawl.js --once"
   },

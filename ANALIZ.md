@@ -2,6 +2,15 @@
 
 Tarih: 7 Kasım 2026. İncelenen durum, bu çalışma alanındaki önceki ödeme/CSRF düzeltmelerini de içerir. Bu turda uygulama kodu değiştirilmedi.
 
+## Düzeltme durumu — ilk paket
+
+1, 2, 7 ve 34 numaralı bulgular için düzeltmeler uygulandı: otomatik yönetici
+kaldırıldı, eski bilinen şifreli hesaplar kapatılıyor; 2FA kurulum/yeniden kurulum
+korunuyor; takip URL/IP politikası ve crawler çıkış proxy'si eklendi; XLSX sayıları
+korunuyor. CLI yönetici sıfırlaması ve 2FA değişikliklerinde oturum iptali de eklendi.
+Aşağıdaki bulgular ilk inceleme anını belgeler; kalan maddeler açık durumdadır.
+Gerçek pazaryeri sayfalarının yeni ağ politikasıyla uyumluluğu dağıtımda doğrulanmalıdır.
+
 ## Kapsam ve sınırlar
 
 PHP sayfaları, ortak hesaplama/kimlik doğrulama/veritabanı katmanı, pazaryeri istemcileri, Node tarayıcı servisi, Chrome eklentisi, kurulum belgeleri ve mevcut testler incelendi. Bazı hesaplama hataları ayrı geçici veritabanıyla yerelde yeniden üretildi. Gerçek Trendyol ve iyzico hesaplarıyla uçtan uca doğrulama, üretim sunucusu incelemesi, tarayıcıda tüm ekranları kapsayan görsel test ve yük testi yapılmadı. Kodda bulunmayan işletim kontrolleri, sunucuda da bulunmadığı kesinmiş gibi değerlendirilmemelidir.

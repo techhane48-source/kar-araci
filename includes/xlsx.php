@@ -24,12 +24,12 @@ function xlsx_read(string $path): array {
         }
     }
 
-    function colIndex($ref) {
+    $colIndex = static function ($ref) {
         preg_match('/^([A-Z]+)\d+$/', $ref, $m);
         $col = 0;
         for ($i = 0; $i < strlen($m[1]); $i++) $col = $col * 26 + (ord($m[1][$i]) - 64);
         return $col;
-    }
+    };
 
     $sheetXml = simplexml_load_file($work . '/xl/worksheets/sheet1.xml');
     $rows = [];
@@ -37,7 +37,7 @@ function xlsx_read(string $path): array {
         $r = (int)$row['r'];
         $cells = []; $maxCol = 0;
         foreach ($row->c as $c) {
-            $col = colIndex((string)$c['r']);
+            $col = $colIndex((string)$c['r']);
             $t = (string)$c['t'];
             if ($t === 's') { $v = $shared[(int)$c->v] ?? ''; }
             elseif ($t === 'inlineStr') { $v = (string)$c->is->t; }
@@ -196,7 +196,7 @@ function xlsx_write_maliyet(array $products, string $path): void {
                 $sheet .= '<c r="' . $L . $r . '"><v>' . $v . '</v></c>';
             } else {
                 // float
-                $sheet .= '<c r="' . $L . $r . '"><v>' . rtrim(rtrim(sprintf('%.10g', $v), '0'), '.') . '</v></c>';
+                $sheet .= '<c r="' . $L . $r . '"><v>' . json_encode($v, JSON_THROW_ON_ERROR) . '</v></c>';
             }
         }
         $sheet .= '</row>';

@@ -13,9 +13,7 @@ define('DB_PATH', getenv('KARFIYAT_DB') ?: dirname(__DIR__) . DIRECTORY_SEPARATO
 define('PRO_PRICE', 149);          // aylık Pro ücreti (TL)
 define('FREE_PRODUCT_LIMIT', 5);   // ücretsiz planda kayıtlı ürün sınırı
 
-// Yönetici (ilk kurulumda oluşturulur; ilk girişte şifre değiştirmeye zorlanır)
-define('ADMIN_EMAIL', 'admin@karfiyat.local');
-define('ADMIN_DEFAULT_PASSWORD', '1234');
+// Yönetici yalnızca scripts/create-admin.php ile sunucu terminalinden oluşturulur.
 
 date_default_timezone_set('Europe/Istanbul');
 ini_set('display_errors', '0');

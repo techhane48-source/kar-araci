@@ -132,35 +132,19 @@ check(str_contains($r['body'], 'Kadın Bot'), "Ürün listesinde kayıt görün�
 check(str_contains($r['body'], '₺53,80'), "Net kâr 53,80 TL hesaplandı (Giyim %21,36)");
 
 // 5. Ödeme bildir (önce IBAN ayarla admin olarak)
-// Admin girişi için admin.php'ye gidip şifre değişimi gerekli
+// Test sunucusu başlamadan önce CLI ile test yöneticisi oluşturulmalıdır.
 $r = req('GET', "$base/giris.php");
 $csrf = extract_csrf($r['body']);
 $adminJar = cookies($r['headers']);
 $r = req('POST', "$base/giris.php", [
-    'body' => http_build_query(['csrf' => $csrf, 'email' => 'admin@karfiyat.local', 'password' => '1234', 'next' => '']),
+    'body' => http_build_query(['csrf' => $csrf, 'email' => 'admin@karfiyat.local', 'password' => 'Test-Admin-Only-2026!', 'next' => '']),
     'headers' => ["Cookie: $adminJar"],
 ]);
 check($r['status'] === 302, "Admin girişi 302");
 $adminJar = cookies($r['headers']);
 
-// Admin ilk giriş -> şifre değiştirmeye zorlanır
 $r = req('GET', "$base/admin.php", ['headers' => ["Cookie: $adminJar"]]);
-check(str_contains($r['body'], 'Varsayılan şifre'), "Admin varsayılan şifreyle kilitlenir");
-
-$locked = req('POST', "$base/admin.php", [
-    'body'=>http_build_query(['csrf'=>extract_csrf($r['body']), 'action'=>'settings', 'iban'=>'BAD']),
-    'headers'=>["Cookie: $adminJar"],
-]);
-check($locked['status'] === 403, 'Varsayılan şifreyle yönetim işlemi reddedilir');
-
-// Şifre değiştir
-$csrf = extract_csrf($r['body']);
-$r = req('POST', "$base/admin.php", [
-    'body' => http_build_query(['csrf' => $csrf, 'action' => 'password', 'current' => '1234', 'new' => 'adminpass99']),
-    'headers' => ["Cookie: $adminJar"],
-]);
-$r = req('GET', "$base/admin.php", ['headers' => ["Cookie: $adminJar"]]);
-check(str_contains($r['body'], 'Yönetim Paneli'), "Şifre değişince admin paneli açılır");
+check(str_contains($r['body'], 'Yönetim Paneli'), "CLI ile oluşturulan yönetici paneli açılır");
 
 // IBAN ayarla
 $csrf = extract_csrf($r['body']);

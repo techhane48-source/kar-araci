@@ -192,6 +192,7 @@ function migrate(): void
     $existing = $pdo->query("PRAGMA table_info(users)")->fetchAll(PDO::FETCH_ASSOC);
     $cols = array_column($existing, 'name');
     $add = [
+        'auth_version' => "ALTER TABLE users ADD COLUMN auth_version INTEGER NOT NULL DEFAULT 0",
         'totp_secret' => "ALTER TABLE users ADD COLUMN totp_secret TEXT DEFAULT NULL",
         'totp_enabled' => "ALTER TABLE users ADD COLUMN totp_enabled INTEGER NOT NULL DEFAULT 0",
         'is_demo' => "ALTER TABLE users ADD COLUMN is_demo INTEGER NOT NULL DEFAULT 0",
@@ -246,13 +247,17 @@ function migrate(): void
         $pdo->exec("ALTER TABLE integrations ADD COLUMN last_orders_sync TEXT DEFAULT NULL");
     }
 
-    // Yönetici hesabı (yoksa oluştur; ilk girişte şifre değiştirmeye zorla)
-    $stmt = $pdo->prepare("SELECT id FROM users WHERE email = ?");
-    $stmt->execute([ADMIN_EMAIL]);
-    if (!$stmt->fetch()) {
-        $pdo->prepare("INSERT INTO users (email, name, password_hash, plan, is_admin, must_change_password)
-                       VALUES (?, 'Yönetici', ?, 'pro', 1, 1)")
-            ->execute([ADMIN_EMAIL, password_hash(ADMIN_DEFAULT_PASSWORD, PASSWORD_DEFAULT)]);
+    // Eski sürümün bilinen kurulum şifresiyle kalan hesabını devre dışı bırak.
+    // Şifresi değiştirilmiş yöneticilere ve normal kullanıcılara dokunma.
+    if (!$pdo->query("SELECT 1 FROM settings WHERE key = 'bootstrap_cleanup_v1'")->fetchColumn()) {
+        $legacy = $pdo->prepare("SELECT id, password_hash FROM users WHERE email = ? AND is_admin = 1");
+        $legacy->execute(['admin@karfiyat.local']);
+        $bootstrap = $legacy->fetch();
+        if ($bootstrap && password_verify('1234', $bootstrap['password_hash'])) {
+            $pdo->prepare("UPDATE users SET password_hash = '!disabled-bootstrap', is_admin = 0, auth_version = auth_version + 1 WHERE id = ? AND password_hash = ?")
+                ->execute([$bootstrap['id'], $bootstrap['password_hash']]);
+        }
+        $pdo->exec("INSERT OR IGNORE INTO settings (key, value) VALUES ('bootstrap_cleanup_v1', '1')");
     }
 
     // Varsayılan ayarlar (yoksa)

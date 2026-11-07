@@ -20,6 +20,8 @@ const path = require('path');
 const fs = require('fs');
 const puppeteer = require('puppeteer-core');
 const { DatabaseSync } = require('node:sqlite');
+const { trackerHost, resolveHosts, guardPage } = require('./tracker-policy');
+const { createPinnedProxy } = require('./pinned-proxy');
 
 const ROOT = __dirname;
 const DB_PATH = process.env.KARFIYAT_DB || path.join(ROOT, '..', 'data', 'app.sqlite');
@@ -112,7 +114,13 @@ async function extract(page, trackerType) {
   }, trackerType);
 }
 
-async function crawlTracker(db, browser, tracker) {
+async function crawlTracker(db, browser, tracker, pins) {
+  try {
+    if (!pins.has(trackerHost(tracker.url))) throw new Error('Adresin genel DNS kaydı bulunamadı');
+  } catch (e) {
+    console.log(`  [skip] ${tracker.name}: ${e.message}`);
+    return;
+  }
   const page = await browser.newPage();
   await page.setUserAgent(
     'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36'
@@ -120,6 +128,8 @@ async function crawlTracker(db, browser, tracker) {
   await page.setViewport({ width: 1366, height: 900 });
 
   try {
+    await guardPage(page, pins);
+    page.on('popup', (popup) => { popup.close().catch(() => {}); });
     await page.goto(tracker.url, { waitUntil: 'domcontentloaded', timeout: 30000 });
     await sleep(2500); // JS render için kısa bekle (networkidle2 bot korumalı sayfalarda takılabilir)
 
@@ -166,25 +176,29 @@ async function crawlAll(db) {
     return;
   }
 
+  const pins = await resolveHosts();
+  if (!pins.size) throw new Error('Güvenli pazaryeri adresi çözümlenemedi');
+  const proxy = await createPinnedProxy(pins);
   let browser;
   try {
     browser = await puppeteer.launch({
       executablePath: chrome,
       headless: HEADLESS ? 'new' : false,
-      args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-gpu', '--disable-dev-shm-usage', '--lang=tr-TR'],
+      args: [`--proxy-server=${proxy.url}`, '--proxy-bypass-list=<-loopback>', '--disable-quic', '--force-webrtc-ip-handling-policy=disable_non_proxied_udp', '--disable-gpu', '--disable-dev-shm-usage', '--lang=tr-TR'],
     });
   } catch (e) {
     console.error('[crawler] tarayıcı başlatılamadı:', e.message);
-    return;
+    await proxy.close();
+    throw e;
   }
 
   try {
     for (const t of trackers) {
-      await crawlTracker(db, browser, t);
+      await crawlTracker(db, browser, t, pins);
       await sleep(2000); // rate-limit için tur arası
     }
   } finally {
-    await browser.close();
+    try { await browser.close(); } finally { await proxy.close(); }
   }
 }
 

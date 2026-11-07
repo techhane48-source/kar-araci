@@ -43,6 +43,10 @@ function current_user(): ?array
     $stmt = db()->prepare("SELECT * FROM users WHERE id = ?");
     $stmt->execute([$_SESSION['uid']]);
     $u = $stmt->fetch();
+    if ($u && (int)($_SESSION['auth_version'] ?? 0) !== (int)$u['auth_version']) {
+        unset($_SESSION['uid'], $_SESSION['auth_version'], $_SESSION['2fa_pending'], $_SESSION['2fa_setup']);
+        return null;
+    }
     return $u ?: null;
 }
 

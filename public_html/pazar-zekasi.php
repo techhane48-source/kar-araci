@@ -2,6 +2,8 @@
 declare(strict_types=1);
 require_once __DIR__ . '/../includes/functions.php';
 
+require_once __DIR__ . '/../includes/tracker-http.php';
+
 $u = require_login();
 $pro = is_pro($u);
 if (!$pro) {
@@ -21,9 +23,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'add')
         if ($name === '' || $url === '') {
             flash_set('error', 'Ad ve URL zorunludur.');
         } else {
-            db()->prepare("INSERT INTO trackers (user_id, type, name, url, note) VALUES (?,?,?,?,?)")
-                ->execute([$u['id'], $type, $name, $url, $note]);
-            flash_set('success', 'Takip eklendi: ' . $name);
+            try {
+                tracker_host($url);
+                db()->prepare("INSERT INTO trackers (user_id, type, name, url, note) VALUES (?,?,?,?,?)")
+                    ->execute([$u['id'], $type, $name, $url, $note]);
+                flash_set('success', 'Takip eklendi: ' . $name);
+            } catch (InvalidArgumentException $e) {
+                flash_set('error', $e->getMessage());
+            }
         }
     }
     e_redirect('pazar-zekasi.php');
@@ -66,26 +73,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'check
 // --- URL'den fiyat çekmeyi dene (best-effort; bot koruması olabilir) ---
 function fetch_tracker_price(string $url): array
 {
-    if (!preg_match('#^https?://#i', $url)) return ['ok' => false, 'error' => 'Geçersiz URL.'];
-    $ch = curl_init($url);
-    curl_setopt_array($ch, [
-        CURLOPT_RETURNTRANSFER => true,
-        CURLOPT_FOLLOWLOCATION => true,
-        CURLOPT_TIMEOUT => 15,
-        CURLOPT_CONNECTTIMEOUT => 8,
-        CURLOPT_SSL_VERIFYPEER => true,
-        CURLOPT_HTTPHEADER => [
-            'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36',
-            'Accept-Language: tr-TR,tr;q=0.9',
-        ],
-    ]);
-    $html = curl_exec($ch);
-    $http = curl_getinfo($ch, CURLINFO_RESPONSE_CODE);
-    $err = curl_error($ch);
-    curl_close($ch);
-
-    if ($html === false) return ['ok' => false, 'error' => 'Bağlantı hatası: ' . $err];
-    if ($http !== 200) return ['ok' => false, 'error' => "HTTP $http — sayfa erişilemedi (bot koruması olabilir)."];
+    $res = tracker_fetch_html($url);
+    if (!$res['ok']) return $res;
+    $html = $res['html'];
 
     // 1) JSON-LD Product/Offer fiyatı
     if (preg_match('/"price"\s*:\s*"?(\d+(?:[.,]\d+)?)"?/i', $html, $m)) {
@@ -153,7 +143,7 @@ require __DIR__ . '/../includes/header.php';
         <tr>
           <td><?= h($t['name']) ?></td>
           <td><?= $t['type'] === 'store' ? 'Mağaza' : 'Ürün' ?></td>
-          <td style="font-size:12px"><a href="<?= h($t['url']) ?>" target="_blank" rel="noopener"><?= h(mb_strimwidth($t['url'], 0, 48, '…')) ?></a></td>
+          <td style="font-size:12px"><a href="<?= h(tracker_link($t['url'])) ?>" target="_blank" rel="noopener"><?= h(mb_strimwidth($t['url'], 0, 48, '…')) ?></a></td>
           <td><?= $t['last_price'] !== null ? tl((float)$t['last_price']) : '<span class="hint">—</span>' ?></td>
           <td style="font-size:12px">
             <?php $h3 = $history[$t['id']] ?? []; ?>
