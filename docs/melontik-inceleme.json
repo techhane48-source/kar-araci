@@ -1,0 +1,1067 @@
+{
+  "reviewed_project_commit": "3176128",
+  "reviewed_on_turkey": "2026-11-08",
+  "reference_routes": [
+    {
+      "page": "Ana sayfa",
+      "reference": "https://melontik.com/",
+      "observed_url": "https://melontik.com/",
+      "http": 200,
+      "reference_access": "Ekran açıldı",
+      "ours": "index.php",
+      "comparison": "Farklı",
+      "finding": "Referans pazaryeri finans ürünü sunuyor; biz hesap makinesi odaklıyız. Renk, font, navigasyon, bölüm yerleşimi ve etkileşimler farklı.",
+      "page_js_errors": []
+    },
+    {
+      "page": "Fiyatlandırma",
+      "reference": "https://melontik.com/pricing",
+      "observed_url": "https://melontik.com/pricing",
+      "http": 200,
+      "reference_access": "Ekran açıldı",
+      "ours": "index.php#pricing / odeme.php",
+      "comparison": "Farklı",
+      "finding": "Referansta hacme göre Starter/Business/Enterprise ve aylık/yıllık plan var. Bizde ücretsiz + sabit 149 TL Pro modeli var.",
+      "page_js_errors": []
+    },
+    {
+      "page": "Referanslar",
+      "reference": "https://melontik.com/references",
+      "observed_url": "https://melontik.com/references",
+      "http": 200,
+      "reference_access": "Ekran açıldı",
+      "ours": "—",
+      "comparison": "Eksik",
+      "finding": "Bağımsız müşteri referansları sayfası yok.",
+      "page_js_errors": []
+    },
+    {
+      "page": "SSS",
+      "reference": "https://melontik.com/faq",
+      "observed_url": "https://melontik.com/faq",
+      "http": 200,
+      "reference_access": "Ekran açıldı",
+      "ours": "index.php içi",
+      "comparison": "Kısmi",
+      "finding": "Ana sayfada sorular var; referanstaki bağımsız SSS düzeniyle aynı değil.",
+      "page_js_errors": []
+    },
+    {
+      "page": "İletişim",
+      "reference": "https://melontik.com/contact-us",
+      "observed_url": "https://melontik.com/contact-us",
+      "http": 200,
+      "reference_access": "Ekran açıldı",
+      "ours": "—",
+      "comparison": "Eksik",
+      "finding": "Referanstaki ad/soyad/telefon/konu/mesaj formu ve destek sunumu yok.",
+      "page_js_errors": []
+    },
+    {
+      "page": "Gizlilik",
+      "reference": "https://melontik.com/privacy-policy",
+      "observed_url": "https://melontik.com/privacy-policy",
+      "http": 200,
+      "reference_access": "Ekran açıldı",
+      "ours": "kvkk.php",
+      "comparison": "Farklı",
+      "finding": "Sayfa var; metin, şirket bilgileri ve veri süreçleri kendi ürünümüze göre ayrıca tamamlanmalı. Metin benzerliği hukuki yeterlilik değildir.",
+      "page_js_errors": []
+    },
+    {
+      "page": "Kullanım koşulları",
+      "reference": "https://melontik.com/terms-of-use",
+      "observed_url": "https://melontik.com/terms-of-use",
+      "http": 200,
+      "reference_access": "Ekran açıldı",
+      "ours": "kosullar.php",
+      "comparison": "Farklı",
+      "finding": "Sayfa var; kapsam ve abonelik koşulları referanstan farklı.",
+      "page_js_errors": []
+    },
+    {
+      "page": "QNB Dijital Köprü",
+      "reference": "https://melontik.com/dijital-kopru",
+      "observed_url": "https://melontik.com/dijital-kopru",
+      "http": 200,
+      "reference_access": "Ekran açıldı",
+      "ours": "—",
+      "comparison": "Eksik",
+      "finding": "Banka iş ortaklığı akışı yok; aynı ortaklığa sahip olduğumuz varsayılamaz.",
+      "page_js_errors": []
+    },
+    {
+      "page": "Blog",
+      "reference": "https://melontik.com/blog",
+      "observed_url": "https://melontik.com/blog",
+      "http": 200,
+      "reference_access": "Ekran açıldı",
+      "ours": "blog.php / blog-detay.php",
+      "comparison": "Kısmi",
+      "finding": "Bizim test kurulumunda blog listesi başlangıçta boştu. İzole test yazısı eklendiğinde liste ve geçerli detay açıldı; referanstaki içerik/kategori düzeni yok. Referansta listelenmiş 11 yazı var.",
+      "page_js_errors": []
+    },
+    {
+      "page": "Yardım merkezi",
+      "reference": "https://melontik.com/yardim",
+      "observed_url": "https://melontik.com/yardim",
+      "http": 200,
+      "reference_access": "Ekran açıldı",
+      "ours": "—",
+      "comparison": "Eksik",
+      "finding": "Referanstaki 19 ekran rehberi, anlatımlı ekran görüntüleri ve kullanım turları yok.",
+      "page_js_errors": []
+    },
+    {
+      "page": "Mobil uygulama",
+      "reference": "https://melontik.com/mobil-uygulama",
+      "observed_url": "https://melontik.com/mobil-uygulama",
+      "http": 200,
+      "reference_access": "Ekran açıldı",
+      "ours": "—",
+      "comparison": "Eksik",
+      "finding": "Referans iOS/Android uygulaması ve bildirimlerini tanıtıyor. Bizde web arayüzü var; mobil uygulama yok.",
+      "page_js_errors": []
+    },
+    {
+      "page": "Önerilen fiyatlar",
+      "reference": "https://melontik.com/onerilen-fiyatlar",
+      "observed_url": "https://melontik.com/onerilen-fiyatlar",
+      "http": 200,
+      "reference_access": "Ekran açıldı",
+      "ours": "kar-marji.php",
+      "comparison": "Kısmi",
+      "finding": "Hedef kâra göre fiyat önizlemesi var. Pazar ortalaması, kategori hedefleri ve kampanya öneri sistemi yok.",
+      "page_js_errors": []
+    },
+    {
+      "page": "Partner programı",
+      "reference": "https://melontik.com/partner-programi",
+      "observed_url": "https://melontik.com/partner-programi",
+      "http": 200,
+      "reference_access": "Ekran açıldı",
+      "ours": "hesabim.php yönlendirme alanı",
+      "comparison": "Kısmi",
+      "finding": "Basit yönlendirme yapısı var; referansın sürekli yüzde 15 hakediş/partner paneliyle eşdeğer değil.",
+      "page_js_errors": []
+    },
+    {
+      "page": "Chrome eklentisi",
+      "reference": "https://melontik.com/chrome-eklentisi",
+      "observed_url": "https://melontik.com/chrome-eklentisi",
+      "http": 200,
+      "reference_access": "Ekran açıldı",
+      "ours": "—",
+      "comparison": "Eksik",
+      "finding": "Trendyol paneli içinde çalışan bir tarayıcı eklentisi yok.",
+      "page_js_errors": []
+    },
+    {
+      "page": "Pazar Zekası tanıtımı",
+      "reference": "https://melontik.com/pazar-zekasi",
+      "observed_url": "https://melontik.com/pazar-zekasi",
+      "http": 200,
+      "reference_access": "Ekran açıldı",
+      "ours": "pazar-zekasi.php",
+      "comparison": "Kısmi",
+      "finding": "Bizde doğrudan basit takip ekranı var. Referanstaki ayrı ürün tanıtımı ve modül seti yok.",
+      "page_js_errors": []
+    },
+    {
+      "page": "Giriş / kayıt",
+      "reference": "https://melontik.com/login",
+      "observed_url": "https://melontik.com/login",
+      "http": 200,
+      "reference_access": "Ekran açıldı",
+      "ours": "giris.php / kayit.php",
+      "comparison": "Farklı",
+      "finding": "Referans e-posta PIN koduyla giriş sunuyor. Biz e-posta/şifre kullanıyoruz; ayrıca TOTP var. PIN/e-posta teslimatı eşdeğerliği yok.",
+      "page_js_errors": []
+    },
+    {
+      "page": "Dashboard",
+      "reference": "https://melontik.com/dashboard",
+      "observed_url": "https://melontik.com/dashboard",
+      "http": 200,
+      "reference_access": "Ekran açıldı",
+      "ours": "dashboard.php",
+      "comparison": "Kısmi",
+      "finding": "Referansta brüt/net kâr ayrımı, reklam/ceza/erken ödeme/diğer fatura kırılımı ve ülke filtresi var. Bizde ürün giderlerine dayalı tahmini özet var; tam finans mutabakatı yok.",
+      "page_js_errors": []
+    },
+    {
+      "page": "Basit Dashboard",
+      "reference": "https://melontik.com/old-dashboard",
+      "observed_url": "https://melontik.com/old-dashboard",
+      "http": 200,
+      "reference_access": "Ekran açıldı",
+      "ours": "dashboard.php",
+      "comparison": "Kısmi",
+      "finding": "Referanstaki ayrı /old-dashboard görünümünün bağımsız karşılığı yok.",
+      "page_js_errors": []
+    },
+    {
+      "page": "Canlı Performans",
+      "reference": "https://melontik.com/live-performance",
+      "observed_url": "https://melontik.com/live-performance",
+      "http": 200,
+      "reference_access": "Ekran açıldı",
+      "ours": "canli-performans.php",
+      "comparison": "Kısmi",
+      "finding": "Saatlik grafik, günlük özet ve maliyet girişi bulunuyor. Sipariş detay kırılımı, gelişmiş filtreler ve dosya üretim deneyimi aynı değil.",
+      "page_js_errors": []
+    },
+    {
+      "page": "Ürün Komisyon Tarifesi",
+      "reference": "https://melontik.com/promotion-profitability-analysis/product-commission-tariff-profitability-analysis",
+      "observed_url": "https://melontik.com/promotion-profitability-analysis/product-commission-tariff-profitability-analysis",
+      "http": 200,
+      "reference_access": "Ekran açıldı",
+      "ours": "promosyon-analiz.php?mod=komisyon",
+      "comparison": "Kısmi",
+      "finding": "Referans varyantlı, filtreli ve fiyat kademeli tablo sunuyor. Biz CSV yükleme üzerinden ortak analiz akışı kullanıyoruz; gerçek platform dosyasıyla tam gidiş-dönüş henüz doğrulanmadı.",
+      "page_js_errors": []
+    },
+    {
+      "page": "Plus Komisyon Tarifesi",
+      "reference": "https://melontik.com/promotion-profitability-analysis/product-plus-commission-tariff-profitability-analysis",
+      "observed_url": "https://melontik.com/promotion-profitability-analysis/product-plus-commission-tariff-profitability-analysis",
+      "http": 200,
+      "reference_access": "Ekran açıldı",
+      "ours": "promosyon-analiz.php?mod=plus",
+      "comparison": "Kısmi",
+      "finding": "Modül adı ve kolon seçimi var; Plus fiyat/komisyon kurallarının ayrı kapsamı ve arayüzü referansla eşdeğer değil.",
+      "page_js_errors": []
+    },
+    {
+      "page": "Avantajlı Ürün Etiketi",
+      "reference": "https://melontik.com/promotion-profitability-analysis/star-product-labels-profitability-analysis",
+      "observed_url": "https://melontik.com/promotion-profitability-analysis/star-product-labels-profitability-analysis",
+      "http": 200,
+      "reference_access": "Ekran açıldı",
+      "ours": "promosyon-analiz.php?mod=etiket",
+      "comparison": "Kısmi",
+      "finding": "Basit CSV kademe hesabı var; referanstaki öneri, gelişmiş toplu seçim ve varyant deneyimi yok.",
+      "page_js_errors": []
+    },
+    {
+      "page": "Flaş Ürünler",
+      "reference": "https://melontik.com/promotion-profitability-analysis/flash-offer",
+      "observed_url": "https://melontik.com/promotion-profitability-analysis/flash-offer",
+      "http": 200,
+      "reference_access": "Ekran açıldı",
+      "ours": "promosyon-analiz.php?mod=flash",
+      "comparison": "Kısmi",
+      "finding": "Aynı ortak CSV motoru kullanılıyor; referanstaki dönem/saat teklif akışı ve ürün tablosuyla aynı değil.",
+      "page_js_errors": []
+    },
+    {
+      "page": "İndirimler",
+      "reference": "https://melontik.com/promotion-profitability-analysis/discounts",
+      "observed_url": "https://melontik.com/promotion-profitability-analysis/discounts",
+      "http": 200,
+      "reference_access": "Ekran açıldı",
+      "ours": "promosyon-analiz.php?mod=indirim",
+      "comparison": "Kısmi",
+      "finding": "Referans manuel teklif hesabı ve seçimli ürün tablosu sunuyor. Bizde ortak CSV hesabı var; kampanya koşullarının tümü modellenmemiş.",
+      "page_js_errors": []
+    },
+    {
+      "page": "Kampanyalar",
+      "reference": "https://melontik.com/promotion-profitability-analysis/campaign-profitability-analysis",
+      "observed_url": "https://melontik.com/promotion-profitability-analysis/campaign-profitability-analysis",
+      "http": 200,
+      "reference_access": "Ekran açıldı",
+      "ours": "promosyon-analiz.php?mod=kampanya",
+      "comparison": "Kısmi",
+      "finding": "Karşılama oranı, min sepet ve kampanya türlerinin ayrı hesaplama davranışları tamamlanmış değil.",
+      "page_js_errors": []
+    },
+    {
+      "page": "Kendi Kampanyanı Oluştur",
+      "reference": "https://melontik.com/campaign/build-your-campaign",
+      "observed_url": "https://melontik.com/campaign/build-your-campaign",
+      "http": 200,
+      "reference_access": "Ekran açıldı",
+      "ours": "—",
+      "comparison": "Eksik",
+      "finding": "Referansta ayrı kampanya ekranı var; aynı işlev bizde yok.",
+      "page_js_errors": []
+    },
+    {
+      "page": "Avantajlı Teklifler",
+      "reference": "https://melontik.com/campaign/offers",
+      "observed_url": "https://melontik.com/campaign/offers",
+      "http": 200,
+      "reference_access": "Ekran açıldı",
+      "ours": "—",
+      "comparison": "Eksik",
+      "finding": "Referansta ayrı teklif kademeleri ekranı var; birebir karşılık yok.",
+      "page_js_errors": []
+    },
+    {
+      "page": "Sepet Kampanyaları",
+      "reference": "https://melontik.com/campaign/basket-campaigns",
+      "observed_url": "https://melontik.com/campaign/basket-campaigns",
+      "http": 200,
+      "reference_access": "Ekran açıldı",
+      "ours": "—",
+      "comparison": "Eksik",
+      "finding": "Hepsiburada sepet kampanyası, hedefe uygunluk ve manuel teklif hesabı karşılığı yok.",
+      "page_js_errors": []
+    },
+    {
+      "page": "Sipariş Kârlılık Analizi",
+      "reference": "https://melontik.com/reports/order-profitability-analysis",
+      "observed_url": "https://melontik.com/reports/order-profitability-analysis",
+      "http": 200,
+      "reference_access": "Ekran açıldı",
+      "ours": "raporlar.php?r=order",
+      "comparison": "Kısmi",
+      "finding": "Bizde paket/satır hesabı ve CSV var. Referanstaki sipariş detay finans kırılımı, özel tarih aralığı ve üretilmiş rapor akışı eksik.",
+      "page_js_errors": []
+    },
+    {
+      "page": "Ürün Kârlılık Analizi",
+      "reference": "https://melontik.com/reports/product-profitability-analysis",
+      "observed_url": "https://melontik.com/reports/product-profitability-analysis",
+      "http": 200,
+      "reference_access": "Ekran açıldı",
+      "ours": "raporlar.php?r=product",
+      "comparison": "Kısmi",
+      "finding": "Ürün toplamları var; sipariş anı maliyetleri, gelişmiş kolonlar ve aynı rapor dosyası akışı yok.",
+      "page_js_errors": []
+    },
+    {
+      "page": "Kategori Kârlılık Analizi",
+      "reference": "https://melontik.com/reports/category-profitability-analysis",
+      "observed_url": "https://melontik.com/reports/category-profitability-analysis",
+      "http": 200,
+      "reference_access": "Ekran açıldı",
+      "ours": "raporlar.php?r=category",
+      "comparison": "Kısmi",
+      "finding": "Kategori bazlı toplam var. Gerçek finans giderleri ve tarihsel maliyetlerden aynı sonuç üretildiği doğrulanmış değil.",
+      "page_js_errors": []
+    },
+    {
+      "page": "İade Zarar Analizi",
+      "reference": "https://melontik.com/reports/return-loss-analysis",
+      "observed_url": "https://melontik.com/reports/return-loss-analysis",
+      "http": 200,
+      "reference_access": "Ekran açıldı",
+      "ours": "raporlar.php?r=return",
+      "comparison": "Kısmi",
+      "finding": "Biz iade finans kayıtlarını gösteriyoruz. Gidiş/dönüş kargosu ve ürün durumuna göre gerçek iade zararı hesaplanmıyor.",
+      "page_js_errors": []
+    },
+    {
+      "page": "Reklam Kârlılık Analizi",
+      "reference": "https://melontik.com/reports/ads-profitability-analysis",
+      "observed_url": "https://melontik.com/reports/ads-profitability-analysis",
+      "http": 200,
+      "reference_access": "Ekran açıldı",
+      "ours": "raporlar.php?r=ads",
+      "comparison": "Kısmi",
+      "finding": "Bizde kayıtlı reklam giderleri görünümü var; reklam/influencer veri toplama ve siparişe atıf kapsamı tamamlanmış değil.",
+      "page_js_errors": []
+    },
+    {
+      "page": "Kampanya Kârlılık Analizi",
+      "reference": "https://melontik.com/reports/offer-profitability-analysis",
+      "observed_url": "https://melontik.com/reports/offer-profitability-analysis",
+      "http": 200,
+      "reference_access": "Ekran açıldı",
+      "ours": "raporlar.php?r=campaign",
+      "comparison": "Kısmi",
+      "finding": "Kupon/indirim netleri var. Referanstaki kampanya/tür bazlı performans ayrıntılarıyla aynı değil.",
+      "page_js_errors": []
+    },
+    {
+      "page": "Kâr Marjı Listesi",
+      "reference": "https://melontik.com/profit-margin-list",
+      "observed_url": "https://melontik.com/profit-margin-list",
+      "http": 200,
+      "reference_access": "Ekran açıldı",
+      "ours": "kar-marji.php",
+      "comparison": "Hatalı/Kısmi",
+      "finding": "Liste ve hedefe göre fiyat önizlemesi çalışıyor. Önizleme CSV indirmesi HTML döndürüyor. Pazar ortalaması ve önerilen fiyat kapsamı eksik.",
+      "page_js_errors": []
+    },
+    {
+      "page": "Buybox",
+      "reference": "https://melontik.com/buybox",
+      "observed_url": "https://melontik.com/buybox",
+      "http": 200,
+      "reference_access": "Ekran açıldı",
+      "ours": "raporlar.php?r=buybox",
+      "comparison": "Eksik",
+      "finding": "Bizim görünüm yalnız kendi ürünlerinin kategori içi fiyat karşılaştırması. Rakip satıcı, gerçek Buybox sırası/sahipliği ve kazanma oranı yok.",
+      "page_js_errors": []
+    },
+    {
+      "page": "Ürün Fiyatlandırma",
+      "reference": "https://melontik.com/product-pricing",
+      "observed_url": "https://melontik.com/product-pricing",
+      "http": 200,
+      "reference_access": "Ekran açıldı",
+      "ours": "index.php hesap makinesi",
+      "comparison": "Kısmi",
+      "finding": "Temel net kâr/hedef fiyat hesabı var. Teslimat tipi, mikro ihracat ve ayrı KDV bileşenlerinin tamamı modellenmiyor.",
+      "page_js_errors": []
+    },
+    {
+      "page": "Ürün Ayarları",
+      "reference": "https://melontik.com/product-settings",
+      "observed_url": "https://melontik.com/product-settings",
+      "http": 200,
+      "reference_access": "Ekran açıldı",
+      "ours": "urunler.php",
+      "comparison": "Kısmi",
+      "finding": "Maliyet/ürün içe aktarma var. Model-renk-beden yönetimi, pazaryerleri arası ürün eşleştirme ve sipariş anı maliyet saklama eksik.",
+      "page_js_errors": []
+    },
+    {
+      "page": "Uyarı Sayfası",
+      "reference": "https://melontik.com/warning-page",
+      "observed_url": "https://melontik.com/warning-page",
+      "http": 200,
+      "reference_access": "Ekran açıldı",
+      "ours": "uyarilar.php",
+      "comparison": "Kısmi",
+      "finding": "Maliyetsiz/zarar/stok/desi uyarıları var; kurallar, bildirim kanalları ve finans denetimleri aynı değil.",
+      "page_js_errors": []
+    },
+    {
+      "page": "Hakediş & Desi Kontrolü",
+      "reference": "https://melontik.com/entitlement",
+      "observed_url": "https://melontik.com/entitlement",
+      "http": 200,
+      "reference_access": "Ekran açıldı",
+      "ours": "hakedis-desi.php",
+      "comparison": "Hatalı/Kısmi",
+      "finding": "Biz manuel tutarı son 30 gün satış toplamıyla karşılaştırıyoruz. Sipariş bazlı fazla kargo, eksik iade komisyonu ve hakediş mutabakatı yok; aynı adlı işlevin kapsamı farklı.",
+      "page_js_errors": []
+    },
+    {
+      "page": "Pazar Zekası Dashboard",
+      "reference": "https://melontik.com/market-intelligence/dashboard",
+      "observed_url": "https://melontik.com/dashboard",
+      "http": 200,
+      "reference_access": "Demo Dashboard yönlendirmesi; iç işlev test edilmedi",
+      "ours": "pazar-zekasi.php",
+      "comparison": "Eksik",
+      "finding": "Basit takip listesi dışında bağımsız pazar istihbaratı özet paneli yok.",
+      "page_js_errors": []
+    },
+    {
+      "page": "Mağaza Takibi",
+      "reference": "https://melontik.com/market-intelligence/store-tracking",
+      "observed_url": "https://melontik.com/dashboard",
+      "http": 200,
+      "reference_access": "Demo Dashboard yönlendirmesi; iç işlev test edilmedi",
+      "ours": "pazar-zekasi.php type=store",
+      "comparison": "Kısmi",
+      "finding": "URL bazlı takip ve tarayıcı servisi var; referanstaki tarihsel mağaza analitiğiyle eşdeğerliği doğrulanmadı.",
+      "page_js_errors": []
+    },
+    {
+      "page": "Ürün Takibi",
+      "reference": "https://melontik.com/market-intelligence/product-tracking",
+      "observed_url": "https://melontik.com/dashboard",
+      "http": 200,
+      "reference_access": "Demo Dashboard yönlendirmesi; iç işlev test edilmedi",
+      "ours": "pazar-zekasi.php type=product",
+      "comparison": "Kısmi",
+      "finding": "URL/fiyat takibi var; favori, yorum, puan, satıcı/Buybox ve kampanya metriklerinin tamamı yok.",
+      "page_js_errors": []
+    },
+    {
+      "page": "Pazar Zekası Bildirimleri",
+      "reference": "https://melontik.com/market-intelligence/alerts",
+      "observed_url": "https://melontik.com/dashboard",
+      "http": 200,
+      "reference_access": "Demo Dashboard yönlendirmesi; iç işlev test edilmedi",
+      "ours": "—",
+      "comparison": "Eksik",
+      "finding": "Pazar değişikliği bildirim merkezi ve kuralları için ayrı ekran yok.",
+      "page_js_errors": []
+    },
+    {
+      "page": "Reklam Radarı",
+      "reference": "https://melontik.com/market-intelligence/ad-intelligence",
+      "observed_url": "https://melontik.com/dashboard",
+      "http": 200,
+      "reference_access": "Demo Dashboard yönlendirmesi; iç işlev test edilmedi",
+      "ours": "—",
+      "comparison": "Eksik",
+      "finding": "Arama kelimesi/rakip reklam ve TBM analizi için modül yok.",
+      "page_js_errors": []
+    },
+    {
+      "page": "Influencer Radarı",
+      "reference": "https://melontik.com/market-intelligence/influencer-radar",
+      "observed_url": "https://melontik.com/dashboard",
+      "http": 200,
+      "reference_access": "Demo Dashboard yönlendirmesi; iç işlev test edilmedi",
+      "ours": "—",
+      "comparison": "Eksik",
+      "finding": "Influencer ürün/kampanya takip modülü yok.",
+      "page_js_errors": []
+    },
+    {
+      "page": "Partner paneli",
+      "reference": "https://melontik.com/partner",
+      "observed_url": "https://melontik.com/dashboard",
+      "http": 200,
+      "reference_access": "Demo Dashboard yönlendirmesi; iç işlev test edilmedi",
+      "ours": "—",
+      "comparison": "Eksik",
+      "finding": "Ayrı partner hakediş paneli yok; referanstaki ekranın demo erişim sınırı ayrıca kaydedilir.",
+      "page_js_errors": []
+    },
+    {
+      "page": "Ayarlar",
+      "reference": "https://melontik.com/settings",
+      "observed_url": "https://melontik.com/settings",
+      "http": 200,
+      "reference_access": "Ekran açıldı",
+      "ours": "hesabim.php / magaza.php / odeme.php",
+      "comparison": "Kısmi",
+      "finding": "Bizde hesap, TOTP, bağlantı ve ödeme ekranları ayrı. Referanstaki rapor mailleri, pazaryeri ayarları ve gelişmiş tercihler aynı kapsamda değil.",
+      "page_js_errors": []
+    }
+  ],
+  "additional_routes": [
+    {
+      "path": "/blog/pazarlama",
+      "status": 200,
+      "url": "https://melontik.com/blog/pazarlama"
+    },
+    {
+      "path": "/blog/rehberler",
+      "status": 200,
+      "url": "https://melontik.com/blog/rehberler"
+    },
+    {
+      "path": "/login?tab=2&page=kayit-ol",
+      "status": 200,
+      "url": "https://melontik.com/login?tab=2&page=kayit-ol"
+    }
+  ],
+  "reference_articles": [
+    {
+      "url": "https://melontik.com/blog/pazarlama/2026-trendyol-komisyon-oranlari-ne-kadar/699313593e5b6b309f47ead5",
+      "read_ok": true
+    },
+    {
+      "url": "https://melontik.com/blog/pazarlama/hepsiburada-saticlar-icin-sats-artrma-onerileri-2026/6996d731302d765edc01aa7d",
+      "read_ok": true
+    },
+    {
+      "url": "https://melontik.com/blog/pazarlama/kasim-kampanyalar-e-ticaretin-en-kritik-donemi/6912e9701031a64acd43e91e",
+      "read_ok": true
+    },
+    {
+      "url": "https://melontik.com/blog/pazarlama/trendyol-satislarn-artrmak-icin-8-etkili-yontem/6996d5d0302d765edc01a926",
+      "read_ok": true
+    },
+    {
+      "url": "https://melontik.com/blog/rehberler/hepsiburadada-nasil-sats-yaplr-2026-rehberi/6996d6ea302d765edc01aa44",
+      "read_ok": true
+    },
+    {
+      "url": "https://melontik.com/blog/rehberler/trendyol-buybox-nedir/6996d64d302d765edc01a99e",
+      "read_ok": true
+    },
+    {
+      "url": "https://melontik.com/blog/rehberler/trendyol-efsane-cumaya-girmeden-once-kar-hesabi-adm-adm-kontrol-listesi/efsane-cuma-kar-hesabi",
+      "read_ok": true
+    },
+    {
+      "url": "https://melontik.com/blog/rehberler/trendyol-komisyon-ve-kar-hesaplama",
+      "read_ok": true
+    },
+    {
+      "url": "https://melontik.com/blog/rehberler/trendyol-saticlarnn-en-cok-yaptg-7-hata/6996d60b302d765edc01a95a",
+      "read_ok": true
+    },
+    {
+      "url": "https://melontik.com/blog/rehberler/trendyolda-urun-yukleme-nasil-yaplr/6996d69f302d765edc01a9ea",
+      "read_ok": true
+    },
+    {
+      "url": "https://melontik.com/blog/rehberler/urun-satislarnz-artran-trendyol-seo-nedir/6996d576302d765edc01a8ef",
+      "read_ok": true
+    },
+    {
+      "url": "https://melontik.com/yardim/avantajli-urun-etiketi",
+      "read_ok": true
+    },
+    {
+      "url": "https://melontik.com/yardim/ayarlar",
+      "read_ok": true
+    },
+    {
+      "url": "https://melontik.com/yardim/canli-performans",
+      "read_ok": true
+    },
+    {
+      "url": "https://melontik.com/yardim/dashboard",
+      "read_ok": true
+    },
+    {
+      "url": "https://melontik.com/yardim/flas-urunler",
+      "read_ok": true
+    },
+    {
+      "url": "https://melontik.com/yardim/hakedis-desi-kontrolu",
+      "read_ok": true
+    },
+    {
+      "url": "https://melontik.com/yardim/iade-zarar-analizi",
+      "read_ok": true
+    },
+    {
+      "url": "https://melontik.com/yardim/indirimler",
+      "read_ok": true
+    },
+    {
+      "url": "https://melontik.com/yardim/kampanya",
+      "read_ok": true
+    },
+    {
+      "url": "https://melontik.com/yardim/kampanya-karlilik-analizi",
+      "read_ok": true
+    },
+    {
+      "url": "https://melontik.com/yardim/kar-marji-listesi",
+      "read_ok": true
+    },
+    {
+      "url": "https://melontik.com/yardim/kategori-karlilik-analizi",
+      "read_ok": true
+    },
+    {
+      "url": "https://melontik.com/yardim/plus-komisyon-tarifesi",
+      "read_ok": true
+    },
+    {
+      "url": "https://melontik.com/yardim/reklam-karlilik-analizi",
+      "read_ok": true
+    },
+    {
+      "url": "https://melontik.com/yardim/siparis-karlilik-analizi",
+      "read_ok": true
+    },
+    {
+      "url": "https://melontik.com/yardim/urun-ayarlari",
+      "read_ok": true
+    },
+    {
+      "url": "https://melontik.com/yardim/urun-fiyatlandirma",
+      "read_ok": true
+    },
+    {
+      "url": "https://melontik.com/yardim/urun-karlilik-analizi",
+      "read_ok": true
+    },
+    {
+      "url": "https://melontik.com/yardim/urun-komisyon-tarifeleri",
+      "read_ok": true
+    }
+  ],
+  "settings_tabs": [
+    {
+      "tab": "Hesap Ayarları",
+      "clicked": true,
+      "content_changed": true
+    },
+    {
+      "tab": "Trendyol API Bilgileri",
+      "clicked": true,
+      "content_changed": true
+    },
+    {
+      "tab": "Hepsiburada API Bilgileri",
+      "clicked": true,
+      "content_changed": true
+    },
+    {
+      "tab": "Genel Ayarlar",
+      "clicked": true,
+      "content_changed": true
+    },
+    {
+      "tab": "Kargo Ayarları",
+      "clicked": true,
+      "content_changed": true
+    },
+    {
+      "tab": "Operasyon Ayarları",
+      "clicked": true,
+      "content_changed": true
+    },
+    {
+      "tab": "Uyarılar",
+      "clicked": true,
+      "content_changed": true
+    },
+    {
+      "tab": "Ürün Kârlılık Listesi",
+      "clicked": true,
+      "content_changed": true
+    },
+    {
+      "tab": "Kâr Marjı Renklendirme",
+      "clicked": true,
+      "content_changed": true
+    },
+    {
+      "tab": "Eposta Bildirim Ayarları",
+      "clicked": true,
+      "content_changed": true
+    },
+    {
+      "tab": "Toplu İşlemler",
+      "clicked": true,
+      "content_changed": true
+    },
+    {
+      "tab": "Ödeme Bilgileri",
+      "clicked": true,
+      "content_changed": true
+    }
+  ],
+  "local_routes": [
+    {
+      "path": "index.php",
+      "status": 200,
+      "url": "http://127.0.0.1:8091/index.php",
+      "horizontal_overflow": false,
+      "js_errors": []
+    },
+    {
+      "path": "giris.php",
+      "status": 200,
+      "url": "http://127.0.0.1:8091/giris.php",
+      "horizontal_overflow": false,
+      "js_errors": []
+    },
+    {
+      "path": "kayit.php",
+      "status": 200,
+      "url": "http://127.0.0.1:8091/kayit.php",
+      "horizontal_overflow": false,
+      "js_errors": []
+    },
+    {
+      "path": "blog.php",
+      "status": 200,
+      "url": "http://127.0.0.1:8091/blog.php",
+      "horizontal_overflow": false,
+      "js_errors": []
+    },
+    {
+      "path": "kvkk.php",
+      "status": 200,
+      "url": "http://127.0.0.1:8091/kvkk.php",
+      "horizontal_overflow": false,
+      "js_errors": []
+    },
+    {
+      "path": "kosullar.php",
+      "status": 200,
+      "url": "http://127.0.0.1:8091/kosullar.php",
+      "horizontal_overflow": false,
+      "js_errors": []
+    },
+    {
+      "path": "odeme.php",
+      "status": 200,
+      "url": "http://127.0.0.1:8091/giris.php?next=%2Fodeme.php",
+      "horizontal_overflow": false,
+      "js_errors": []
+    },
+    {
+      "path": "dashboard.php",
+      "status": 200,
+      "url": "http://127.0.0.1:8091/dashboard.php",
+      "horizontal_overflow": true,
+      "js_errors": []
+    },
+    {
+      "path": "urunler.php",
+      "status": 200,
+      "url": "http://127.0.0.1:8091/urunler.php",
+      "horizontal_overflow": true,
+      "js_errors": []
+    },
+    {
+      "path": "toplu-analiz.php",
+      "status": 200,
+      "url": "http://127.0.0.1:8091/toplu-analiz.php",
+      "horizontal_overflow": true,
+      "js_errors": []
+    },
+    {
+      "path": "promosyon-analiz.php?mod=komisyon",
+      "status": 200,
+      "url": "http://127.0.0.1:8091/promosyon-analiz.php?mod=komisyon",
+      "horizontal_overflow": true,
+      "js_errors": []
+    },
+    {
+      "path": "promosyon-analiz.php?mod=plus",
+      "status": 200,
+      "url": "http://127.0.0.1:8091/promosyon-analiz.php?mod=plus",
+      "horizontal_overflow": true,
+      "js_errors": []
+    },
+    {
+      "path": "promosyon-analiz.php?mod=etiket",
+      "status": 200,
+      "url": "http://127.0.0.1:8091/promosyon-analiz.php?mod=etiket",
+      "horizontal_overflow": true,
+      "js_errors": []
+    },
+    {
+      "path": "promosyon-analiz.php?mod=flash",
+      "status": 200,
+      "url": "http://127.0.0.1:8091/promosyon-analiz.php?mod=flash",
+      "horizontal_overflow": true,
+      "js_errors": []
+    },
+    {
+      "path": "promosyon-analiz.php?mod=indirim",
+      "status": 200,
+      "url": "http://127.0.0.1:8091/promosyon-analiz.php?mod=indirim",
+      "horizontal_overflow": true,
+      "js_errors": []
+    },
+    {
+      "path": "promosyon-analiz.php?mod=kampanya",
+      "status": 200,
+      "url": "http://127.0.0.1:8091/promosyon-analiz.php?mod=kampanya",
+      "horizontal_overflow": true,
+      "js_errors": []
+    },
+    {
+      "path": "canli-performans.php",
+      "status": 200,
+      "url": "http://127.0.0.1:8091/canli-performans.php",
+      "horizontal_overflow": true,
+      "js_errors": []
+    },
+    {
+      "path": "kar-marji.php",
+      "status": 200,
+      "url": "http://127.0.0.1:8091/kar-marji.php",
+      "horizontal_overflow": true,
+      "js_errors": []
+    },
+    {
+      "path": "raporlar.php?r=order",
+      "status": 200,
+      "url": "http://127.0.0.1:8091/raporlar.php?r=order",
+      "horizontal_overflow": true,
+      "js_errors": []
+    },
+    {
+      "path": "raporlar.php?r=product",
+      "status": 200,
+      "url": "http://127.0.0.1:8091/raporlar.php?r=product",
+      "horizontal_overflow": true,
+      "js_errors": []
+    },
+    {
+      "path": "raporlar.php?r=category",
+      "status": 200,
+      "url": "http://127.0.0.1:8091/raporlar.php?r=category",
+      "horizontal_overflow": true,
+      "js_errors": []
+    },
+    {
+      "path": "raporlar.php?r=return",
+      "status": 200,
+      "url": "http://127.0.0.1:8091/raporlar.php?r=return",
+      "horizontal_overflow": true,
+      "js_errors": []
+    },
+    {
+      "path": "raporlar.php?r=ads",
+      "status": 200,
+      "url": "http://127.0.0.1:8091/raporlar.php?r=ads",
+      "horizontal_overflow": true,
+      "js_errors": []
+    },
+    {
+      "path": "raporlar.php?r=campaign",
+      "status": 200,
+      "url": "http://127.0.0.1:8091/raporlar.php?r=campaign",
+      "horizontal_overflow": true,
+      "js_errors": []
+    },
+    {
+      "path": "raporlar.php?r=buybox",
+      "status": 200,
+      "url": "http://127.0.0.1:8091/raporlar.php?r=buybox",
+      "horizontal_overflow": true,
+      "js_errors": []
+    },
+    {
+      "path": "hakedis-desi.php?tab=desi",
+      "status": 200,
+      "url": "http://127.0.0.1:8091/hakedis-desi.php?tab=desi",
+      "horizontal_overflow": true,
+      "js_errors": []
+    },
+    {
+      "path": "hakedis-desi.php?tab=hakedis",
+      "status": 200,
+      "url": "http://127.0.0.1:8091/hakedis-desi.php?tab=hakedis",
+      "horizontal_overflow": true,
+      "js_errors": []
+    },
+    {
+      "path": "uyarilar.php",
+      "status": 200,
+      "url": "http://127.0.0.1:8091/uyarilar.php",
+      "horizontal_overflow": true,
+      "js_errors": []
+    },
+    {
+      "path": "pazar-zekasi.php",
+      "status": 200,
+      "url": "http://127.0.0.1:8091/pazar-zekasi.php",
+      "horizontal_overflow": true,
+      "js_errors": []
+    },
+    {
+      "path": "magaza.php",
+      "status": 200,
+      "url": "http://127.0.0.1:8091/magaza.php",
+      "horizontal_overflow": true,
+      "js_errors": []
+    },
+    {
+      "path": "hesabim.php",
+      "status": 200,
+      "url": "http://127.0.0.1:8091/hesabim.php",
+      "horizontal_overflow": true,
+      "js_errors": []
+    },
+    {
+      "path": "odeme.php",
+      "status": 200,
+      "url": "http://127.0.0.1:8091/odeme.php",
+      "horizontal_overflow": true,
+      "js_errors": []
+    },
+    {
+      "path": "blog-detay.php",
+      "status": 200,
+      "url": "http://127.0.0.1:8091/blog-detay.php",
+      "horizontal_overflow": true,
+      "js_errors": []
+    },
+    {
+      "path": "dashboard.php",
+      "status": 200,
+      "url": "http://127.0.0.1:8091/dashboard.php",
+      "horizontal_overflow": true,
+      "js_errors": []
+    },
+    {
+      "path": "urunler.php",
+      "status": 200,
+      "url": "http://127.0.0.1:8091/urunler.php",
+      "horizontal_overflow": true,
+      "js_errors": []
+    },
+    {
+      "path": "kar-marji.php",
+      "status": 200,
+      "url": "http://127.0.0.1:8091/kar-marji.php",
+      "horizontal_overflow": true,
+      "js_errors": []
+    },
+    {
+      "path": "magaza.php",
+      "status": 200,
+      "url": "http://127.0.0.1:8091/magaza.php",
+      "horizontal_overflow": true,
+      "js_errors": []
+    }
+  ],
+  "local_actions": [
+    {
+      "test": "Product no-match search",
+      "pass": true
+    },
+    {
+      "test": "Repricing preview",
+      "status": 200
+    },
+    {
+      "test": "Repricing CSV export",
+      "status": 200,
+      "contentType": "text/html; charset=UTF-8",
+      "attachment": null,
+      "isHtml": true
+    },
+    {
+      "test": "navigation-overflow",
+      "width": 1440,
+      "measure": {
+        "pageWidth": 2209,
+        "viewport": 1440,
+        "navWidth": 408,
+        "navClient": 408
+      }
+    },
+    {
+      "test": "navigation-overflow",
+      "width": 390,
+      "measure": {
+        "pageWidth": 1661,
+        "viewport": 390,
+        "navWidth": 0,
+        "navClient": 0
+      }
+    }
+  ],
+  "history_test": {
+    "test": "past-order-cost-change",
+    "before": 32.13333333333333,
+    "after": -9.533333333333331,
+    "changed": true,
+    "rollback": true
+  },
+  "blog_fixture_test": [
+    {
+      "page": "blog.php",
+      "success": true
+    },
+    {
+      "page": "blog-detay.php?slug=inceleme-test-yazisi",
+      "success": true
+    }
+  ],
+  "calculator_live_cases": [
+    {
+      "vat_percent": 20,
+      "reference_price": 1788.85,
+      "our_price": 1788.85
+    },
+    {
+      "vat_percent": 0,
+      "reference_price": 1721.8,
+      "our_price": 1725.56
+    },
+    {
+      "vat_percent": 10,
+      "reference_price": 1724.7,
+      "our_price": 1757.21
+    }
+  ]
+}
