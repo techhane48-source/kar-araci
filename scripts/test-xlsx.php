@@ -16,4 +16,14 @@ foreach ([200.0, 400.0, 20.0, 0.0, 50.5, 1234.56, 0.01, 1000000.0] as $value) {
         if (!$ok) $failed++;
     } finally { unlink($path); }
 }
+foreach ([0.0,10.0,20.0] as $vat) {
+    $path=tempnam(sys_get_temp_dir(),'kf-vat-');
+    try {
+        xlsx_write_maliyet([['barcode'=>'VAT','price'=>200.0,'cost'=>100.0,'kdv'=>$vat]],$path);
+        $row=xlsx_read($path)['rows'][0];
+        $ok=(float)$row[8]===$vat;
+        echo ($ok?'PASS ':'FAIL ')."KDV oranı Excel’de korunur: %$vat\n";
+        if(!$ok)$failed++;
+    } finally {unlink($path);}
+}
 exit($failed?1:0);

@@ -24,6 +24,7 @@ foreach (db()->query("SELECT * FROM products WHERE user_id = {$u['id']} AND mark
 
 // Siparişler
 $orders = db()->query("SELECT * FROM orders WHERE user_id = {$u['id']} AND marketplace = " . db()->quote($mp) . " AND order_date >= $fromTs ORDER BY order_date DESC")->fetchAll();
+$orders = array_values(array_filter($orders, 'order_is_sale'));
 foreach ($orders as &$o) $o['lines'] = json_decode($o['lines'] ?? '[]', true) ?: [];
 unset($o);
 
@@ -33,7 +34,7 @@ $reportCols = [];
 $toplam = ['ciro' => 0.0, 'kar' => 0.0, 'maliyet' => 0.0];
 
 if ($rapor === 'order') {
-    $reportCols = ['Sipariş No', 'Tarih', 'Tutar', 'Kâr', 'Kâr Oranı', 'Kâr Marjı'];
+    $reportCols = ['Sipariş No', 'Tarih', 'Tutar', 'Tahmini Kâr', 'Kâr Oranı', 'Kâr Marjı'];
     foreach ($orders as $o) {
         $sale = (float)$o['total_price'];
         $pr = calc_order_profit($o, $byBarcode);
@@ -48,94 +49,50 @@ if ($rapor === 'order') {
         $toplam['ciro'] += $sale;
         if ($pr['ok']) { $toplam['kar'] += $pr['profit']; $toplam['maliyet'] += $pr['cost']; }
     }
-} elseif ($rapor === 'product') {
-    $reportCols = ['Barkod', 'Ürün', 'Adet', 'Ciro', 'Maliyet', 'Kâr', 'Kâr Marjı'];
-    $agg = [];
-    foreach ($orders as $o) {
-        $sale = (float)$o['total_price'];
-        $pr = calc_order_profit($o, $byBarcode);
-        foreach ($o['lines'] as $l) {
-            $bc = $l['barcode'] ?? '';
-            $nm = $l['productName'] ?? ($byBarcode[$bc]['name'] ?? $bc);
-            $qty = max(1, (int)($l['quantity'] ?? 1));
-            if (!isset($agg[$bc])) $agg[$bc] = ['name' => $nm, 'adet' => 0, 'ciro' => 0.0, 'maliyet' => 0.0, 'kar' => 0.0];
-            $agg[$bc]['adet'] += $qty;
-            $agg[$bc]['ciro'] += (float)($l['price'] ?? 0) * $qty;
-            if (isset($byBarcode[$bc]) && (float)$byBarcode[$bc]['cost'] > 0) {
-                $agg[$bc]['maliyet'] += (float)$byBarcode[$bc]['cost'] * $qty;
-            }
-        }
-        if ($pr['ok']) { /* sipariş bazlı kâr ürünlere dağıtılmadı; ürün kârı aşağıda oranla */ }
-    }
-    // Ürün kârını basitçe hesapla: ciro - maliyet - tahmini kesintiler yerine maliyet girdisi olanlarda oran bazlı
-    foreach ($agg as $bc => $a) {
-        $marj = $a['ciro'] > 0 && $a['maliyet'] > 0 ? (($a['ciro'] - $a['maliyet']) / $a['ciro']) * 100 : null;
-        $kar = ($a['maliyet'] > 0) ? ($a['ciro'] - $a['maliyet']) : null;
-        $reportRows[] = [$bc, $a['name'], $a['adet'], $a['ciro'], $a['maliyet'] > 0 ? $a['maliyet'] : null, $kar, $marj];
-        $toplam['ciro'] += $a['ciro']; $toplam['maliyet'] += $a['maliyet'];
-        if ($kar !== null) $toplam['kar'] += $kar;
-    }
-} elseif ($rapor === 'category') {
-    $reportCols = ['Kategori', 'Adet', 'Ciro', 'Maliyet', 'Kâr'];
-    $agg = [];
-    foreach ($orders as $o) {
-        foreach ($o['lines'] as $l) {
-            $bc = $l['barcode'] ?? '';
-            $p = $byBarcode[$bc] ?? null;
-            $cat = $p['category'] ?? 'Bilinmeyen';
-            $qty = max(1, (int)($l['quantity'] ?? 1));
-            if (!isset($agg[$cat])) $agg[$cat] = ['adet' => 0, 'ciro' => 0.0, 'maliyet' => 0.0];
-            $agg[$cat]['adet'] += $qty;
-            $agg[$cat]['ciro'] += (float)($l['price'] ?? 0) * $qty;
-            if ($p && (float)$p['cost'] > 0) $agg[$cat]['maliyet'] += (float)$p['cost'] * $qty;
-        }
-    }
-    foreach ($agg as $cat => $a) {
-        $kar = $a['maliyet'] > 0 ? ($a['ciro'] - $a['maliyet']) : null;
-        $reportRows[] = [$cat, $a['adet'], $a['ciro'], $a['maliyet'] > 0 ? $a['maliyet'] : null, $kar];
-        $toplam['ciro'] += $a['ciro']; $toplam['maliyet'] += $a['maliyet'];
-        if ($kar !== null) $toplam['kar'] += $kar;
+} elseif ($rapor === 'product' || $rapor === 'category') {
+    $isProduct = $rapor === 'product';
+    $reportCols = $isProduct ? ['Barkod','Ürün','Adet','Ciro','Maliyet','Tahmini Kâr','Kâr Marjı']
+        : ['Kategori','Adet','Ciro','Maliyet','Tahmini Kâr'];
+    foreach (aggregate_profit_rows($orders,$byBarcode,$rapor) as $a) {
+        $reportRows[] = $isProduct
+            ? [$a['key'],$a['name'],$a['quantity'],$a['sale'],$a['cost'],$a['profit'],$a['margin']]
+            : [$a['key'],$a['quantity'],$a['sale'],$a['cost'],$a['profit']];
     }
 } elseif ($rapor === 'return') {
-    $reportCols = ['Barkod', 'Ürün', 'İade Adedi', 'İade Tutarı', 'Kargo Zararı', 'Mikro İade', 'Toplam İade Zararı', 'İade/Satış %'];
+    $reportCols = ['Barkod', 'Ürün', 'İade Finans Kaydı', 'İade Tutarı', 'Tahmini Kargo Gideri', 'İade/Satış %'];
     // Satış toplamı barkod bazında (iade-satış oranı için)
     $saleMap = [];
     foreach ($orders as $o) {
-        foreach ($o['lines'] as $l) {
-            $bc = $l['barcode'] ?? '';
-            $saleMap[$bc] = ($saleMap[$bc] ?? 0) + (float)($l['price'] ?? 0) * max(1, (int)($l['quantity'] ?? 1));
+        foreach (calc_order_profit($o, $byBarcode)['lines'] as $l) {
+            $bc = $l['barcode'];
+            $saleMap[$bc] = ($saleMap[$bc] ?? 0) + $l['sale'];
         }
     }
     $agg = [];
-    $rows = db()->query("SELECT barcode, COUNT(*) c, SUM(debt) tutar FROM settlements WHERE user_id = {$u['id']} AND marketplace = " . db()->quote($mp) . " AND transaction_type = 'İade' AND transaction_date >= $fromTs GROUP BY barcode")->fetchAll();
+    $rows = db()->query("SELECT barcode, COUNT(*) c, SUM(debt) tutar FROM settlements WHERE user_id = {$u['id']} AND marketplace = " . db()->quote($mp) . " AND transaction_type IN ('İade','Return') AND transaction_date >= $fromTs GROUP BY barcode")->fetchAll();
     foreach ($rows as $r) {
         $bc = $r['barcode'];
         $p = $byBarcode[$bc] ?? null;
         $adet = (int)$r['c'];
         $iade = (float)$r['tutar'];
-        $maliyet = $p ? (float)$p['cost'] * $adet : 0.0;
-        // Kargo zararı: iade başına kargo ücreti (ürün cargo * adet)
         $kargoZarari = $p ? (float)$p['cargo'] * $adet : 0.0;
-        // Mikro iade: iade tutarının %2'si (tahmini mikro iade kaybı)
-        $mikroIade = $iade * 0.02;
-        $toplamZarar = $iade + $maliyet + $kargoZarari + $mikroIade;
         $sale = $saleMap[$bc] ?? 0.0;
         $oran = $sale > 0 ? $iade / $sale * 100 : null;
-        $agg[] = [$bc, $p['name'] ?? $bc, $adet, $iade, $kargoZarari, $mikroIade, $toplamZarar, $oran];
+        $agg[] = [$bc, $p['name'] ?? $bc, $adet, $iade, $kargoZarari, $oran];
         $toplam['ciro'] += $iade;
-        $toplam['maliyet'] += $maliyet + $kargoZarari;
-        $toplam['kar'] += $toplamZarar;
+        $toplam['maliyet'] += $kargoZarari;
+        $toplam['kar'] += $adet;
     }
     usort($agg, fn($a, $b) => $b[3] <=> $a[3]);
     $reportRows = $agg;
 } elseif ($rapor === 'ads') {
-    $reportCols = ['Barkod', 'Ürün', 'Reklam Harcaması', 'Bakiye', 'Influencer Kesintisi', 'Reklam Satışı', 'Net Kâr', 'Reklam/Satış %'];
+    $reportCols = ['Barkod', 'Ürün', 'Reklam Harcaması', 'Bakiye', 'Influencer Kesintisi', 'İlgili Ürünlerin Satışları', 'Reklama Atfedilen Kâr', 'Reklam/Satış %'];
     // Satış toplamı barkod bazında
     $saleMap = [];
     foreach ($orders as $o) {
-        foreach ($o['lines'] as $l) {
-            $bc = $l['barcode'] ?? '';
-            $saleMap[$bc] = ($saleMap[$bc] ?? 0) + (float)($l['price'] ?? 0) * max(1, (int)($l['quantity'] ?? 1));
+        foreach (calc_order_profit($o, $byBarcode)['lines'] as $l) {
+            $bc = $l['barcode'];
+            $saleMap[$bc] = ($saleMap[$bc] ?? 0) + $l['sale'];
         }
     }
     // Reklam harcaması: settlements'ta reklam ile ilgili transaction_type'lar
@@ -157,20 +114,18 @@ if ($rapor === 'order') {
         $influencer = $d['influencer'];
         $bakiye = $d['bakiye'];
         $toplamReklam = $harcama + $influencer;
-        $netKar = $sale - $toplamReklam;
+        $netKar = null; // Reklama atıf verisi olmadan kâr uydurulmaz.
         $oran = $sale > 0 ? $toplamReklam / $sale * 100 : null;
         $agg[] = [$bc, $p['name'] ?? $bc, $harcama, $bakiye, $influencer, $sale > 0 ? $sale : null, $netKar, $oran];
         $toplam['ciro'] += $toplamReklam;
         $toplam['maliyet'] += $sale;
-        $toplam['kar'] += $netKar;
+        // Reklam kaydı tek başına ürünün net kârını veya atfedilen satışını göstermez.
     }
     usort($agg, fn($a, $b) => $b[6] <=> $a[6]);
     $reportRows = $agg;
 } elseif ($rapor === 'buybox') {
     $reportCols = ['Barkod', 'Ürün', 'Satış Fiyatı', 'Kategori En Düşük', 'Fiyat Farkı'];
-    // Buybox durumu: barkodunda "buybox" işareti olan ürünler buybox sahibi sayılır;
-    // fiyat farkı = ürün fiyatı ile aynı kategorideki en düşük fiyat arasındaki fark.
-    // Kategori bazında en düşük fiyat hesapla.
+    // Yalnızca kendi ürünlerinin kategori içi fiyat karşılaştırmasıdır.
     $minByCat = [];
     foreach ($byBarcode as $bc => $p) {
         $cat = $p['category'] ?? 'Diğer';
@@ -195,18 +150,18 @@ if ($rapor === 'order') {
 } elseif ($rapor === 'campaign') {
     $reportCols = ['Barkod', 'Ürün', 'Kupon', 'İndirim', 'Toplam Kampanya', 'Satış', 'Kampanya/Satış %'];
     $aggMap = [];
-    $rows = db()->query("SELECT barcode, transaction_type, SUM(debt) tutar FROM settlements WHERE user_id = {$u['id']} AND marketplace = " . db()->quote($mp) . " AND transaction_type IN ('Kupon','İndirim') AND transaction_date >= $fromTs GROUP BY barcode, transaction_type")->fetchAll();
+    $rows = db()->query("SELECT barcode, transaction_type, SUM(debt) tutar FROM settlements WHERE user_id = {$u['id']} AND marketplace = " . db()->quote($mp) . " AND transaction_type IN ('Kupon','İndirim','Coupon','Discount') AND transaction_date >= $fromTs GROUP BY barcode, transaction_type")->fetchAll();
     foreach ($rows as $r) {
         $bc = $r['barcode'];
         if (!isset($aggMap[$bc])) $aggMap[$bc] = ['kupon' => 0.0, 'indirim' => 0.0];
-        if ($r['transaction_type'] === 'Kupon') $aggMap[$bc]['kupon'] += (float)$r['tutar'];
+        if (in_array($r['transaction_type'], ['Kupon','Coupon'], true)) $aggMap[$bc]['kupon'] += (float)$r['tutar'];
         else $aggMap[$bc]['indirim'] += (float)$r['tutar'];
     }
     $saleMap = [];
     foreach ($orders as $o) {
-        foreach ($o['lines'] as $l) {
-            $bc = $l['barcode'] ?? '';
-            $saleMap[$bc] = ($saleMap[$bc] ?? 0) + (float)($l['price'] ?? 0) * max(1, (int)($l['quantity'] ?? 1));
+        foreach (calc_order_profit($o, $byBarcode)['lines'] as $l) {
+            $bc = $l['barcode'];
+            $saleMap[$bc] = ($saleMap[$bc] ?? 0) + $l['sale'];
         }
     }
     $agg = [];
@@ -224,14 +179,32 @@ if ($rapor === 'order') {
     $reportRows = $agg;
 }
 
+// Ana raporların toplamları aynı, maliyeti tam sipariş kümesinden gelir.
+$isProfitReport = in_array($rapor,['order','product','category'],true);
+$missingOrders = 0;
+$knownSale = 0.0;
+if ($isProfitReport) {
+    $toplam = ['ciro'=>0.0,'kar'=>0.0,'maliyet'=>0.0];
+    foreach ($orders as $order) {
+        $toplam['ciro'] += (float)$order['total_price'];
+        $pr = calc_order_profit($order,$byBarcode);
+        if ($pr['ok']) {
+            $knownSale += $pr['sale'];
+            $toplam['kar'] += $pr['profit'];
+            $toplam['maliyet'] += $pr['cost'];
+        } else $missingOrders++;
+    }
+}
+$percentCols = ['order'=>[4,5], 'product'=>[6], 'category'=>[], 'return'=>[5], 'ads'=>[7], 'campaign'=>[6], 'buybox'=>[]][$rapor];
+
 // CSV indir
 if (isset($_GET['export'])) {
     header('Content-Type: text/csv; charset=utf-8');
     header('Content-Disposition: attachment; filename="rapor-' . $rapor . '.csv"');
     echo "\xEF\xBB\xBF";
     $out = fopen('php://output', 'w');
-    fputcsv($out, $reportCols);
-    foreach ($reportRows as $r) fputcsv($out, array_map(fn($v) => is_float($v) ? number_format($v, 2, '.', '') : $v, $r));
+    write_csv($out, $reportCols);
+    foreach ($reportRows as $r) write_csv($out, array_map(fn($v) => is_float($v) ? number_format($v, 2, '.', '') : $v, $r));
     fclose($out);
     exit;
 }
@@ -240,10 +213,10 @@ $raporLabels = [
     'order' => 'Sipariş Kârlılık Analizi',
     'product' => 'Ürün Kârlılık Analizi',
     'category' => 'Kategori Kârlılık Analizi',
-    'return' => 'İade Zarar Analizi',
-    'ads' => 'Reklam Kârlılık Analizi',
+    'return' => 'İade Finans Kayıtları',
+    'ads' => 'Reklam Giderleri',
     'campaign' => 'Kampanya Kârlılık Analizi',
-    'buybox' => 'Fiyat Pozisyonu (Buybox)',
+    'buybox' => 'Kategori İçi Fiyat Karşılaştırması',
 ];
 
 $per = 50;
@@ -281,15 +254,26 @@ require __DIR__ . '/../includes/header.php';
 </div>
 
 <div class="card">
+  <?php if ($isProfitReport): ?>
+  <p class="hint">Tahmini kâr, ürün kartındaki adet başı giderlerle hesaplanır; reklam, ceza ve diğer finans giderleri dahil değildir. İptal/iade paketleri dışarıda tutulur.</p>
   <div style="display:flex;gap:24px;flex-wrap:wrap;margin-bottom:12px">
-    <div><div class="muted" style="font-size:12px">Ciro</div><div style="font-weight:700"><?= tl($toplam['ciro']) ?></div></div>
-    <?php if ($rapor !== 'return'): ?>
-      <div><div class="muted" style="font-size:12px">Ürün Maliyeti</div><div style="font-weight:700"><?= tl($toplam['maliyet']) ?></div></div>
-      <div><div class="muted" style="font-size:12px">Kâr</div><div style="font-weight:700;color:<?= $toplam['kar'] < 0 ? '#e11d48' : '#16a34a' ?>"><?= tl($toplam['kar']) ?></div></div>
-    <?php else: ?>
-      <div><div class="muted" style="font-size:12px">İade Adedi</div><div style="font-weight:700"><?= $toplam['kar'] ?></div></div>
-    <?php endif; ?>
+    <div>Ciro: <b><?= tl($toplam['ciro']) ?></b></div>
+    <div>Kârı hesaplanan ciro: <b><?= tl($knownSale) ?></b></div>
+    <div>Ürün maliyeti: <b><?= tl($toplam['maliyet']) ?></b></div>
+    <div>Tahmini kâr: <b><?= $knownSale > 0 ? tl($toplam['kar']) : '—' ?></b></div>
   </div>
+  <?php if ($missingOrders): ?><p class="hint"><?= $missingOrders ?> siparişin maliyeti veya hesaplama girdileri eksik. Bu siparişler kâr toplamına alınmaz; ilgili satırlarda eksik toplam yerine — gösterilir.</p><?php endif; ?>
+  <?php elseif ($rapor === 'return'): ?>
+    <p>İade tutarı: <?= tl($toplam['ciro']) ?> · Finans kaydı: <?= (int)$toplam['kar'] ?></p>
+    <p class="hint">Finans kayıt sayısı ürün adedi değildir. İade tutarı doğrudan net zarar sayılmaz; geri dönen ürünün durumu ve gerçek giderler ayrıca değerlendirilmelidir.</p>
+  <?php elseif ($rapor === 'ads'): ?>
+    <p>Reklam ve influencer giderleri: <?= tl($toplam['ciro']) ?></p>
+    <p class="hint">Ürün satışları reklamdan geldiği doğrulanmış satışlar değildir. Atıf verisi olmadan reklama ait kâr hesaplanmaz.</p>
+  <?php elseif ($rapor === 'campaign'): ?>
+    <p>Kupon ve indirim kayıtları: <?= tl($toplam['ciro']) ?></p>
+  <?php else: ?>
+    <p class="hint">Kendi ürünlerinizin kategori içi fiyat karşılaştırmasıdır. Rakip teklif veya Buybox sahipliği verisi içermez.</p>
+  <?php endif; ?>
 
     <table>
       <tr><?php foreach ($reportCols as $c): ?><th><?= h($c) ?></th><?php endforeach; ?></tr>
@@ -298,7 +282,7 @@ require __DIR__ . '/../includes/header.php';
         <tr>
           <?php foreach ($r as $i => $v): ?>
             <?php if ($v === null): ?><td class="muted">—</td>
-            <?php elseif (is_float($v)): ?><td class="tar"><?= tl($v) ?></td>
+            <?php elseif (is_float($v)): ?><td class="tar"><?= in_array($i,$percentCols,true) ? '%' . number_format($v,2,',','.') : tl($v) ?></td>
             <?php elseif ($i === 0): ?><td style="font-family:monospace;font-size:12px"><?= h((string)$v) ?></td>
             <?php else: ?><td><?= h((string)$v) ?></td><?php endif; ?>
           <?php endforeach; ?>

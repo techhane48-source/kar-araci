@@ -26,6 +26,11 @@ if (!is_array($data)) {
 
 $marketplace = $data['marketplace'] ?? '';
 $category = $data['category'] ?? '';
+if (!is_string($marketplace) || !is_string($category) || !is_string($data['name'] ?? 'Ürün')) {
+    http_response_code(422);
+    echo json_encode(['ok'=>false,'error'=>'Geçersiz metin alanı']);
+    exit;
+}
 $name = trim($data['name'] ?? 'Ürün');
 
 if (!array_key_exists($marketplace, marketplaces())) {
@@ -38,6 +43,17 @@ $rate = (isset($data['rate']) && is_numeric($data['rate']))
     ? (float) $data['rate']
     : category_rate($category, $marketplace);
 
+try {
+    if (isset($data['rate']) && !is_numeric($data['rate'])) throw new InvalidArgumentException('Geçersiz komisyon oranı.');
+    $amounts = array_map(static fn($key) => $data[$key] ?? 0, ['cost','price','cargo','extra_fee','service_fee','stopaj']);
+    profit_validate($amounts, [$rate,$data['kdv']??20,$data['return_rate']??0]);
+    if (!in_array($data['stopaj_mode']??'manual',['manual','auto'],true)) throw new InvalidArgumentException('Geçersiz stopaj seçimi.');
+} catch (InvalidArgumentException $e) {
+    http_response_code(422);
+    echo json_encode(['ok'=>false,'error'=>$e->getMessage()]);
+    exit;
+}
+
 // Ücretsiz plan limiti
 if (!is_pro($u)) {
     $stmt = db()->prepare("SELECT COUNT(*) c FROM products WHERE user_id = ?");
@@ -49,8 +65,8 @@ if (!is_pro($u)) {
     }
 }
 
-db()->prepare("INSERT INTO products (user_id, name, marketplace, category, rate, cost, price, cargo, cargo_type, extra_fee, kdv, service_fee, stopaj, return_rate)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
+db()->prepare("INSERT INTO products (user_id, name, marketplace, category, rate, cost, price, cargo, cargo_type, extra_fee, kdv, service_fee, stopaj, return_rate, stopaj_mode)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
     ->execute([
         $u['id'],
         mb_substr($name, 0, 120),
@@ -66,6 +82,7 @@ db()->prepare("INSERT INTO products (user_id, name, marketplace, category, rate,
         (float) ($data['service_fee'] ?? 0),
         (float) ($data['stopaj'] ?? 0),
         (float) ($data['return_rate'] ?? 0),
+        $data['stopaj_mode'] ?? 'manual',
     ]);
 
 echo json_encode(['ok' => true]);

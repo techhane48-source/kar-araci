@@ -11,6 +11,22 @@ korunuyor. CLI yönetici sıfırlaması ve 2FA değişikliklerinde oturum iptali
 Aşağıdaki bulgular ilk inceleme anını belgeler; kalan maddeler açık durumdadır.
 Gerçek pazaryeri sayfalarının yeni ağ politikasıyla uyumluluğu dağıtımda doğrulanmalıdır.
 
+## Düzeltme durumu — kârlılık paketi
+
+10, 11, 13, 14, 16, 17, 19, 20 ve 43 için ortak ürün/sipariş hesabı, rapor dağılımı,
+Türkiye gün sınırı, hedef doğrulaması ve kampanya kaydı düzeltildi. 15 için paket
+seviyesinde iptal/iade durumları dışlanır; kısmi satır iadeleri henüz tamamlanmadı.
+12'deki eksik finans giderleri sıfır gösterilmek yerine açıkça hesap dışında
+belirtilir; resmî gider entegrasyonu hâlâ açık. 23'te İngilizce/Türkçe iade ve
+kampanya tür adları raporlarda karşılanır. 24'te Buybox iddiası kaldırılıp ekran
+kategori içi karşılaştırma olarak adlandırıldı; uydurma mikro iade zararı da kaldırıldı.
+42'nin sayısal API doğrulaması iyileştirildi; dosya/arşiv sınırları açık. 44'teki
+Chrome eklentisi bu pakete dahil değildir; yeni ortak web hesabına ayrıca taşınmalıdır.
+
+Sipariş giderleri adet başına tahmin edilir; gerçek kargo/hizmet faturası dağılımı,
+vergi doğrulaması, finans kayıtlarının tekrar güvenli senkronu ve geçmiş maliyetler
+bir sonraki aşamalardadır. Aşağıdaki numaralı bulgular ilk incelemenin kaydıdır.
+
 ## Kapsam ve sınırlar
 
 PHP sayfaları, ortak hesaplama/kimlik doğrulama/veritabanı katmanı, pazaryeri istemcileri, Node tarayıcı servisi, Chrome eklentisi, kurulum belgeleri ve mevcut testler incelendi. Bazı hesaplama hataları ayrı geçici veritabanıyla yerelde yeniden üretildi. Gerçek Trendyol ve iyzico hesaplarıyla uçtan uca doğrulama, üretim sunucusu incelemesi, tarayıcıda tüm ekranları kapsayan görsel test ve yük testi yapılmadı. Kodda bulunmayan işletim kontrolleri, sunucuda da bulunmadığı kesinmiş gibi değerlendirilmemelidir.

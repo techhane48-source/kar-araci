@@ -5,6 +5,7 @@
 let mode = "profit";
 let marketplace = "trendyol";
 let cargoType = "seller";
+let lastCalculationValid = false;
 let lastPrice = 0;   // ters hesapta bulunan son fiyat (kaydetme için)
 
 const $ = id => document.getElementById(id);
@@ -12,8 +13,8 @@ const MP_KEY = {trendyol:"t",hepsiburada:"h",amazon:"a",n11:"n"};
 const MP_LABEL = {trendyol:"Trendyol",hepsiburada:"Hepsiburada",amazon:"Amazon",n11:"N11",
                   aliexpress:"AliExpress",ciceksepeti:"ÇiçekSepeti",epttavm:"EPTTAVM"};
 const GENERAL_RATE = {aliexpress:8, ciceksepeti:15, epttavm:10};
-const TRENDYOL_SERVICE_FEE = 13.19;   // Melontik: Trendyol sabit hizmet bedeli
-const STOPAJ_RATE = 1.0;              // Melontik: stopaj = KDV-hariç satış × %1
+const TRENDYOL_SERVICE_FEE = window.PROFIT_DEFAULTS.service_fee;   // Melontik: Trendyol sabit hizmet bedeli
+const STOPAJ_RATE = window.PROFIT_DEFAULTS.stopaj_rate;              // Melontik: stopaj = KDV-hariç satış × %1
 
 function buildCategories(){
   $("category").innerHTML = window.CATEGORIES.map((c,i)=>`<option value="${i}">${c.name}</option>`).join("");
@@ -46,17 +47,28 @@ function stopajValue(P, kdvRate){
 
 // Belirli bir satış fiyatında tüm kalemleri hesapla (PHP calc_profit ile birebir aynı).
 function computeAt(P, cost, cargo, rateFrac, kdvRate, extra, serviceFee, returnFrac){
-  const commission = P * rateFrac;
-  const stopaj = stopajValue(P, kdvRate);
-  const kdvFrac = kdvRate / (100 + kdvRate);
-  let netKdv = (P - cost - commission - cargo - extra - serviceFee) * kdvFrac;
-  if(netKdv < 0) netKdv = 0;   // Melontik: Net KDV negatif çıkarsa 0
-  const returnLoss = P * returnFrac;
-  const profit = P - cost - commission - cargo - extra - serviceFee - stopaj - netKdv - returnLoss;
-  return {commission, stopaj, netKdv, returnLoss, profit};
+  const r=KarProfit.calcProfit({cost,price:P,cargo,rate:rateFrac*100,kdv:kdvRate,
+    extra_fee:extra,service_fee:serviceFee,stopaj:stopajValue(P,kdvRate),return_rate:returnFrac*100});
+  return {...r,netKdv:r.net_kdv,returnLoss:r.return_loss};
 }
 
+function calculationError(message){
+  lastCalculationValid=false;
+  lastPrice=0;
+  $("result-label").textContent="Hesaplama yapılamadı";
+  $("result-value").textContent="—";
+  ["kpi-margin","kpi-ratio","kpi-commission","kpi-kdv"].forEach(id=>kpi(id,"—"));
+  $("breakdown").textContent=message;
+  const save=$("save-btn"); if(save) save.disabled=true;
+}
 function calculate(){
+  try{
+    calculateValid();
+    lastCalculationValid=true;
+    const save=$("save-btn"); if(save) save.disabled=false;
+  }catch(e){calculationError(e.message);}
+}
+function calculateValid(){
   const cost = num("cost"), price = num("price"), cargo = num("cargo");
   const rate = num("rate") / 100;
   const kdvRate = num("kdv");
@@ -70,6 +82,7 @@ function calculate(){
     const ratio = cost > 0 ? (r.profit/cost)*100 : 0;
     renderProfit(r.profit, margin, ratio, r.commission, r.netKdv, r.stopaj, extra, serviceFee, r.returnLoss);
   } else if(mode === "campaign"){
+    KarProfit.validate([], [num("discount")]);
     const discount = num("discount") / 100;
     const salePrice = price * (1 - discount);
     const r = computeAt(salePrice, cost, cargo, rate, kdvRate, extra, serviceFee, returnRate);
@@ -77,20 +90,12 @@ function calculate(){
     const ratio = cost > 0 ? (r.profit/cost)*100 : 0;
     renderCampaign(salePrice, discount, r.profit, margin, ratio, r.commission, r.netKdv, r.stopaj, extra, serviceFee, r.returnLoss);
   } else {
-    // Ters hesap: binary search (PHP calc_price ile birebir aynı — Melontik "Fiyat Oluştur").
-    const targetProfit = num("targetProfit");
-    const targetMargin = num("targetMargin");
-    const profitAt = (P) => computeAt(P, cost, cargo, rate, kdvRate, extra, serviceFee, returnRate).profit;
-    const f = targetMargin > 0 ? (P) => profitAt(P) - P*targetMargin/100 : (P) => profitAt(P) - targetProfit;
-    let lo = 0, hi = (cost + cargo + extra + serviceFee)*4 + 1000;
-    let guard = 0;
-    while(f(hi) < 0 && guard++ < 60) hi *= 2;
-    for(let i=0;i<200;i++){ const mid=(lo+hi)/2; if(f(mid)>0) hi=mid; else lo=mid; }
-    const P = (lo+hi)/2;
-    const r = computeAt(P, cost, cargo, rate, kdvRate, extra, serviceFee, returnRate);
-    const margin = P > 0 ? (r.profit/P)*100 : 0;
-    const ratio = cost > 0 ? (r.profit/cost)*100 : 0;
-    renderPrice(P, r, margin, ratio, rate);
+    const result=KarProfit.calcPrice({cost,cargo,rate:rate*100,kdv:kdvRate,extra_fee:extra,
+      service_fee:serviceFee,return_rate:returnRate*100,stopaj:num("stopaj"),
+      stopaj_mode:stopajAutoOn()?"auto":"manual",targetProfit:num("targetProfit"),targetMargin:num("targetMargin")});
+    if(!result.ok) throw new Error(result.error);
+    const r={...result,netKdv:result.net_kdv,returnLoss:result.return_loss};
+    renderPrice(result.price,r,result.margin,result.ratio,rate);
   }
 }
 

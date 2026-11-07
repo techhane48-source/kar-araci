@@ -46,7 +46,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['repricing'])) {
     $tip = $_POST['tip'] ?? 'marj';
     $deger = (float)($_POST['deger'] ?? 0);
     $apply = isset($_POST['apply']);
-    $rep = ['tip' => $tip, 'deger' => $deger, 'uygulandi' => false, 'sayi' => 0, 'rows' => []];
+    $rep = ['tip' => $tip, 'deger' => $deger, 'uygulandi' => false, 'sayi' => 0, 'failed' => 0, 'rows' => []];
 
     $targets = db()->prepare("SELECT * FROM products WHERE user_id = {$u['id']} AND marketplace = " . db()->quote($mp) . " AND cost > 0 AND price > 0");
     $targets->execute();
@@ -54,16 +54,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['repricing'])) {
         $cost = (float)$p['cost'];
         $cargo = (float)$p['cargo'];
         $rate = (float)$p['rate'];
-        $kdv = (float)($p['kdv'] ?: 20.0);
+        $kdv = (float)($p['kdv'] ?? 20.0);
         $extra = (float)$p['extra_fee'];
-        $service = (float)($p['service_fee'] ?: trendyol_service_fee());
+        $service = (float)($p['service_fee'] ?? 0);
         $ret = (float)$p['return_rate'];
         $tp = 0.0; $tm = 0.0;
         if ($tip === 'tutar') $tp = $deger;
         elseif ($tip === 'oran') $tp = $cost * $deger / 100.0;   // kâr oranı = kâr/maliyet
         else $tm = $deger;                                        // kâr marjı = kâr/satış
-        $r = calc_price($cost, $cargo, $rate, $kdv, $extra, $service, 1.0, $ret, $tp, $tm);
-        if ($r['price'] <= 0) continue;
+        $r = calc_product_price($p, $tp, $tm);
+        if (!$r['ok']) { $rep['failed']++; continue; }
         if ($apply) {
             db()->prepare("UPDATE products SET price = ? WHERE id = ?")->execute([$r['price'], $p['id']]);
         }
@@ -83,27 +83,14 @@ if (isset($_GET['export']) && $_GET['export'] === 'repricing' && $rep) {
     header('Content-Disposition: attachment; filename="yeniden-fiyatlama.csv"');
     echo "\xEF\xBB\xBF";
     $out = fopen('php://output', 'w');
-    fputcsv($out, ['Barkod', 'Ürün', 'Eski Fiyat', 'Yeni Fiyat', 'Tahmini Kâr']);
-    foreach ($rep['rows'] as $r) fputcsv($out, [$r['barcode'], $r['name'], $r['old'], $r['new'], $r['kar']]);
+    write_csv($out, ['Barkod', 'Ürün', 'Eski Fiyat', 'Yeni Fiyat', 'Tahmini Kâr']);
+    foreach ($rep['rows'] as $r) write_csv($out, [$r['barcode'], $r['name'], $r['old'], $r['new'], $r['kar']]);
     fclose($out);
     exit;
 }
 
 // Ürün kârlılık hesabı (tek ürün)
-function urun_kar(array $p): array {
-    $cost = (float)$p['cost'];
-    $price = (float)$p['price'];
-    if ($cost <= 0 || $price <= 0) return ['ok' => false];
-    $cargo = (float)$p['cargo'];
-    $rate = (float)$p['rate'];
-    $kdv = (float)($p['kdv'] ?: 20.0);
-    $extra = (float)$p['extra_fee'];
-    $service = (float)($p['service_fee'] ?: trendyol_service_fee());
-    $ret = (float)$p['return_rate'];
-    $stopaj = auto_stopaj($price, $kdv, 1.0);
-    $r = calc_profit($cost, $price, $cargo, $rate, $kdv, $extra, $service, $stopaj, $ret);
-    return ['ok' => true, 'profit' => $r['profit'], 'ratio' => $r['ratio'], 'margin' => $r['margin']];
-}
+function urun_kar(array $p): array { return calc_product_profit($p); }
 
 $pageTitle = 'Kâr Marjı Listesi — ' . APP_NAME;
 require __DIR__ . '/../includes/header.php';
@@ -135,6 +122,7 @@ require __DIR__ . '/../includes/header.php';
   <?php if ($rep && !$rep['uygulandi']): ?>
     <div class="flash flash-info" style="margin-top:12px">
       <strong><?= $rep['sayi'] ?> ürün</strong> hedefe göre fiyatlanacak.
+      <?php if ($rep['failed']): ?><span class="neg"><?= $rep['failed'] ?> üründe hedefe ulaşılamıyor; bu ürünler değiştirilmez.</span><?php endif; ?>
       <a href="kar-marji.php?export=repricing&mp=<?= urlencode($mp) ?>" class="btn-ghost" style="margin-left:8px">⬇ Raporu İndir (CSV)</a>
       <form method="post" style="display:inline">
         <input type="hidden" name="csrf" value="<?= h(csrf_token()) ?>">
@@ -172,10 +160,11 @@ if ($detayBc !== '') {
         $p = $detayP;
         $cost = (float)$p['cost']; $price = (float)$p['price'];
         $cargo = (float)$p['cargo']; $rate = (float)$p['rate'];
-        $kdv = (float)($p['kdv'] ?: 20.0); $extra = (float)$p['extra_fee'];
-        $service = (float)($p['service_fee'] ?: trendyol_service_fee()); $ret = (float)$p['return_rate'];
-        $stopaj = auto_stopaj($price, $kdv, 1.0);
-        $detayR = calc_profit($cost, $price, $cargo, $rate, $kdv, $extra, $service, $stopaj, $ret);
+        $kdv = (float)($p['kdv'] ?? 20.0); $extra = (float)$p['extra_fee'];
+        $service = (float)($p['service_fee'] ?? 0); $ret = (float)$p['return_rate'];
+        $detayR = calc_product_profit($p);
+        $stopaj = $detayR['stopaj'] ?? 0;
+        if (!$detayR['ok']) $detayR = null;
     }
 }
 ?>

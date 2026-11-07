@@ -348,13 +348,15 @@ require __DIR__ . '/../includes/header.php';
   </div>
 </div>
 
-<script>window.CATEGORIES = <?= json_encode(categories(), JSON_UNESCAPED_UNICODE) ?>;</script>
-<script src="assets/app.js?v=4"></script>
+<script>window.CATEGORIES = <?= json_encode(categories(), JSON_UNESCAPED_UNICODE) ?>; window.PROFIT_DEFAULTS = <?= json_encode(['service_fee'=>trendyol_service_fee(),'stopaj_rate'=>1.0]) ?>;</script>
+<script src="assets/profit.js?v=1"></script>
+<script src="assets/app.js?v=5"></script>
 <?php if ($u): ?>
 <script>
 document.getElementById("save-btn").addEventListener("click", async () => {
   const category = window.CATEGORIES[+document.getElementById("category").value].name;
-  const priceVal = mode === "price" ? lastPrice : num("price");
+  if (!lastCalculationValid) return;
+  const priceVal = mode === "price" ? lastPrice : mode === "campaign" ? num("price")*(1-num("discount")/100) : num("price");
   const sa = document.getElementById("stopaj-auto");
   const stopajVal = (sa && sa.checked) ? priceVal / (1 + num("kdv")/100) * 0.01 : num("stopaj");
   const body = {
@@ -363,7 +365,7 @@ document.getElementById("save-btn").addEventListener("click", async () => {
     rate: num("rate"), kdv: num("kdv"),
     cargo_type: cargoType,
     extra_fee: num("extra-fee"),
-    service_fee: num("service-fee"), stopaj: stopajVal, return_rate: num("return-rate"),
+    service_fee: num("service-fee"), stopaj: stopajVal, stopaj_mode: (sa && sa.checked) ? "auto" : "manual", return_rate: num("return-rate"),
     name: prompt("Ürüne bir ad ver (örn. 'Kadın Bot 38')", "") || "Ürün"
   };
   const resp = await fetch("api-save.php", {

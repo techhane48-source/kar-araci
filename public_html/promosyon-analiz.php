@@ -79,10 +79,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'analy
             $price = parse_price2($row[$colIdx] ?? '');
             $t = ['price' => $price, 'profit' => null, 'margin' => null, 'ratio' => null, 'col' => $colName];
             if ($hasCost && $price > 0) {
-                $r = calc_profit($cost, $price, (float)$p['cargo'], (float)$p['rate'],
-                    (float)($p['kdv'] ?? 20), (float)($p['extra_fee'] ?? 0),
-                    (float)($p['service_fee'] ?? 0), (float)($p['stopaj'] ?? 0),
-                    (float)($p['return_rate'] ?? 0));
+                $r = calc_product_profit($p, $price);
+                if (!$r['ok']) continue;
                 $t = ['price' => $price, 'profit' => $r['profit'], 'margin' => $r['margin'], 'ratio' => $r['ratio'], 'col' => $colName];
                 if ($best === null || $r['profit'] > $best) $best = $r['profit'];
             }
@@ -112,7 +110,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'downl
     $head = ['barkod', 'urun_adi', 'maliyet'];
     foreach ($tierCols as $c) { $head[] = $c; $head[] = $c . '_net_kar'; }
     $head[] = 'secim';
-    fputcsv($out, $head, ';');
+    write_csv($out, $head, ';');
     foreach ($rows as $r) {
         $isSel = isset($sel[(string)$r['barcode']]) ? 1 : 0;
         $line = [$r['barcode'], $r['name'], $r['cost'] !== null ? number_format($r['cost'], 2, ',', '') : ''];
@@ -122,7 +120,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'downl
             $line[] = $t && $t['profit'] !== null ? number_format($t['profit'], 2, ',', '') : '';
         }
         $line[] = $isSel;
-        fputcsv($out, $line, ';');
+        write_csv($out, $line, ';');
     }
     fclose($out);
     exit;

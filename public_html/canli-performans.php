@@ -69,22 +69,23 @@ foreach ($ps->fetchAll() as $p) {
 $weekStart = strtotime('today') - 6 * 86400;
 $q = db()->prepare("SELECT * FROM orders WHERE user_id = ? AND marketplace = ? AND order_date >= ? ORDER BY order_date DESC");
 $q->execute([$u['id'], $mp, $weekStart]);
-$orders = $q->fetchAll();
+$orders = array_values(array_filter($q->fetchAll(), 'order_is_sale'));
+foreach ($orders as &$order) $order['lines'] = json_decode($order['lines'] ?? '[]', true) ?: [];
+unset($order);
 
 $todayStart = strtotime('today');
 $yesterdayStart = $todayStart - 86400;
 $now = time();
 
-$today = ['sale' => 0.0, 'profit' => 0.0, 'count' => 0, 'profitCount' => 0];
+$today = ['sale' => 0.0, 'profit' => 0.0, 'knownSale' => 0.0, 'count' => 0, 'profitCount' => 0];
 $yesterday = ['sale' => 0.0, 'profit' => 0.0, 'count' => 0];
-$hourly = array_fill(0, 24, ['sale' => 0.0, 'profit' => 0.0, 'count' => 0]);
+$hourly = array_fill(0, 24, ['sale' => 0.0, 'profit' => 0.0, 'count' => 0, 'knownCount' => 0, 'missing' => false]);
 $week = []; // dayKey (Y-m-d) => [sale, profit, count]
 
 foreach ($orders as $o) {
-    $o['lines'] = json_decode($o['lines'] ?? '[]', true) ?: [];
-    $day = (int) floor((int)$o['order_date'] / 86400) * 86400;
+    $day = strtotime(date('Y-m-d', (int)$o['order_date']));
     $dayKey = date('Y-m-d', (int)$o['order_date']);
-    if (!isset($week[$dayKey])) $week[$dayKey] = ['sale' => 0.0, 'profit' => 0.0, 'count' => 0];
+    if (!isset($week[$dayKey])) $week[$dayKey] = ['sale' => 0.0, 'profit' => 0.0, 'count' => 0, 'knownCount' => 0, 'missing' => false];
 
     $pr = calc_order_profit($o, $byBarcode);
     $profit = $pr['ok'] ? (float)$pr['profit'] : 0.0;
@@ -92,6 +93,8 @@ foreach ($orders as $o) {
 
     $week[$dayKey]['sale'] += $sale;
     $week[$dayKey]['count']++;
+    if ($pr['ok']) { $week[$dayKey]['profit'] += $profit; $week[$dayKey]['knownCount']++; }
+    else $week[$dayKey]['missing'] = true;
 
     if ($day >= $todayStart) {
         $today['sale'] += $sale;
@@ -99,10 +102,13 @@ foreach ($orders as $o) {
         $hour = (int) date('G', (int)$o['order_date']);
         $hourly[$hour]['sale'] += $sale;
         $hourly[$hour]['count']++;
+        if (!$pr['ok']) $hourly[$hour]['missing'] = true;
         if ($pr['ok']) {
             $today['profit'] += $profit;
             $today['profitCount']++;
+            $today['knownSale'] += $sale;
             $hourly[$hour]['profit'] += $profit;
+            $hourly[$hour]['knownCount']++;
         }
     } elseif ($day >= $yesterdayStart) {
         $yesterday['sale'] += $sale;
@@ -112,7 +118,7 @@ foreach ($orders as $o) {
 }
 
 $deltaSale = $yesterday['sale'] > 0 ? ($today['sale'] - $yesterday['sale']) / $yesterday['sale'] * 100 : null;
-$avgMargin = $today['profitCount'] > 0 && $today['sale'] > 0 ? $today['profit'] / $today['sale'] * 100 : 0.0;
+$avgMargin = $today['profitCount'] > 0 && $today['knownSale'] > 0 ? $today['profit'] / $today['knownSale'] * 100 : 0.0;
 
 $pageTitle = 'Canlı Performans — ' . APP_NAME;
 require __DIR__ . '/../includes/header.php';
@@ -134,15 +140,17 @@ require __DIR__ . '/../includes/header.php';
 
   <?php $flash = flash_get(); if ($flash): ?><div class="alert alert-<?= $flash['type'] ?>"><?= h($flash['msg']) ?></div><?php endif; ?>
 
+  <p class="hint">Tahmini kâr ürün kartındaki adet başı giderlerle hesaplanır; reklam, ceza ve diğer finans giderleri dahil değildir.
+  <?= $today['count'] - $today['profitCount'] ?> bugünkü siparişte maliyet/girdi eksik; bu siparişler kâr toplamına alınmaz.</p>
   <div class="kpi-row">
     <div class="kpi"><div class="k-label">Bugün Satış</div><div class="k-value"><?= tl($today['sale']) ?></div></div>
-    <div class="kpi"><div class="k-label">Bugün Net Kâr</div><div class="k-value <?= $today['profit'] < 0 ? 'neg' : '' ?>"><?= tl($today['profit']) ?></div></div>
+    <div class="kpi"><div class="k-label">Bugün Tahmini Kâr</div><div class="k-value <?= $today['profit'] < 0 ? 'neg' : '' ?>"><?= $today['profitCount'] > 0 ? tl($today['profit']) : '—' ?></div></div>
     <div class="kpi"><div class="k-label">Sipariş</div><div class="k-value"><?= $today['count'] ?></div></div>
-    <div class="kpi"><div class="k-label">Ort. Kâr Marjı</div><div class="k-value">%<?= number_format($avgMargin, 1, ',', '.') ?></div></div>
+    <div class="kpi"><div class="k-label">Ort. Kâr Marjı</div><div class="k-value"><?= $today['profitCount'] > 0 ? '%' . number_format($avgMargin, 1, ',', '.') : '—' ?></div></div>
   </div>
 
   <?php if ($deltaSale !== null): ?>
-    <p class="hint" style="margin:8px 0">Dünün aynı dönemine göre satış <b class="<?= $deltaSale >= 0 ? 'pos' : 'neg' ?>">%<?= number_format($deltaSale, 1, ',', '.') ?></b> (dün <?= tl($yesterday['sale']) ?>).</p>
+    <p class="hint" style="margin:8px 0">Düne göre satış <b class="<?= $deltaSale >= 0 ? 'pos' : 'neg' ?>">%<?= number_format($deltaSale, 1, ',', '.') ?></b> (dün <?= tl($yesterday['sale']) ?>).</p>
   <?php endif; ?>
 
   <div class="card table-card" style="margin:16px 0">
@@ -154,7 +162,7 @@ require __DIR__ . '/../includes/header.php';
     ?>
     <div style="display:flex;gap:8px;align-items:flex-end;height:120px;margin:10px 0 6px;padding:0 4px">
       <?php for ($h = 0; $h < 24; $h++): $d = $hourly[$h]; $sh = $d['sale'] / $maxSaleH * 100; $ph = $d['profit'] / $maxSaleH * 100; ?>
-        <div style="flex:1;display:flex;flex-direction:column;justify-content:flex-end;align-items:center;gap:2px" title="<?= str_pad((string)$h,2,'0',STR_PAD_LEFT) ?>:00 — Satış <?= tl($d['sale']) ?> / Kâr <?= tl($d['profit']) ?>">
+        <div style="flex:1;display:flex;flex-direction:column;justify-content:flex-end;align-items:center;gap:2px" title="<?= str_pad((string)$h,2,'0',STR_PAD_LEFT) ?>:00 — Satış <?= tl($d['sale']) ?> / Kâr <?= $d['knownCount'] > 0 ? tl($d['profit']) : '—' ?><?= $d['missing'] ? ' (eksik maliyet)' : '' ?>">
           <div style="width:100%;background:var(--accent-soft);border-radius:3px 3px 0 0;height:<?= max(2, $sh) ?>%;position:relative">
             <?php if ($d['profit'] > 0): ?><div style="position:absolute;bottom:0;left:0;right:0;background:var(--green);height:<?= max(1, $ph) ?>%;border-radius:3px 3px 0 0"></div><?php endif; ?>
           </div>
@@ -164,12 +172,12 @@ require __DIR__ . '/../includes/header.php';
     </div>
     <p class="hint" style="margin-bottom:10px">Mavi: satış, yeşil: kâr (satış ölçeğinde). Saat etiketleri her 3 saatte bir.</p>
     <table>
-      <tr><th>Saat</th><th>Satış</th><th>Net Kâr</th><th>Sipariş</th></tr>
+      <tr><th>Saat</th><th>Satış</th><th>Tahmini Kâr</th><th>Sipariş</th></tr>
       <?php foreach ($hourly as $h => $d): if ($d['count'] === 0) continue; ?>
         <tr>
           <td><?= str_pad((string)$h, 2, '0', STR_PAD_LEFT) ?>:00</td>
           <td><?= tl($d['sale']) ?></td>
-          <td class="<?= $d['profit'] < 0 ? 'neg' : 'pos' ?>"><?= tl($d['profit']) ?></td>
+          <td class="<?= $d['profit'] < 0 ? 'neg' : 'pos' ?>"><?= $d['knownCount'] > 0 ? tl($d['profit']) : '—' ?><?= $d['missing'] ? ' (eksik maliyet)' : '' ?></td>
           <td><?= $d['count'] ?></td>
         </tr>
       <?php endforeach; ?>
@@ -180,12 +188,12 @@ require __DIR__ . '/../includes/header.php';
   <div class="card table-card" style="margin:16px 0">
     <h2>Son 7 Gün</h2>
     <table>
-      <tr><th>Gün</th><th>Satış</th><th>Net Kâr</th><th>Sipariş</th></tr>
+      <tr><th>Gün</th><th>Satış</th><th>Tahmini Kâr</th><th>Sipariş</th></tr>
       <?php foreach ($week as $day => $d): ?>
         <tr>
           <td><?= h($day) ?></td>
           <td><?= tl($d['sale']) ?></td>
-          <td class="<?= $d['profit'] < 0 ? 'neg' : 'pos' ?>"><?= tl($d['profit']) ?></td>
+          <td class="<?= $d['profit'] < 0 ? 'neg' : 'pos' ?>"><?= $d['knownCount'] > 0 ? tl($d['profit']) : '—' ?><?= $d['missing'] ? ' (eksik maliyet)' : '' ?></td>
           <td><?= $d['count'] ?></td>
         </tr>
       <?php endforeach; ?>
@@ -235,8 +243,8 @@ require __DIR__ . '/../includes/header.php';
   <div class="card table-card" style="margin:16px 0">
     <h2>Son Siparişler</h2>
     <table>
-      <tr><th>Sipariş No</th><th>Tarih</th><th>Satış</th><th>Net Kâr</th><th>Durum</th></tr>
-      <?php foreach (array_slice($orders, 0, 25) as $o): $o['lines'] = json_decode($o['lines'] ?? '[]', true) ?: []; $pr = calc_order_profit($o, $byBarcode); ?>
+      <tr><th>Sipariş No</th><th>Tarih</th><th>Satış</th><th>Tahmini Kâr</th><th>Durum</th></tr>
+      <?php foreach (array_slice($orders, 0, 25) as $o): $pr = calc_order_profit($o, $byBarcode); ?>
         <tr>
           <td style="font-size:12px"><?= h($o['order_number'] ?: $o['package_number'] ?: '—') ?></td>
           <td style="font-size:12px"><?= date('d.m H:i', (int)$o['order_date']) ?></td>

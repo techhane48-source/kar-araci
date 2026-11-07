@@ -33,13 +33,12 @@ foreach ($ps->fetchAll() as $p) {
 // Siparişler
 $q = db()->prepare("SELECT * FROM orders WHERE user_id = ? AND marketplace = ? AND order_date >= ? ORDER BY order_date DESC");
 $q->execute([$u['id'], $mp, $fromTs]);
-$orders = $q->fetchAll();
+$orders = array_values(array_filter($q->fetchAll(), 'order_is_sale'));
 
 // Aggregasyon
 $ciro = 0.0; $maliyetliCiro = 0.0;
 $urunMaliyeti = 0.0; $komisyon = 0.0; $kargo = 0.0;
-$hizmet = 0.0; $stopaj = 0.0; $netKdv = 0.0;
-$reklam = 0.0; $ceza = 0.0; $erkenOdeme = 0.0; $diger = 0.0;
+$hizmet = 0.0; $stopaj = 0.0; $netKdv = 0.0; $extra = 0.0; $returns = 0.0;
 $siparis = 0; $maliyetliSiparis = 0; $urunAdet = 0;
 
 foreach ($orders as $o) {
@@ -59,6 +58,8 @@ foreach ($orders as $o) {
         $hizmet += $pr['service_fee'];
         $stopaj += $pr['stopaj'];
         $netKdv += $pr['net_kdv'];
+        $extra += $pr['extra_fee'];
+        $returns += $pr['return_loss'];
     }
 }
 
@@ -70,9 +71,9 @@ foreach ($orders as $o) {
     }
 }
 
-// Brüt & Net kâr (Melontik ayrımı)
-$brutKar = $maliyetliCiro - $urunMaliyeti - $komisyon - $kargo - $hizmet - $stopaj - $netKdv;
-$netKar = $brutKar - $reklam - $ceza - $erkenOdeme - $diger;
+// Kayıtlı giderlerle tahmini ürün kârı; diğer finans giderleri bu hesaba dahil değil.
+$brutKar = $maliyetliCiro - $urunMaliyeti - $komisyon - $kargo - $hizmet - $stopaj - $netKdv - $extra - $returns;
+$netKar = $brutKar;
 $karSatis = $maliyetliCiro > 0 ? $netKar / $maliyetliCiro * 100 : 0.0;
 $karMaliyet = $urunMaliyeti > 0 ? $netKar / $urunMaliyeti * 100 : 0.0;
 $ortKomisyon = $maliyetliCiro > 0 ? $komisyon / $maliyetliCiro * 100 : 0.0;
@@ -117,13 +118,14 @@ require __DIR__ . '/../includes/header.php';
     </div>
   <?php else: ?>
 
+  <p class="hint">Kârlar kayıtlı ürün giderleriyle tahmin edilir. Reklam, ceza, erken ödeme ve diğer finans giderleri dahil değildir. İptal/iade paketleri satış toplamlarına alınmaz.</p>
   <div class="kpi-row">
     <div class="kpi"><div class="k-label">Toplam Ciro</div><div class="k-value"><?= tl($ciro) ?></div></div>
     <div class="kpi"><div class="k-label">Maliyeti Olan Ciro</div><div class="k-value"><?= tl($maliyetliCiro) ?></div></div>
-    <div class="kpi"><div class="k-label">Brüt Kâr</div><div class="k-value <?= $brutKar < 0 ? 'neg' : '' ?>"><?= tl($brutKar) ?></div></div>
-    <div class="kpi"><div class="k-label">Net Kâr</div><div class="k-value <?= $netKar < 0 ? 'neg' : 'pos' ?>"><?= tl($netKar) ?></div></div>
-    <div class="kpi"><div class="k-label">Net Kâr / Satış</div><div class="k-value <?= $karSatis < 0 ? 'neg' : '' ?>">%<?= number_format($karSatis, 1, ',', '.') ?></div></div>
-    <div class="kpi"><div class="k-label">Net Kâr / Maliyet</div><div class="k-value <?= $karMaliyet < 0 ? 'neg' : '' ?>">%<?= number_format($karMaliyet, 1, ',', '.') ?></div></div>
+    <div class="kpi"><div class="k-label">Maliyeti Hesaplanan Sipariş</div><div class="k-value"><?= $maliyetliSiparis ?> / <?= $siparis ?></div></div>
+    <div class="kpi"><div class="k-label">Tahmini Ürün Kârı</div><div class="k-value <?= $netKar < 0 ? 'neg' : 'pos' ?>"><?= $maliyetliSiparis > 0 ? tl($netKar) : '—' ?></div></div>
+    <div class="kpi"><div class="k-label">Tahmini Kâr / Satış</div><div class="k-value <?= $karSatis < 0 ? 'neg' : '' ?>">%<?= number_format($karSatis, 1, ',', '.') ?></div></div>
+    <div class="kpi"><div class="k-label">Tahmini Kâr / Maliyet</div><div class="k-value <?= $karMaliyet < 0 ? 'neg' : '' ?>">%<?= number_format($karMaliyet, 1, ',', '.') ?></div></div>
   </div>
 
   <?php if ($maliyetliCiro < $ciro): ?>
@@ -180,10 +182,12 @@ require __DIR__ . '/../includes/header.php';
       <tr><td>Hizmet Bedeli</td><td class="tar"><?= tl($hizmet) ?></td></tr>
       <tr><td>Stopaj Kesintisi</td><td class="tar"><?= tl($stopaj) ?></td></tr>
       <tr><td>Net KDV</td><td class="tar"><?= tl($netKdv) ?></td></tr>
-      <tr><td>Reklam Harcaması</td><td class="tar"><?= tl($reklam) ?> <span class="hint">(cari hesap ekstresi çekilince dolar)</span></td></tr>
-      <tr><td>Ceza</td><td class="tar"><?= tl($ceza) ?></td></tr>
-      <tr><td>Erken Ödeme Kesintisi</td><td class="tar"><?= tl($erkenOdeme) ?></td></tr>
-      <tr><td>Diğer Faturalar</td><td class="tar"><?= tl($diger) ?></td></tr>
+      <tr><td>Ek Maliyet</td><td class="tar"><?= tl($extra) ?></td></tr>
+      <tr><td>Tahmini İade Kaybı</td><td class="tar"><?= tl($returns) ?></td></tr>
+      <tr><td>Reklam Harcaması</td><td class="tar">Hesaba dahil değil</td></tr>
+      <tr><td>Ceza</td><td class="tar">Hesaba dahil değil</td></tr>
+      <tr><td>Erken Ödeme Kesintisi</td><td class="tar">Hesaba dahil değil</td></tr>
+      <tr><td>Diğer Faturalar</td><td class="tar">Hesaba dahil değil</td></tr>
     </table>
   </div>
 

@@ -1,0 +1,106 @@
+<?php
+declare(strict_types=1);
+$path=getenv('KARFIYAT_DB');
+if (!$path || realpath($path)===realpath(__DIR__.'/../data/app.sqlite')) throw new RuntimeException('Ayrı test veritabanı seçin.');
+require_once __DIR__.'/../includes/functions.php';
+$failed=0;
+function check(bool $ok,string $label):void {global $failed;echo ($ok?'PASS ':'FAIL ').$label."\n";if(!$ok)$failed++;}
+$jar=tempnam(sys_get_temp_dir(),'kf-profit-cookie-');
+$ch=curl_init();
+curl_setopt_array($ch,[CURLOPT_RETURNTRANSFER=>true,CURLOPT_COOKIEJAR=>$jar,CURLOPT_COOKIEFILE=>$jar,CURLOPT_FOLLOWLOCATION=>false,CURLOPT_TIMEOUT=>15]);
+function req(string $page,?array $data=null,bool $json=false):array {
+    global $ch;
+    curl_setopt($ch,CURLOPT_URL,'http://127.0.0.1:8090/'.$page);
+    curl_setopt($ch,CURLOPT_POST,$data!==null);
+    curl_setopt($ch,CURLOPT_HTTPHEADER,$json?['Content-Type: application/json','X-CSRF-Token: '.($GLOBALS['csrf']??'')]:[]);
+    if($data!==null)curl_setopt($ch,CURLOPT_POSTFIELDS,$json?json_encode($data):http_build_query($data));
+    $body=curl_exec($ch);if($body===false)throw new RuntimeException(curl_error($ch));
+    return ['status'=>curl_getinfo($ch,CURLINFO_RESPONSE_CODE),'body'=>$body];
+}
+function csrf(string $html):string {preg_match('/name="csrf" value="([^"]+)"/',$html,$m);return $m[1]??'';}
+function csv_rows(string $body):array {
+    $rows=array_map(static fn($line)=>str_getcsv($line,',','"','\\'),explode("\n",trim($body)));
+    array_shift($rows);return $rows;
+}
+function row_for(string $html,string $name):string {
+    $at=strpos($html,$name);if($at===false)return '';
+    $start=strrpos(substr($html,0,$at),'<tr>');$end=strpos($html,'</tr>',$at);
+    return substr($html,$start,$end-$start);
+}
+
+db()->prepare("INSERT INTO users(email,password_hash,plan) VALUES(?,?,'pro')")
+    ->execute(['profit@example.test',password_hash('Test-Profit-Only!',PASSWORD_DEFAULT)]);
+$id=(int)db()->lastInsertId();
+$products=[
+ ['barcode'=>'A','name'=>'Profit Fixture A','category'=>'Giyim','cost'=>200,'price'=>400,'cargo'=>50,'rate'=>21.36,'kdv'=>20,'service_fee'=>0,'extra_fee'=>0,'stopaj'=>0,'return_rate'=>0,'stopaj_mode'=>'manual'],
+ ['barcode'=>'B','name'=>'Profit Fixture B','category'=>'Gıda','cost'=>100,'price'=>300,'cargo'=>10,'rate'=>10,'kdv'=>10,'service_fee'=>2,'extra_fee'=>4,'stopaj'=>0,'return_rate'=>2,'stopaj_mode'=>'auto'],
+];
+foreach($products as $p) {
+    db()->prepare('INSERT INTO products(user_id,marketplace,'.implode(',',array_keys($p)).') VALUES (?,? ,'.implode(',',array_fill(0,count($p),'?')).')')
+        ->execute(array_merge([$id,'trendyol'],array_values($p)));
+}
+$by=array_column($products,null,'barcode');
+$lines=[['barcode'=>'A','quantity'=>2,'price'=>400],['barcode'=>'B','quantity'=>1,'price'=>300]];
+$insert=db()->prepare('INSERT INTO orders(user_id,marketplace,order_number,package_number,status,total_price,order_date,lines) VALUES (?,\'trendyol\',?,?,?,?,?,?)');
+foreach([['ok','Delivered',1100],['discount','Delivered',990],['cancel','Cancelled',10000],['return','Returned',10000]] as [$number,$status,$sale])
+    $insert->execute([$id,$number,$number,$status,$sale,strtotime('today')+60,json_encode($lines)]);
+$expected=calc_order_profit(['total_price'=>1100,'status'=>'Delivered','lines'=>$lines],$by)['profit']
+    +calc_order_profit(['total_price'=>990,'status'=>'Delivered','lines'=>$lines],$by)['profit'];
+$r=req('giris.php');$csrf=csrf($r['body']);
+$r=req('giris.php',['csrf'=>$csrf,'email'=>'profit@example.test','password'=>'Test-Profit-Only!']);
+check($r['status']===302,'Kârlılık test kullanıcısı giriş yapar');
+$r=req('hesabim.php');$csrf=csrf($r['body']);
+foreach(['urunler.php','kar-marji.php'] as $page) {
+    $r=req($page);
+    check($r['status']===200 && str_contains(row_for($r['body'],'Profit Fixture A'),tl(53.8)),"$page aynı ürün kârını gösterir");
+}
+$csv=['barkod;fiyat','A;400','B;300'];
+$tmp=tempnam(sys_get_temp_dir(),'kf-profit-csv-');file_put_contents($tmp,implode("\n",$csv));
+foreach(['toplu-analiz.php','promosyon-analiz.php'] as $page) {
+    curl_setopt($ch,CURLOPT_URL,'http://127.0.0.1:8090/'.$page);
+    curl_setopt($ch,CURLOPT_POST,true);curl_setopt($ch,CURLOPT_HTTPHEADER,[]);
+    curl_setopt($ch,CURLOPT_POSTFIELDS,['csrf'=>$csrf,'action'=>'analyze','mp'=>'trendyol','csv'=>new CURLFile($tmp,'text/csv','prices.csv')]);
+    curl_exec($ch);$r=req($page);
+    check(str_contains($r['body'],number_format(53.8,2,',','.')),"$page aynı ürün kârını gösterir");
+}
+unlink($tmp);
+foreach(['order','product','category'] as $type) {
+    $r=req('raporlar.php?r='.$type.'&export=1');$rows=csv_rows($r['body']);
+    $index=['order'=>3,'product'=>5,'category'=>4][$type];
+    $sum=array_sum(array_map(static fn($row)=>(float)$row[$index],$rows));
+    check(abs($sum-$expected)<0.011,"$type CSV kâr toplamı sipariş hesabıyla eşleşir");
+    if($type==='order') check(count($rows)===2,'İptal/iade siparişleri rapora alınmaz');
+}
+$r=req('dashboard.php?days=7');
+check(str_contains($r['body'],tl($expected)) && str_contains($r['body'],tl(2090)),'Dashboard raporlarla aynı ciro/kârı gösterir');
+check(str_contains($r['body'],'Hesaba dahil değil'),'Bilinmeyen finans giderleri sıfır gibi gösterilmez');
+$r=req('canli-performans.php');
+check(str_contains($r['body'],tl($expected)) && str_contains($r['body'],tl(2090)),'Gece ilk saatteki siparişler bugün ve haftalık kârda görünür');
+$before=(float)db()->query("SELECT price FROM products WHERE user_id=$id AND barcode='A'")->fetchColumn();
+$r=req('kar-marji.php',['csrf'=>$csrf,'repricing'=>1,'tip'=>'marj','deger'=>90,'apply'=>1]);
+$after=(float)db()->query("SELECT price FROM products WHERE user_id=$id AND barcode='A'")->fetchColumn();
+check($before===$after,'Ulaşılamayan hedef fiyat ürüne yazılmaz');
+foreach([['cost'=>-1],['rate'=>101],['rate'=>[1]],['kdv'=>-100]] as $invalid) {
+    $data=array_replace(['marketplace'=>'trendyol','category'=>'Giyim','cost'=>100,'price'=>200],$invalid);
+    check(req('api-save.php',$data,true)['status']===422,'Geçersiz hesap girdisi API’de reddedilir');
+}
+$r=req('api-save.php',['marketplace'=>'trendyol','category'=>'Giyim','name'=>'Auto mode saved','cost'=>100,'price'=>200,'stopaj_mode'=>'auto'],true);
+check((json_decode($r['body'],true)['ok']??false) && db()->query("SELECT stopaj_mode FROM products WHERE user_id=$id AND name='Auto mode saved'")->fetchColumn()==='auto','Otomatik stopaj tercihi kalıcı saklanır');
+// Karışık siparişte bilinmeyen satır hiçbir raporda sahte sıfır kâr üretmesin.
+$insert->execute([$id,'missing','missing','Delivered',400,strtotime('today')+60,json_encode([['barcode'=>'UNKNOWN','quantity'=>1,'price'=>400]])]);
+$r=req('raporlar.php?r=product&export=1');$unknown=array_values(array_filter(csv_rows($r['body']),static fn($row)=>$row[0]==='UNKNOWN'));
+check(isset($unknown[0]) && $unknown[0][5]==='','Maliyeti bilinmeyen ürün CSV kârı boş kalır');
+db()->prepare("INSERT INTO settlements(user_id,barcode,transaction_type,debt,transaction_date) VALUES (?,'A','Return',40,?)")->execute([$id,time()]);
+db()->prepare("INSERT INTO settlements(user_id,barcode,transaction_type,debt,transaction_date) VALUES (?,'A','Coupon',15,?)")->execute([$id,time()]);
+db()->prepare("INSERT INTO settlements(user_id,barcode,transaction_type,debt,transaction_date) VALUES (?,'A','Ads',12,?)")->execute([$id,time()]);
+foreach (['return','campaign','ads','buybox'] as $type) check(req('raporlar.php?r='.$type)['status']===200,"$type yardımcı raporu açılır");
+$returns=csv_rows(req('raporlar.php?r=return&export=1')['body']);
+check(isset($returns[0]) && $returns[0][0]==='A' && (float)$returns[0][3]===40.0,'İngilizce Return kaydı iade raporuna girer');
+$campaign=csv_rows(req('raporlar.php?r=campaign&export=1')['body']);
+check(isset($campaign[0]) && (float)$campaign[0][2]===15.0,'İngilizce Coupon kaydı kampanya raporuna girer');
+$ads=csv_rows(req('raporlar.php?r=ads&export=1')['body']);
+check(isset($ads[0]) && $ads[0][6]==='','Reklam atfı olmadan kâr üretilmez');
+check(str_contains(req('raporlar.php?r=order')['body'],'<td class="tar">%'),'Rapor yüzdeleri para birimiyle gösterilmez');
+curl_close($ch);unlink($jar);
+echo $failed?"$failed test başarısız\n":"TÜM TESTLER GEÇTİ\n";
+exit($failed?1:0);

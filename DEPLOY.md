@@ -160,3 +160,50 @@ Chrome işletim sistemi sandbox'ı açık tutulur; üretimde çalışan bir sand
 servis ağ izolasyonu sağlanmalıdır. Yeni CDN'ler gerekiyorsa politika incelenerek
 host bazında genişletilir. Politika dışı kaynakların engellenmesi bazı sitelerde
 fiyat çıkarımını etkileyebilir; gerçek sitelerle dağıtım testi gerekir.
+
+## Ortak kârlılık hesabı
+
+Web ekranları `includes/profit.php` içindeki ortak ürün/sipariş hesabını kullanır.
+Tarayıcı hesap makinesi `public_html/assets/profit.js` ile çalışır; PHP/JavaScript
+sonuçları karşılaştırmalı testlerle doğrulanır. Her iki dosyayı da dağıtıma ekleyin.
+
+- `products.stopaj_mode` kolonu ilk istekte eklenir. Eski ürünlerin stopajı
+  `manual` kalır: mevcut TL tutarı ve açıkça girilmiş sıfır giderler korunur.
+- Hesap makinesinden kaydedilen yeni ürünlerde otomatik stopaj tercihi saklanır;
+  otomatik modda teklif/kampanya fiyatı değişince stopaj tekrar hesaplanır.
+- Yeni Trendyol API ürünleri varsayılan hizmet bedeli ve otomatik stopajla
+  oluşturulur. Bunlar tahmindir; eski kayıtların giderleri otomatik değiştirilmez.
+- Ürün kartındaki maliyet, kargo, hizmet, ek gider ve manuel stopaj **adet başına**
+  kabul edilir. Siparişin toplam tutarı satır fiyatı×adet ağırlıklarıyla dağıtılır;
+  her satır kendi KDV oranıyla hesaplanıp toplanır. Bu bir ürün gideri tahminidir;
+  gerçek paket kargo faturası veya farklı vergi oranlı kesintilerin mutabakatı değildir.
+- Bir satırın maliyeti/girdisi eksikse siparişin kârı bilinmiyor olarak gösterilir.
+  Ürün/kategori dağılımında o siparişin satırları da eksik işaretlenir. Kâr özetleri
+  yalnızca maliyeti tam siparişleri kapsar; bilinmeyen tutarlar sıfır sayılmaz.
+- İptal/iade/teslim edilemeyen paket durumları tahmini satış toplamlarından çıkarılır.
+  Kısmi satır iadeleri ve geçmiş maliyet anlık görüntüleri henüz kapsamda değildir.
+- Hedef fiyat yalnızca ulaşılabilir hedeflerde hesaplanır ve hedefi sağlayan
+  kuruşa yukarı yuvarlanır. Hatalı/aşırı hedefler ürün fiyatına yazılmaz.
+- Dashboard ve ana kâr raporları reklam/ceza/erken ödeme/diğer finans giderlerini
+  içermez; bu giderler sıfırmış gibi gösterilmez. Reklam atıf verisi olmadan reklam
+  kârı, iade kaydı tutarından da doğrudan net iade zararı üretilmez.
+
+Para hesapları ara adımlarda float hassasiyetiyle sürer, ekranda kuruşa yuvarlanır.
+Vergi, stopaj ve iade varsayımları mali müşavir doğrulaması gerektirir. Geçmiş
+raporlar hâlâ güncel ürün maliyetleriyle hesaplanır; resmî finans mutabakatı ayrı iştir.
+
+### Kârlılık testleri
+
+Yukarıdaki izole HTTP test veritabanını kullanarak, akış testlerinden sonra:
+
+```bash
+php scripts/test-profit.php
+node scripts/test-profit-parity.js
+php scripts/test-profit-http.php
+CHROME_PATH=/usr/bin/chromium node scripts/test-profit-browser.js
+```
+
+`test-profit-http.php` yalnızca test için `profit@example.test` hesabı ve örnek
+siparişler oluşturur; yeni test veritabanında çalıştırın. Tarayıcı testi bu hesabı
+kullanır. `PHP_BIN` ile CLI yolunu belirtebilirsiniz. Kısıtlı test ortamlarında
+`KARFIYAT_TEST_NO_SANDBOX=1` yalnızca tarayıcı testinin başlatma seçeneğidir.

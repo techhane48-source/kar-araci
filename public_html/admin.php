@@ -126,7 +126,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 $notice = $_GET['n'] ?? '';
 
-$users = db()->query("SELECT id, email, name, plan, plan_expires, created_at FROM users ORDER BY id DESC")->fetchAll();
+$users = db()->query("SELECT id, email, name, plan, plan_expires, is_admin, created_at FROM users ORDER BY id DESC")->fetchAll();
 $payments = db()->query("SELECT p.*, u.email FROM payments p JOIN users u ON u.id = p.user_id ORDER BY p.id DESC LIMIT 50")->fetchAll();
 $pendingCount = db()->query("SELECT COUNT(*) c FROM payments WHERE status = 'pending'")->fetch()['c'];
 $partnerCommissions = db()->query("SELECT pc.*, u.email AS partner_email, ru.email AS referred_email

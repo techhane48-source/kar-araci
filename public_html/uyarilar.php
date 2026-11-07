@@ -41,10 +41,8 @@ foreach ($products as $p) {
     if ($cost <= 0) {
         $alerts['maliyet'][] = $p;
     } else {
-        $r = calc_profit($cost, $price, (float)$p['cargo'], (float)$p['rate'],
-            (float)($p['kdv'] ?: 20), (float)$p['extra_fee'], (float)($p['service_fee'] ?: trendyol_service_fee()),
-            auto_stopaj($price, (float)($p['kdv'] ?: 20), 1.0), (float)$p['return_rate']);
-        if ($r['profit'] < 0) $alerts['zarar'][] = array_merge($p, ['_profit' => $r['profit']]);
+        $r = calc_product_profit($p);
+        if ($r['ok'] && $r['profit'] < 0) $alerts['zarar'][] = array_merge($p, ['_profit' => $r['profit']]);
     }
     if ((float)$p['rate'] <= 0) $alerts['komisyon'][] = $p;
     if ((int)$p['quantity'] <= 0) $alerts['stok'][] = $p;
@@ -55,6 +53,7 @@ foreach ($products as $p) {
 }
 
 foreach ($orders as $o) {
+    if (!order_is_sale($o)) continue;
     $pr = calc_order_profit($o, $byBarcode);
     if (!$pr['ok'] && $pr['sale'] > 0) $alerts['siparis'][] = array_merge($o, ['_sale' => $pr['sale']]);
 }

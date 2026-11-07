@@ -22,15 +22,15 @@ if (($_GET['export'] ?? '') === 'maliyet') {
         header('Content-Disposition: attachment; filename="maliyetler.csv"');
         $out = fopen('php://output', 'w');
         fwrite($out, "\xEF\xBB\xBF");
-        fputcsv($out, ['Barkod','Model Kodu','Stok kodu','Kategori İsmi','Ürün Adı','Trendyol  Satış Fiyatı','Stok','Ürün Maliyeti ( KDV Dahil)','Maliyet KDV Oranı','Para Birimi','Ürün Desisi','Teslimat Tipi','Ekstra Maliyet (%)','Ekstra Maliyet (TL)']);
+        write_csv($out, ['Barkod','Model Kodu','Stok kodu','Kategori İsmi','Ürün Adı','Trendyol  Satış Fiyatı','Stok','Ürün Maliyeti ( KDV Dahil)','Maliyet KDV Oranı','Para Birimi','Ürün Desisi','Teslimat Tipi','Ekstra Maliyet (%)','Ekstra Maliyet (TL)']);
         foreach ($rows as $r) {
             $desi = (float)($r['kesilen_desi'] ?? 0);
             if ($desi <= 0) $desi = desi_from_dims((float)($r['en'] ?? 0), (float)($r['boy'] ?? 0), (float)($r['yukseklik'] ?? 0));
-            fputcsv($out, [
+            write_csv($out, [
                 $r['barcode'] ?? '', $r['model_kodu'] ?? '', '', $r['category'] ?? '', $r['name'] ?? '',
                 (float)($r['price'] ?? 0), (int)($r['quantity'] ?? 0),
                 (float)($r['cost'] ?? 0) > 0 ? (float)$r['cost'] : '',
-                (float)($r['kdv'] ?? 0) > 0 ? (float)$r['kdv'] : 20,
+                (float)($r['kdv'] ?? 20),
                 'TRY', $desi > 0 ? round($desi, 2) : '',
                 (!empty($r['cargo_type']) && $r['cargo_type'] !== 'seller') ? $r['cargo_type'] : 'standart',
                 0, (float)($r['extra_fee'] ?? 0),
@@ -71,6 +71,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'impor
 
     $rows = [];
     $header = [];
+    $updated = 0; $notFound = 0;
     if ($isXlsx) {
         try {
             $parsed = xlsx_read($tmpName);
@@ -223,12 +224,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'impor
             $rate = category_rate($category, $mpMap[$mp]);
             $ins->execute([
                 $u['id'], mb_substr($name ?: 'Ürün', 0, 120), $mpMap[$mp], $category, $rate,
-                (float) ($row[$cols['cost'] ?? 0] ?? 0),
-                (float) ($row[$cols['price'] ?? 0] ?? 0),
-                (float) ($row[$cols['cargo'] ?? 0] ?? 0),
-                (float) ($row[$cols['service_fee'] ?? 0] ?? 0),
-                (float) ($row[$cols['stopaj'] ?? 0] ?? 0),
-                (float) ($row[$cols['return_rate'] ?? 0] ?? 0),
+                (float) (isset($cols['cost']) ? ($row[$cols['cost']] ?? 0) : 0),
+                (float) (isset($cols['price']) ? ($row[$cols['price']] ?? 0) : 0),
+                (float) (isset($cols['cargo']) ? ($row[$cols['cargo']] ?? 0) : 0),
+                (float) (isset($cols['service_fee']) ? ($row[$cols['service_fee']] ?? 0) : 0),
+                (float) (isset($cols['stopaj']) ? ($row[$cols['stopaj']] ?? 0) : 0),
+                (float) (isset($cols['return_rate']) ? ($row[$cols['return_rate']] ?? 0) : 0),
             ]);
             $importResult['ok']++;
         }
@@ -253,16 +254,14 @@ if ($q !== '') {
 
 // KPI toplamları: yalnızca gerekli kolonlar, tüm ürünler üzerinden (hafif döngü)
 $totalProfit = 0.0; $totalRevenue = 0.0; $totalCommission = 0.0; $totalCount = 0; $maliyetsiz = 0;
-$totStmt = db()->prepare("SELECT cost, price, cargo, rate, kdv, extra_fee, service_fee, stopaj, return_rate FROM products WHERE $where");
+$totStmt = db()->prepare("SELECT cost, price, cargo, rate, kdv, extra_fee, service_fee, stopaj, stopaj_mode, return_rate FROM products WHERE $where");
 $totStmt->execute($args);
 foreach ($totStmt->fetchAll() as $tp) {
     if ((float)$tp['cost'] <= 0) $maliyetsiz++;
-    $rr = calc_profit((float)$tp['cost'], (float)$tp['price'], (float)$tp['cargo'], (float)$tp['rate'],
-        (float)($tp['kdv'] ?? 20), (float)($tp['extra_fee'] ?? 0), (float)($tp['service_fee'] ?? 0),
-        (float)($tp['stopaj'] ?? 0), (float)($tp['return_rate'] ?? 0));
-    $totalProfit += $rr['profit'];
+    $rr = calc_product_profit($tp);
+    if ($rr['ok']) $totalProfit += $rr['profit'];
     $totalRevenue += (float)$tp['price'];
-    $totalCommission += $rr['commission'];
+    $totalCommission += $rr['commission'] ?? 0;
     $totalCount++;
 }
 $totals = ['profit' => $totalProfit, 'revenue' => $totalRevenue, 'commission' => $totalCommission, 'count' => $totalCount];
@@ -280,13 +279,11 @@ $stmt->execute($args);
 $products = $stmt->fetchAll();
 
 foreach ($products as &$p) {
-    $r = calc_profit((float)$p['cost'], (float)$p['price'], (float)$p['cargo'], (float)$p['rate'],
-        (float)($p['kdv'] ?? 20), (float)($p['extra_fee'] ?? 0), (float)($p['service_fee'] ?? 0),
-        (float)($p['stopaj'] ?? 0), (float)($p['return_rate'] ?? 0));
+    $r = calc_product_profit($p);
     $p['_profit'] = $r['profit'];
     $p['_margin'] = $r['margin'];
     $p['_ratio'] = $r['ratio'];
-    $p['_has_cost'] = (float)$p['cost'] > 0;
+    $p['_has_cost'] = $r['ok'];
 }
 unset($p);
 
@@ -345,7 +342,7 @@ require __DIR__ . '/../includes/header.php';
       <tr><th>Ürün</th><th>Barkod</th><th>Pazaryeri</th><th>Kategori</th><th>Satış</th><th>Net Kâr</th><th>Kâr Oranı</th><th>Kâr Marjı</th><th></th></tr>
       <?php foreach ($products as $p): ?>
       <tr>
-        <td><?= h($p['name']) ?><?= !$p['_has_cost'] ? ' <span class="hint" style="font-size:11px;color:var(--muted)">(maliyet girilmedi)</span>' : '' ?></td>
+        <td><?= h($p['name']) ?><?= !$p['_has_cost'] ? ' <span class="hint" style="font-size:11px;color:var(--muted)">(maliyet veya hesaplama girdisi eksik)</span>' : '' ?></td>
         <td style="font-size:11px;color:var(--muted)"><?= $p['barcode'] !== '' ? h($p['barcode']) : '—' ?></td>
         <td><?= h(marketplace_label($p['marketplace'])) ?></td>
         <td style="font-size:12px"><?= h($p['category']) ?></td>
