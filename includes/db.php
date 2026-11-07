@@ -248,6 +248,28 @@ function migrate(): void
         $pdo->exec("ALTER TABLE integrations ADD COLUMN last_orders_sync TEXT DEFAULT NULL");
     }
 
+    foreach ([
+        'revision' => 'INTEGER NOT NULL DEFAULT 0',
+        'last_settlements_sync' => 'INTEGER DEFAULT NULL',
+        'last_sync_error' => 'TEXT DEFAULT NULL',
+        'last_sync_error_scope' => 'TEXT DEFAULT NULL',
+    ] as $column => $definition) {
+        if (!in_array($column, $icols, true)) $pdo->exec("ALTER TABLE integrations ADD COLUMN $column $definition");
+    }
+    $scols = array_column($pdo->query('PRAGMA table_info(settlements)')->fetchAll(PDO::FETCH_ASSOC), 'name');
+    if (!in_array('provider_id', $scols, true)) $pdo->exec('ALTER TABLE settlements ADD COLUMN provider_id TEXT DEFAULT NULL');
+    $pdo->exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_settlements_provider ON settlements(user_id, marketplace, provider_id)");
+    $pdo->exec("CREATE INDEX IF NOT EXISTS idx_settlements_barcode ON settlements(user_id, marketplace, barcode, transaction_type, transaction_date DESC)");
+    $pdo->exec("CREATE INDEX IF NOT EXISTS idx_products_market_barcode ON products(user_id, marketplace, barcode)");
+    $pdo->exec("CREATE TABLE IF NOT EXISTS settlement_legacy_archive (
+        source_id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL, marketplace TEXT NOT NULL,
+        payload TEXT NOT NULL, archived_at TEXT NOT NULL DEFAULT (datetime('now'))
+    )");
+    $pdo->exec("CREATE TABLE IF NOT EXISTS sync_locks (
+        user_id INTEGER NOT NULL, marketplace TEXT NOT NULL, token TEXT NOT NULL,
+        expires_at INTEGER NOT NULL, PRIMARY KEY(user_id, marketplace)
+    )");
+
     // Eski sürümün bilinen kurulum şifresiyle kalan hesabını devre dışı bırak.
     // Şifresi değiştirilmiş yöneticilere ve normal kullanıcılara dokunma.
     if (!$pdo->query("SELECT 1 FROM settings WHERE key = 'bootstrap_cleanup_v1'")->fetchColumn()) {

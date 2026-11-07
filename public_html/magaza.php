@@ -48,7 +48,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $supported) {
         } elseif ($action === 'sync') {
             $res = sync_products((int)$u['id'], $mp);
             if ($res['ok']) {
-                $ok = "Senkronizasyon tamamlandı: {$res['inserted']} yeni ürün eklendi, {$res['skipped']} ürün zaten mevcuttu (toplam {$res['total']} ürün çekildi).";
+                $ok = "Senkronizasyon tamamlandı: {$res['inserted']} yeni ürün eklendi, {$res['updated']} mevcut ürün güncellendi (toplam {$res['total']} ürün çekildi).";
             } else {
                 $error = 'Senkronizasyon hatası: ' . ($res['error'] ?? 'Bilinmeyen hata');
             }
@@ -56,7 +56,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $supported) {
             $res = sync_settlements((int)$u['id'], $mp);
             if ($res['ok']) {
                 $ok = "Cari hesap ekstresi (resmi komisyon/kargo/hakediş) çekildi: {$res['records']} kayıt, {$res['rates_updated']} ürünün komisyon oranı resmi değerle güncellendi.";
-                if (!empty($res['errors'])) $ok .= ' (' . count($res['errors']) . ' tip/dilim atlandı.)';
+
             } else {
                 $error = 'Cari hesap ekstresi hatası: ' . ($res['error'] ?? 'Bilinmeyen hata');
             }
@@ -93,6 +93,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $supported) {
         }
     }
 }
+
+// POST sonrasında başarı/hata zamanlarını güncel bağlantıdan oku.
+$int = get_integration((int)$u['id'], $mp);
+$hasConnection = $int !== null;
 
 // Fiyat yönetimi: YEREL senkronize ürünler (canlı Trendyol çekimi YOK — 14k+ ürün için performans).
 // Güncel fiyat/stok bilgisi "Ürünleri Çek" ile yerel DB'ye işlenir; burada o veri gösterilir.
@@ -152,7 +156,10 @@ require __DIR__ . '/../includes/header.php';
       <h2>Bağlı Mağaza</h2>
       <div class="detail-row"><span>Satıcı ID</span><strong><?= h($int['seller_id']) ?></strong></div>
       <div class="detail-row"><span>Ortam</span><strong><?= $int['stage'] ? 'Test (stage)' : 'Üretim' ?></strong></div>
-      <div class="detail-row"><span>Son senkron</span><strong><?= $int['last_sync'] ? h($int['last_sync']) : 'Henüz yok' ?></strong></div>
+      <div class="detail-row"><span>Ürün senkron başlangıcı (UTC)</span><strong><?= $int['last_sync'] ? h($int['last_sync']) : 'Henüz yok' ?></strong></div>
+      <div class="detail-row"><span>Son eksiksiz sipariş senkronu</span><strong><?= $int['last_orders_sync'] ? date('d.m.Y H:i', (int)$int['last_orders_sync']) : 'Henüz yok' ?></strong></div>
+      <div class="detail-row"><span>Son eksiksiz finans senkronu</span><strong><?= $int['last_settlements_sync'] ? date('d.m.Y H:i', (int)$int['last_settlements_sync']) : 'Henüz yok' ?></strong></div>
+      <?php if ($int['last_sync_error']): ?><p class="flash flash-error">Son senkron tamamlanamadı: <?= h($int['last_sync_error']) ?></p><?php endif; ?>
       <div class="actions" style="margin-top:14px; display:flex; gap:10px; flex-wrap:wrap">
         <form method="post" style="display:inline">
           <input type="hidden" name="csrf" value="<?= csrf_token() ?>">
@@ -170,7 +177,7 @@ require __DIR__ . '/../includes/header.php';
           <button type="submit" class="btn-danger">Bağlantıyı Kaldır</button>
         </form>
       </div>
-      <p class="hint" style="margin-top:14px">Ürünler çekildikten sonra <a href="urunler.php">Ürünlerim</a> sayfasında görünür. Maliyet alanını her ürün için siz girersiniz (API'den maliyet gelmez). <strong>"Komisyonları Çek"</strong> ile Trendyol'un resmi cari hesap ekstresinden gerçek komisyon oranı + kargo + hakediş çekilir ve ürünlerinize işlenir (tahmin yerine resmi değer).</p>
+      <p class="hint" style="margin-top:14px">Ürünler çekildikten sonra <a href="urunler.php">Ürünlerim</a> sayfasında görünür. Maliyet alanını her ürün için siz girersiniz (API'den maliyet gelmez). <strong>"Komisyonları Çek"</strong> ile Trendyol'un resmi cari hesap ekstresinden finans kayıtları alınır; ürünlerin komisyon oranları en güncel satış kaydından güncellenir. Kargo ve hakediş mutabakatı ayrıca değerlendirilmelidir.</p>
     </div>
 
     <div class="card" style="margin-top:16px">

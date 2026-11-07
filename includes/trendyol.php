@@ -16,13 +16,15 @@ final class TrendyolClient
     private string $apiKey;
     private string $apiSecret;
     private string $base;
+    private $transport;
 
     // Üretim ortamı (varsayılan). Test için stageapigw kullanılabilir.
     public const PROD = 'https://apigw.trendyol.com';
     public const STAGE = 'https://stageapigw.trendyol.com';
 
-    public function __construct(string $sellerId, string $apiKey, string $apiSecret, bool $stage = false)
+    public function __construct(string $sellerId, string $apiKey, string $apiSecret, bool $stage = false, ?callable $transport = null)
     {
+        $this->transport = $transport;
         $this->sellerId = trim($sellerId);
         $this->apiKey = trim($apiKey);
         $this->apiSecret = trim($apiSecret);
@@ -74,60 +76,42 @@ final class TrendyolClient
      */
     public function getProducts(int $maxPage = 500, string $approvalStatus = '', int $startDateMs = 0, string $dateQueryType = ''): array
     {
-        $size = 200; // Trendyol max page size
-
-        // Ortak filtre parametreleri (artımlı senkron için startDate + dateQueryType)
-        $base = ['size' => (string)$size];
-        if ($approvalStatus !== '') $base['approvalStatus'] = $approvalStatus;
-        if ($startDateMs > 0) $base['startDate'] = (string)$startDateMs;
-        if ($dateQueryType !== '') $base['dateQueryType'] = $dateQueryType;
-
-        // 1) Toplam ürün sayısını tek istekle öğren (kaç sayfa var bilmek için)
-        $probeParams = $base;
-        $probeParams['page'] = '0';
-        $probeParams['size'] = '1';
-        $probe = $this->request('GET', "/integration/product/sellers/{$this->sellerId}/products", $probeParams);
-        if (isset($probe['http']) && $probe['http'] !== 200) {
-            return ['ok' => false, 'error' => ($probe['error'] ?? 'Ürün çekilemedi') . " (HTTP {$probe['http']})"];
-        }
-        $total = (int)($probe['body']['totalElements'] ?? 0);
-        $totalPages = (int)ceil($total / $size);
-        if ($totalPages <= 0) $totalPages = 1;
-        $totalPages = min($totalPages, $maxPage);
-
-        $all = [];
-        $batch = 10; // aynı anda çekilen sayfa sayısı (Trendyol rate-limit'e karşı makul)
-
-        for ($start = 0; $start < $totalPages; $start += $batch) {
-            $requests = [];
-            for ($p = $start; $p < min($start + $batch, $totalPages); $p++) {
-                $params = $base;
-                $params['page'] = (string)$p;
-                $requests[] = ['GET', "/integration/product/sellers/{$this->sellerId}/products", $params];
-            }
-
-            $results = $this->requestParallel($requests);
-            foreach ($results as $res) {
-                if (!isset($res['http']) || $res['http'] !== 200) continue;
-                $items = $res['body']['content'] ?? [];
-                foreach ($items as $it) {
-                    $all[] = [
-                        'barcode' => $it['barcode'] ?? '',
-                        'title' => $it['title'] ?? '',
-                        'brand' => $it['brand'] ?? ($it['brandName'] ?? ''),
-                        'category' => $it['categoryName'] ?? '',
-                        'listPrice' => (float)($it['listPrice'] ?? 0),
-                        'salePrice' => (float)($it['salePrice'] ?? 0),
-                        'quantity' => (int)($it['quantity'] ?? 0),
-                        'status' => $it['status'] ?? '',
-                        'approved' => ($it['approved'] ?? false),
-                        'productUrl' => $it['productUrl'] ?? '',
+        $size=200;$base=['size'=>(string)$size];
+        if ($approvalStatus!=='') $base['approvalStatus']=$approvalStatus;
+        if ($startDateMs>0) $base['startDate']=(string)$startDateMs;
+        if ($dateQueryType!=='') $base['dateQueryType']=$dateQueryType;
+        $path="/integration/product/sellers/{$this->sellerId}/products";
+        $probe=$this->page($this->request('GET',$path,array_replace($base,['page'=>'0','size'=>'1'])),0,PHP_INT_MAX,'Ürün');
+        if (!$probe['ok']) return $probe;
+        if ($probe['total']===null) return $this->incomplete('Ürün toplam sayısı API yanıtında bulunamadı.');
+        $total=$probe['total'];$pages=max(1,(int)ceil($total/$size));
+        if ($pages>$maxPage) return $this->incomplete('Ürün sayfa sınırı aşıldı; eksik katalog kaydedilmedi.');
+        $all=[];
+        for ($start=0;$start<$pages;$start+=10) {
+            $requests=[];
+            for ($page=$start;$page<min($start+10,$pages);$page++) $requests[]=['GET',$path,$base+['page'=>(string)$page]];
+            $results=$this->requestParallel($requests);
+            if (count($results)!==count($requests)) return $this->incomplete('Ürün sayfalarının bir kısmı alınamadı.');
+            foreach ($results as $offset=>$result) {
+                $info=$this->page($result,$start+$offset,$maxPage,'Ürün');
+                if (!$info['ok']) return $info;
+                if ($total>0 && $info['pages']!==$pages) return $this->incomplete('Ürün sayfa sayısı değişti; tekrar deneyin.');
+                if ($info['total']!==null && $info['total']!==$total) return $this->incomplete('Katalog çekilirken toplam ürün sayısı değişti; tekrar deneyin.');
+                foreach ($info['items'] as $it) {
+                    if (!is_array($it)) return $this->incomplete('Ürün yanıtı geçersiz.');
+                    $barcode=(string)($it['barcode']??'');
+                    if ($barcode==='' || isset($all[$barcode])) return $this->incomplete('Ürün sayfalarında eksik veya tekrarlanan barkod var.');
+                    $all[$barcode]=[
+                        'barcode'=>$barcode,'title'=>$it['title']??'', 'brand'=>$it['brand']??$it['brandName']??'',
+                        'category'=>$it['categoryName']??'', 'listPrice'=>$it['listPrice']??null,
+                        'salePrice'=>$it['salePrice']??null, 'quantity'=>$it['quantity']??null,
+                        'status'=>$it['status']??'', 'approved'=>$it['approved']??false, 'productUrl'=>$it['productUrl']??'',
                     ];
                 }
             }
         }
-
-        return ['ok' => true, 'products' => $all, 'count' => count($all)];
+        if (count($all)!==$total) return $this->incomplete('API ürün sayısı ile alınan kayıt sayısı uyuşmuyor.');
+        return ['ok'=>true,'complete'=>true,'products'=>array_values($all),'count'=>count($all)];
     }
 
     /**
@@ -147,22 +131,21 @@ final class TrendyolClient
      * (Eski /shipment-packages ucu deprecate oldu; 556 "Service Unavailable" dönüyor.)
      * @param string $status Created | Picking | Invoiced | Shipped | Cancelled | Delivered | UnDelivered | ...
      */
-    public function getOrders(string $status = '', string $startDate = '', string $endDate = '', int $maxPage = 10): array
+    public function getOrders(string $status = '', string $startDate = '', string $endDate = '', int $maxPage = 1000): array
     {
         $all = [];
-        $seen = [];
         $size = 200;
 
         // Zaman aralığı (saniye). Trendyol sipariş ucu ~15 günlük pencereyle sınırlar;
         // daha geniş aralık istendiğinde 14 günlük parçalara bölüp birleştiriyoruz.
         $endTs = ($endDate !== '') ? strtotime($endDate) : time();
-        $endTs += 3600; // saat kayması buffer'ı (orderDate hafif "gelecekte" görünebilir)
         $startTs = ($startDate !== '') ? strtotime($startDate) : ($endTs - 16 * 86400);
 
+        if ($startTs===false || $endTs===false || $startTs >= $endTs) return $this->incomplete('Geçersiz sipariş tarih aralığı.');
         $chunk = 14 * 86400;
         for ($cs = $startTs; $cs < $endTs; $cs += $chunk) {
             $ce = min($cs + $chunk, $endTs);
-            $page = 0;
+            $page = 0; $expectedPages=null; $expectedTotal=null; $received=0; $chunkSeen=[];
             while (true) {
                 $params = [
                     'page' => (string)$page,
@@ -174,27 +157,31 @@ final class TrendyolClient
 
                 $res = $this->request('GET', "/integration/order/sellers/{$this->sellerId}/orders", $params);
 
-                if (isset($res['http']) && $res['http'] !== 200) {
-                    return ['ok' => false, 'error' => ($res['error'] ?? 'Sipariş çekilemedi') . " (HTTP {$res['http']})"];
-                }
-
-                $items = $res['body']['content'] ?? [];
+                $info=$this->page($res,$page,$maxPage,'Sipariş');
+                if (!$info['ok']) return $info;
+                $items=$info['items'];
+                if ($expectedPages!==null && $expectedPages!==$info['pages']) return $this->incomplete('Sipariş sayfa sayısı işlem sırasında değişti.');
+                $expectedPages=$info['pages'];
+                if ($expectedTotal!==null && $info['total']!==null && $expectedTotal!==$info['total']) return $this->incomplete('Sipariş toplamı işlem sırasında değişti.');
+                $expectedTotal=$info['total'];
+                $received+=count($items);
                 foreach ($items as $it) {
                     $pkg = (string)($it['shipmentPackageId'] ?? ($it['id'] ?? ''));
-                    if ($pkg !== '' && isset($seen[$pkg])) continue; // parça sınırında tekrar etmesin
-                    $seen[$pkg] = true;
+                    if (isset($chunkSeen[$pkg])) return $this->incomplete('Sipariş sayfalarında tekrarlanan paket var.');
+                    $chunkSeen[$pkg]=true;
+                    if ($pkg==='') return $this->incomplete('Sipariş paket kimliği eksik.');
 
                     $lines = [];
                     foreach (($it['lines'] ?? []) as $ol) {
                         $lines[] = [
-                            'barcode' => $ol['sku'] ?? '',
+                            'barcode' => $ol['barcode'] ?? ($ol['sku'] ?? ''),
                             'productName' => $ol['productName'] ?? '',
                             'quantity' => (int)($ol['quantity'] ?? 0),
                             'price' => (float)($ol['amount'] ?? ($ol['lineGrossAmount'] ?? 0)) - (float)($ol['lineTotalDiscount'] ?? ($ol['discount'] ?? 0)),
                             'merchantSku' => $ol['merchantSku'] ?? '',
                         ];
                     }
-                    $all[] = [
+                    $all[$pkg] = [
                         'packageNumber' => $pkg,
                         'orderNumber' => $it['orderNumber'] ?? '',
                         'status' => $it['status'] ?? ($it['shipmentPackageStatus'] ?? ''),
@@ -206,15 +193,13 @@ final class TrendyolClient
                     ];
                 }
 
-                $totalPages = (int)($res['body']['totalPages'] ?? 0);
                 $page++;
-                if ($page >= $totalPages || $page >= $maxPage || count($items) === 0) {
-                    break;
-                }
+                if ($page >= $info['pages']) break;
             }
+            if ($expectedTotal!==null && $received!==$expectedTotal) return $this->incomplete('Sipariş sayısı alınan kayıtlarla uyuşmuyor.');
         }
 
-        return ['ok' => true, 'orders' => $all, 'count' => count($all)];
+        return ['ok'=>true,'complete'=>true,'orders'=>array_values($all),'count'=>count($all)];
     }
 
     /**
@@ -240,11 +225,11 @@ final class TrendyolClient
      * @param string $startDate      Y-m-d (işlem tarihi; paymentDate yoksa zorunlu, aralık ≤15 gün)
      * @param string $endDate        Y-m-d
      */
-    public function getSettlements(string $transactionType, string $startDate = '', string $endDate = '', int $maxPage = 10): array
+    public function getSettlements(string $transactionType, string $startDate = '', string $endDate = '', int $maxPage = 1000): array
     {
         $all = [];
         $page = 0;
-        $size = 500;
+        $size = 500; $expectedPages=null; $expectedTotal=null; $seenIds=[];
 
         while (true) {
             $params = ['page' => (string)$page, 'size' => (string)$size, 'transactionType' => $transactionType];
@@ -253,20 +238,27 @@ final class TrendyolClient
 
             $res = $this->request('GET', "/integration/finance/che/sellers/{$this->sellerId}/settlements", $params);
 
-            if (isset($res['http']) && $res['http'] !== 200) {
-                return ['ok' => false, 'error' => ($res['error'] ?? 'Cari hesap ekstresi çekilemedi') . " (HTTP {$res['http']})"];
-            }
-
-            $items = $res['body']['content'] ?? [];
+            $info=$this->page($res,$page,$maxPage,'Finans');
+            if (!$info['ok']) return $info;
+            $items=$info['items'];
+            if ($expectedPages!==null && $expectedPages!==$info['pages']) return $this->incomplete('Finans sayfa sayısı işlem sırasında değişti.');
+            $expectedPages=$info['pages'];
+            if ($expectedTotal!==null && $info['total']!==null && $expectedTotal!==$info['total']) return $this->incomplete('Finans toplamı işlem sırasında değişti.');
+            $expectedTotal=$info['total'];
             foreach ($items as $it) {
+                if (!is_array($it) || !isset($it['id']) || !is_scalar($it['id']) || trim((string)$it['id'])==='') return $this->incomplete('Finans işlem kimliği eksik.');
+                if (isset($seenIds[(string)$it['id']])) return $this->incomplete('Finans sayfalarında tekrarlanan işlem var.');
+                $seenIds[(string)$it['id']]=true;
+                if (($it['transactionType']??'')==='Sale' && (!isset($it['commissionRate']) || !is_numeric($it['commissionRate']) || (float)$it['commissionRate']<0 || (float)$it['commissionRate']>100)) return $this->incomplete('Satış komisyon oranı eksik veya geçersiz.');
                 $all[] = [
+                    'providerId' => (string)$it['id'],
                     'barcode' => (string)($it['barcode'] ?? ''),
                     'transactionType' => (string)($it['transactionType'] ?? ''),
-                    'commissionRate' => (float)($it['commissionRate'] ?? 0),
-                    'commissionAmount' => (float)($it['commissionAmount'] ?? 0),
-                    'sellerRevenue' => (float)($it['sellerRevenue'] ?? 0),
-                    'debt' => (float)($it['debt'] ?? 0),
-                    'credit' => (float)($it['credit'] ?? 0),
+                    'commissionRate' => $it['commissionRate'] ?? 0,
+                    'commissionAmount' => $it['commissionAmount'] ?? 0,
+                    'sellerRevenue' => $it['sellerRevenue'] ?? 0,
+                    'debt' => $it['debt'] ?? 0,
+                    'credit' => $it['credit'] ?? 0,
                     'orderNumber' => (string)($it['orderNumber'] ?? ''),
                     'shipmentPackageId' => (string)($it['shipmentPackageId'] ?? ''),
                     'paymentPeriod' => (int)($it['paymentPeriod'] ?? 0),
@@ -275,14 +267,40 @@ final class TrendyolClient
                 ];
             }
 
-            $totalPages = (int)($res['body']['totalPages'] ?? 0);
             $page++;
-            if ($page >= $totalPages || $page >= $maxPage || count($items) === 0) {
-                break;
-            }
+            if ($page >= $info['pages']) break;
         }
 
-        return ['ok' => true, 'settlements' => $all, 'count' => count($all)];
+        if ($expectedTotal!==null && count($all)!==$expectedTotal) return $this->incomplete('Finans kayıt sayısı uyuşmuyor.');
+        return ['ok'=>true,'complete'=>true,'settlements'=>$all,'count'=>count($all)];
+    }
+
+    private function incomplete(string $error): array
+    {
+        return ['ok'=>false,'complete'=>false,'error'=>$error];
+    }
+
+    private function page(array $response,int $number,int $limit,string $label): array
+    {
+        if ($limit<1) return $this->incomplete('Sayfa sınırı en az 1 olmalı.');
+        if (($response['http']??0)!==200) return $this->incomplete($label.' sayfası alınamadı (HTTP '.($response['http']??0).').');
+        $body=$response['body']??null;
+        if (!is_array($body) || !isset($body['content']) || !is_array($body['content'])
+            || !isset($body['totalPages']) || filter_var($body['totalPages'],FILTER_VALIDATE_INT,['options'=>['min_range'=>0]])===false) {
+            return $this->incomplete($label.' sayfalama yanıtı geçersiz.');
+        }
+        if (array_values($body['content'])!==$body['content']) return $this->incomplete($label.' kayıt listesi geçersiz.');
+        $pages=(int)$body['totalPages'];
+        if ($number>0 && $number>=$pages) return $this->incomplete($label.' sayfa aralığı değişti.');
+        if ($pages>$limit) return $this->incomplete($label.' sayfa sınırı aşıldı; eksik sonuç kaydedilmedi.');
+        if (isset($body['number']) && (int)$body['number']!==$number) return $this->incomplete($label.' sayfa numarası uyuşmuyor.');
+        $total=null;
+        if (isset($body['totalElements'])) {
+            $total=filter_var($body['totalElements'],FILTER_VALIDATE_INT,['options'=>['min_range'=>0]]);
+            if ($total===false) return $this->incomplete($label.' toplam kayıt sayısı geçersiz.');
+        }
+        if ((!$body['content'] && ($pages>1 || ($total??0)>0)) || ($body['content'] && $pages===0)) return $this->incomplete($label.' sayfası eksik.');
+        return ['ok'=>true,'items'=>$body['content'],'pages'=>$pages,'total'=>$total];
     }
 
     /**
@@ -290,6 +308,7 @@ final class TrendyolClient
      */
     private function request(string $method, string $path, array $query = [], ?string $body = null): array
     {
+        if ($this->transport!==null) return ($this->transport)($method,$path,$query,$body);
         $url = $this->base . $path;
         if ($query) {
             $url .= '?' . http_build_query($query);
@@ -346,6 +365,7 @@ final class TrendyolClient
      */
     private function requestParallel(array $requests): array
     {
+        if ($this->transport!==null) return array_map(fn($request)=>$this->request(...$request),$requests);
         $auth = base64_encode($this->apiKey . ':' . $this->apiSecret);
         $mh = curl_multi_init();
         $handles = [];

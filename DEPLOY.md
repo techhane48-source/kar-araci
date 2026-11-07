@@ -79,7 +79,7 @@ kaybolursa kullanıcıların bağlantıları çözülemez).
 
 ## Otomatik senkron (cron)
 
-`scripts/sync.php` tüm kullanıcıların bağlı mağazalarını senkronize eder. Hostinger'da
+`scripts/sync.php` bağlı mağazaların ürünlerini, siparişlerini ve finans kayıtlarını senkronize eder. Varsayılan sipariş/finans geçmişi 90 gündür; yalnızca ürünler için `--products-only`, farklı geçmiş için `--days=30` gibi seçenekler kullanılabilir. Hostinger'da
 **Cron Jobs**'tan saatlik şunu ekleyin:
 
 ```
@@ -207,3 +207,53 @@ CHROME_PATH=/usr/bin/chromium node scripts/test-profit-browser.js
 siparişler oluşturur; yeni test veritabanında çalıştırın. Tarayıcı testi bu hesabı
 kullanır. `PHP_BIN` ile CLI yolunu belirtebilirsiniz. Kısıtlı test ortamlarında
 `KARFIYAT_TEST_NO_SANDBOX=1` yalnızca tarayıcı testinin başlatma seçeneğidir.
+
+## Tekrar güvenli senkronizasyon
+
+- Ürünler kullanıcı+pazaryeri+barkod üzerinden eşleştirilir. Fiyat/stok ve gelen
+  katalog bilgileri güncellenir; maliyet, KDV, kargo/ek/hizmet gideri, stopaj ve
+  iade ayarları korunur. Barkodu olmayan veya stok/fiyatı bozuk kayıt tüm işi
+  başarısız yapar. Eski mükerrer barkodlar otomatik silinmez; hata ile bildirilir.
+- Son başarılı ürün imleci işlem başlangıcına kaydedilir; bir sonraki çekimde
+  iki dakika örtüşme uygulanır. Eksik/hatalı sayfada imleç ilerlemez.
+- Bir mağazanın ürün/sipariş/finans işleri ortak, 30 dakikalık kiralı kilitle
+  korunur. Ağ çağrıları DB transaction'ı dışında yapılır. Kayıt anında kilit ve
+  bağlantı revizyonu tekrar kontrol edilir; süresi dolan veya eski bağlantıya
+  ait sonuçlar kaydedilmez. Bağlantı bilgileri güncellendiğinde imleçler sıfırlanır.
+- Finans yanıtının `id` alanı `settlements.provider_id` olarak saklanır; aynı
+  kullanıcı/pazaryeri/işlem ID'si tekrar alınırsa tutarlar çoğaltılmadan güncellenir.
+  Kimliksiz finans yanıtı tahmini parmak iziyle birleştirilmez; iş başarısız olur.
+- Eski kimliksiz kayıtlar yalnızca ilgili dönem ve türler eksiksiz tekrar alınınca
+  `settlement_legacy_archive` tablosuna özgün satırın JSON'u ve ID'siyle taşınır;
+  sonra aktif tablodaki yerlerini resmî ID'li kayıtlar alır. Yeniden alınan dönem
+  dışındaki geçmişe dokunulmaz. Dönem boş dönse bile eski aktif kayıtlar arşive
+  gider; dağıtım öncesi canlı API'nin filtre ve kimlik alanlarını doğrulayın.
+- Bütün finans tür/dilimleri tamamlanmadan arşiv veya komisyon değişikliği
+  yapılmaz. %0 dahil en güncel geçerli satış komisyonu ürün kartına işlenir.
+- Sayfalama metadatası, kayıt sayısı, tekrar sayfa ve limit aşımı kontrol edilir.
+  Ürün çekimi en çok 500, sipariş/finans çekimi pencere başına en çok 1000 sayfadır;
+  limit aşılırsa kısmi başarı yerine hata döner. Siparişler 14 günlük pencerelere,
+  finans işleri tür başına 14 günlük pencerelere bölünür.
+- Bağlı Mağaza ekranı son eksiksiz sipariş/finans zamanlarını ve son hatayı gösterir.
+  Başka bir işin başarısı, farklı işteki son hatayı silmez.
+
+Cron CLI içindir; HTTP üzerinden çalıştırılamaz. Varsayılan kapsam eski ürün-only
+çalışmaya göre daha çok API isteği yapar. Büyük kataloglarda web düğmesi yerine
+cron kullanın; sıklığı hesap sayısı ve Trendyol limitlerine göre ayarlayın. Bu paket
+kalıcı iş kuyruğu, 429 backoff, gerçek kargo/hakediş mutabakatı veya geçmiş maliyet
+anlık görüntülerini tamamlamaz. Finans türleri ve `id` alanı gerçek satıcı hesabıyla
+kontrol edilmeden üretim doğrulaması tamamlanmış sayılmaz.
+
+### Senkron testleri
+
+```bash
+php scripts/test-sync.php
+php scripts/test-trendyol-pages.php
+php scripts/test-sync-concurrency.php
+# İzole HTTP akış testlerinden sonra mağaza durumu:
+php scripts/test-sync-ui.php
+```
+
+Bu testler geçici veritabanı ve kontrollü API yanıtları kullanır; gerçek API'ye
+ve üretim verisine bağlanmaz. Ayrı bir PHP çalıştırıcısı için eşzamanlılık testinde
+`PHP_BIN` ayarlayın. Canlı API kimlik bilgilerini testlere eklemeyin.

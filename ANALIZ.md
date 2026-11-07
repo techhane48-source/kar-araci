@@ -27,6 +27,21 @@ Sipariş giderleri adet başına tahmin edilir; gerçek kargo/hizmet faturası d
 vergi doğrulaması, finans kayıtlarının tekrar güvenli senkronu ve geçmiş maliyetler
 bir sonraki aşamalardadır. Aşağıdaki numaralı bulgular ilk incelemenin kaydıdır.
 
+## Düzeltme durumu — senkron paketi
+
+26, 27 ve 28 için fiyat/stok güncelleme, örtüşmeli imleç, eksik yanıtı reddetme,
+sağlayıcı işlem ID'siyle finans upsert'i ve dönem bazlı eski kayıt arşivi eklendi.
+29'da limit aşımı artık sessiz kesme değildir; hata olarak bildirilir. 30 için cron
+ürünlere ek olarak sipariş/finans geçmişini de çeker. 31'in mağaza bazlı çakışma
+kontrolü ve kısa DB yazma transaction'ı tamamlandı; kalıcı iş kuyruğu ve backoff
+hâlâ açık. Bağlantı revizyonu değiştiğinde çalışan eski iş veri kaydedemez.
+
+Eski kimliksiz finans kayıtları yalnızca eksiksiz yeniden alınan dönemde arşivlenir;
+dönem dışı geçmiş otomatik temizlenmez. Gerçek Trendyol dokümanına erişim ortamın
+ağ politikası tarafından engellendi. Kontrollü yanıt testleri canlı API sözleşmesinin
+veya gerçek satıcı hesabındaki sonuçların doğrulandığı anlamına gelmez. Özellikle
+finans `id` alanı, işlem türleri ve tarih filtreleri dağıtım öncesi kontrol edilmelidir.
+
 ## Kapsam ve sınırlar
 
 PHP sayfaları, ortak hesaplama/kimlik doğrulama/veritabanı katmanı, pazaryeri istemcileri, Node tarayıcı servisi, Chrome eklentisi, kurulum belgeleri ve mevcut testler incelendi. Bazı hesaplama hataları ayrı geçici veritabanıyla yerelde yeniden üretildi. Gerçek Trendyol ve iyzico hesaplarıyla uçtan uca doğrulama, üretim sunucusu incelemesi, tarayıcıda tüm ekranları kapsayan görsel test ve yük testi yapılmadı. Kodda bulunmayan işletim kontrolleri, sunucuda da bulunmadığı kesinmiş gibi değerlendirilmemelidir.
