@@ -12,6 +12,6 @@ if (!is_string($token) || $token === '') {
 $result=verify_checkout($token);
 if (!$result['ok']) {
     http_response_code($result['code']==='not_found'?400:503);
-    exit('Ödeme henüz doğrulanamadı. Hesabınızdan durumunu kontrol edin; tekrar ödeme yapmadan önce mevcut işlemin sonucunu bekleyin.');
+    exit('Ödeme henüz doğrulanamadı. Tekrar ödeme yapmadan önce mevcut işlemin sonucunu bekleyin. <a href="odeme.php">Ödeme durumuna git</a>');
 }
 header('Location: odeme.php',true,303);

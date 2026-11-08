@@ -1,12 +1,12 @@
 <?php
 declare(strict_types=1);
 if(PHP_SAPI!=='cli'){http_response_code(404);exit;}
-require_once __DIR__.'/../includes/config.php';$options=getopt('',['json','live','trendyol-report:']);$checks=[];
+require_once __DIR__.'/../includes/config.php';require_once __DIR__.'/../includes/billing.php';$options=getopt('',['json','live','trendyol-report:']);$checks=[];
 foreach(['pdo_sqlite','mbstring','openssl','curl','zip','dom','xmlreader','xmlwriter'] as $extension)$checks['extension_'.$extension]=extension_loaded($extension);
 $path=realpath(DB_PATH);$web=realpath(__DIR__.'/../public_html');$checks['database_exists']=$path!==false;$checks['database_outside_web']=$path!==false&&!str_starts_with($path,$web.'/');$checks['database_private']=$path!==false&&(fileperms($path)&0077)===0;
 $settings=[];$integrations=[];
 if($path)try{$pdo=new PDO('sqlite:file:'.str_replace('%2F','/',rawurlencode($path)).'?mode=ro',null,null,[PDO::ATTR_ERRMODE=>PDO::ERRMODE_EXCEPTION,PDO::ATTR_DEFAULT_FETCH_MODE=>PDO::FETCH_ASSOC]);foreach($pdo->query('SELECT key,value FROM settings') as $r)$settings[$r['key']]=$r['value'];$integrations=$pdo->query("SELECT id,revision,stage FROM integrations WHERE marketplace='trendyol'")->fetchAll();}catch(Throwable $e){$checks['database_readable']=false;}
-$base=getenv('KARFIYAT_APP_URL')?:($settings['app_url']??'');$parts=parse_url($base);$checks['fixed_https_url']=is_array($parts)&&($parts['scheme']??'')==='https'&&!empty($parts['host'])&&!isset($parts['user'])&&!isset($parts['query'])&&!isset($parts['fragment']);
+$base=getenv('KARFIYAT_APP_URL')?:($settings['app_url']??'');try{$checks['fixed_https_url']=str_starts_with(application_base_url($base),'https://');}catch(RuntimeException $e){$checks['fixed_https_url']=false;}
 $checks['merchant_connection_present']=(bool)$integrations;$key=dirname(DB_PATH).'/.enc-key';$checks['encryption_key_present']=is_file($key)&&preg_match('/^[a-f0-9]{64}$/D',(string)file_get_contents($key))===1;$checks['encryption_key_private']=is_file($key)&&(fileperms($key)&0077)===0;
 $checks['provider_credentials_present']=($settings['iyzico_api_key']??'')!==''&&($settings['iyzico_secret_key']??'')!=='';
 if(isset($options['live'])){

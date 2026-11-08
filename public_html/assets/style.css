@@ -40,7 +40,7 @@ a:hover{color:var(--accent3)}
   background:#ffffff; border-bottom:1px solid var(--border);
   position:sticky; top:0; z-index:50; box-shadow:0 1px 2px rgba(31,47,61,.03);
 }
-.header-inner{max-width:1200px;margin:0 auto;padding:12px 24px;min-height:68px;display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:12px}
+.header-inner{position:relative;max-width:1200px;margin:0 auto;padding:12px 24px;min-height:68px;display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:12px}
 .logo{font-size:20px;font-weight:800;letter-spacing:-.02em;color:var(--fg);display:flex;align-items:center;gap:9px;flex-shrink:0}
 .logo-mark{width:32px;height:32px;border-radius:9px;background:linear-gradient(135deg,var(--accent),var(--accent3));display:flex;align-items:center;justify-content:center;color:#fff;font-weight:800;font-size:16px;box-shadow:0 2px 6px rgba(37,99,235,.35)}
 .logo span{color:var(--accent)}
@@ -56,13 +56,12 @@ a:hover{color:var(--accent3)}
 .user-name{min-width:0;max-width:260px}
 .user-label{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
 .pro-badge{flex-shrink:0}
-.account-nav{position:relative;flex-shrink:0}
+.account-nav{position:static;flex-shrink:0}
 .account-nav summary{cursor:pointer;list-style:none;border:1px solid var(--border-strong);border-radius:10px;padding:9px 14px;font-size:14px;font-weight:600}
 .account-nav summary::-webkit-details-marker{display:none}
 .account-nav summary:focus-visible{outline:2px solid var(--accent);outline-offset:3px}
-.account-nav-links{position:absolute;top:calc(100% + 10px);left:0;width:min(640px,calc(100vw - 48px));max-height:70vh;overflow-y:auto;background:var(--card);border:1px solid var(--border);border-radius:12px;box-shadow:var(--shadow-md);padding:12px;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:4px;z-index:60}
+.account-nav-links{position:absolute;top:100%;right:24px;left:auto;width:min(640px,calc(100vw - 48px));max-height:70vh;overflow-y:auto;background:var(--card);border:1px solid var(--border);border-radius:12px;box-shadow:var(--shadow-md);padding:12px;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:4px;z-index:60}
 .account-nav:not([open]) .account-nav-links{display:none}
-@media(min-width:701px){.account-nav-links{left:auto;right:0}}
 @media(max-width:700px){.nav-auth{width:100%;justify-content:space-between}.user-name{max-width:190px;padding:6px}.account-nav-links{grid-template-columns:1fr}.user-menu{gap:6px}}
 .pro-badge{background:linear-gradient(135deg,var(--accent),var(--accent3));color:#fff;font-size:10px;font-weight:700;padding:2px 7px;border-radius:20px;letter-spacing:.03em;box-shadow:0 1px 3px rgba(37,99,235,.4)}
 

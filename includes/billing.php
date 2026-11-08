@@ -88,7 +88,7 @@ function complete_checkout(string $token, array $result): bool
 function application_base_url(string $raw): string
 {
     $url=rtrim(trim($raw),'/');$p=parse_url($url);
-    if(!$p||empty($p['host'])||isset($p['user'],$p['pass'])||isset($p['user'])||isset($p['query'])||isset($p['fragment'])||!filter_var($url,FILTER_VALIDATE_URL))throw new RuntimeException('Geçerli sabit uygulama adresi tanımlayın.');
+    if(!$p||empty($p['host'])||isset($p['user'])||isset($p['pass'])||isset($p['query'])||isset($p['fragment'])||!filter_var($url,FILTER_VALIDATE_URL))throw new RuntimeException('Geçerli sabit uygulama adresi tanımlayın.');
     $local=in_array(strtolower($p['host']),['localhost','127.0.0.1','[::1]'],true);
     if(($p['scheme']??'')!=='https'&&!(($p['scheme']??'')==='http'&&$local))throw new RuntimeException('Canlı uygulama adresi HTTPS olmalı.');
     return $url;
@@ -114,7 +114,7 @@ function checkout_event(string $token,string $code,string $status): void
 /** Uses the environment and encrypted credentials captured at checkout creation. Never charges a card. */
 function verify_checkout(string $token,?callable $factory=null): array
 {
-    $q=db()->prepare('SELECT * FROM checkout_sessions WHERE token=?');$q->execute([$token]);$checkout=$q->fetch();
+    $q=db()->prepare('SELECT * FROM checkout_sessions WHERE token=?');$q->execute([$token]);$checkout=$q->fetch();$q->closeCursor();
     if(!$checkout)return ['ok'=>false,'code'=>'not_found'];
     if($checkout['status']==='approved')return ['ok'=>true,'already_approved'=>true];
     {
