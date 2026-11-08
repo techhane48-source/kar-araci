@@ -17,7 +17,9 @@ $int = get_integration((int)$u['id'], $mp);
 $hasConnection = $int !== null;
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && $supported) {
-    if (!csrf_verify($_POST['csrf'] ?? '')) {
+    if (!empty($u['is_demo'])) {
+        $error='Demo hesabında gerçek mağaza bağlantısı ve fiyat güncellemesi yapılamaz.';
+    } elseif (!csrf_verify($_POST['csrf'] ?? '')) {
         $error = 'Oturum süresi doldu. Lütfen tekrar deneyin.';
     } else {
         $action = $_POST['action'] ?? '';

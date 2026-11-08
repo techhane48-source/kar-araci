@@ -9,16 +9,18 @@ if (current_user()) {
     e_redirect('dashboard.php');
 }
 
-if (!csrf_verify($_POST['csrf'] ?? $_GET['csrf'] ?? null)) {
+if ($_SERVER['REQUEST_METHOD']!=='POST'||!csrf_verify($_POST['csrf'] ?? null)) {
     flash_set('error', 'Oturum süresi doldu.');
     e_redirect('index.php');
 }
 
 // Benzersiz demo e-posta
-$email = 'demo' . time() . '@demo.karfiyat';
+$email = 'demo' . bin2hex(random_bytes(12)) . '@demo.karfiyat';
 $name = 'Demo Kullanıcı';
 
-db()->prepare("INSERT INTO users (email, name, password_hash, plan, is_demo) VALUES (?, ?, ?, 'pro', 1)")
+$pdo=db();$pdo->exec('BEGIN IMMEDIATE');
+try {
+db()->prepare("INSERT INTO users (email, name, password_hash, plan, is_demo, plan_expires) VALUES (?, ?, ?, 'pro', 1, date('now','+1 day'))")
     ->execute([$email, $name, password_hash(bin2hex(random_bytes(16)), PASSWORD_DEFAULT)]);
 $uid = (int) db()->lastInsertId();
 
@@ -35,13 +37,20 @@ $sample = [
     ['Kot Pantolon', 'trendyol', 'Giyim', 180, 320, 45, 5, 2, 6],
     ['Blender Seti', 'hepsiburada', 'Küçük Ev Aletleri', 250, 480, 35, 6, 2, 2],
 ];
-$ins = db()->prepare("INSERT INTO products (user_id, name, marketplace, category, rate, cost, price, cargo, service_fee, stopaj, return_rate)
-                      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
-foreach ($sample as $s) {
-    $ins->execute([$uid, $s[0], $s[1], $s[2], category_rate($s[2], $s[1]), $s[3], $s[4], $s[5], $s[6], $s[7], $s[8]]);
+$ins = db()->prepare("INSERT INTO products (user_id, barcode,name, marketplace, category, rate, cost, price, cargo, service_fee, stopaj, return_rate)
+                      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+$order=db()->prepare("INSERT INTO orders(user_id,marketplace,order_number,package_number,status,total_price,order_date,lines) VALUES(?,?,?,?,?,?,?,?)");
+foreach ($sample as $i=>$s) {
+    $barcode='DEMO-'.($i+1);
+    $ins->execute([$uid,$barcode,$s[0],$s[1],$s[2],category_rate($s[2],$s[1]),$s[3],$s[4],$s[5],$s[6],$s[7],$s[8]]);
+    $order->execute([$uid,$s[1],'DEMO-ORDER-'.($i+1),'DEMO-PACKAGE-'.($i+1),'Delivered',$s[4],time()-$i*3600,json_encode([['barcode'=>$barcode,'quantity'=>1,'price'=>$s[4]]],JSON_THROW_ON_ERROR)]);
 }
+$pdo->exec('COMMIT');
+}catch(Throwable $e){$pdo->exec('ROLLBACK');throw $e;}
 
 session_boot();
 $_SESSION['uid'] = $uid;
-flash_set('success', 'Demo hesabına hoş geldin! 6 örnek ürünle dolu. Gerçek hesabın için istediğin zaman ücretsiz kayıt olabilirsin.');
+session_regenerate_id(true);
+$_SESSION['auth_version']=(int)db()->query('SELECT auth_version FROM users WHERE id='.(int)$uid)->fetchColumn();
+flash_set('success', 'Demo hesabın 1 saat açık. Örnek ürün ve siparişlerle analizleri deneyebilirsin; gerçek mağaza bağlantısı ve ödeme işlemi yapılmaz.');
 e_redirect('dashboard.php');

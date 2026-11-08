@@ -263,6 +263,7 @@ require __DIR__ . '/../includes/header.php';
         <div class="ico"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg></div>
         <h3>Demo Hesabı</h3>
         <p>Tek tıkla örnek ürünlerle dolu demo hesabına gir, kayıt olmadan dene.</p>
+        <?php if (!$u): ?><form method="post" action="demo.php"><input type="hidden" name="csrf" value="<?= h(csrf_token()) ?>"><button class="btn-ghost" type="submit">Demoyu Dene</button></form><?php endif; ?>
       </div>
     </div>
   </div>

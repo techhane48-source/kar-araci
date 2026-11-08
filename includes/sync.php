@@ -15,6 +15,8 @@ function sync_timestamp(mixed $value, bool $required = false): int
 
 function sync_job(int $userId, string $marketplace, string $scope, callable $work, ?object $client = null): array
 {
+    $account=db()->prepare('SELECT is_demo FROM users WHERE id=?');$account->execute([$userId]);
+    if($account->fetchColumn())return ['ok'=>false,'error'=>'Demo hesabı gerçek mağaza senkronizasyonu yapamaz.'];
     $int = get_integration($userId,$marketplace);
     if (!$int) return ['ok'=>false,'error'=>'Önce mağaza bağlantısı kurun.'];
     $pdo = db(); $token = bin2hex(random_bytes(16)); $now=time();
@@ -71,6 +73,9 @@ function sync_products(int $userId,string $marketplace,?object $client=null): ar
         }
         $rows=sync_response($client->getProducts(500,'',$from,$from?'LAST_MODIFIED_DATE':''),'products');
         return sync_commit($int,$token,static function($pdo) use($userId,$marketplace,$rows,$started,$int):array {
+            $account=$pdo->prepare('SELECT * FROM users WHERE id=?');$account->execute([$userId]);$owner=$account->fetch();
+            $limit=is_pro($owner)?null:FREE_PRODUCT_LIMIT;
+            $total=$pdo->prepare('SELECT COUNT(*) FROM products WHERE user_id=?');$total->execute([$userId]);$productCount=(int)$total->fetchColumn();
             $find=$pdo->prepare('SELECT id,name,category,marka FROM products WHERE user_id=? AND marketplace=? AND barcode=?');
             $update=$pdo->prepare("UPDATE products SET name=?,category=?,price=?,quantity=?,marka=?,list_price=? WHERE id=?");
             $insert=$pdo->prepare("INSERT INTO products(user_id,marketplace,barcode,name,category,price,quantity,marka,rate,service_fee,stopaj_mode,kdv,list_price) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)");
@@ -96,11 +101,13 @@ function sync_products(int $userId,string $marketplace,?object $client=null): ar
                     $update->execute([$name,$category,(float)$price,(int)$qty,$brand,$row['listPrice']??$price,$old['id']]);$updated++;
                 }
                 else {
+                    if($limit!==null && $productCount+1>$limit)throw new SyncFailure('Ücretsiz plan ürün sınırı aşılıyor. Pro plana geçin; hiçbir ürün kaydedilmedi.');
                     $rate=$row['commissionRate']??category_rate($category,$marketplace);
                     $vat=$row['vatRate']??20;
                     profit_validate([],[$rate,$vat]);
                     $insert->execute([$userId,$marketplace,$barcode,$name,$category,(float)$price,(int)$qty,$brand,(float)$rate,$marketplace==='trendyol'?trendyol_service_fee():0,$marketplace==='trendyol'?'auto':'manual',(float)$vat,$row['listPrice']??$price]);
                     $inserted++;
+                    $productCount++;
                 }
             }
             $reconcile=$pdo->prepare("UPDATE price_updates SET status='reconciled',checked_at=? WHERE user_id=? AND marketplace=? AND integration_id=? AND integration_revision=? AND barcode=? AND (status='unknown' OR (status='submitting' AND created_at<?))");
@@ -120,15 +127,20 @@ function sync_orders(int $userId,string $marketplace,int $days=7,?object $client
         if ($marketplace==='trendyol') $from=max($from,(new DateTimeImmutable(date('c',$started)))->modify('-3 months')->getTimestamp());
         $rows=sync_response($client->getOrders('',date('c',$from),date('c',$started)),'orders');
         return sync_commit($int,$token,static function($pdo) use($rows,$userId,$marketplace,$started,$from):array {
-            $insert=$pdo->prepare('INSERT INTO orders(user_id,marketplace,order_number,package_number,status,customer_name,total_price,order_date,lines) VALUES (?,?,?,?,?,?,?,?,?)
-                ON CONFLICT(user_id,marketplace,package_number) DO UPDATE SET order_number=excluded.order_number,status=excluded.status,customer_name=excluded.customer_name,total_price=excluded.total_price,order_date=excluded.order_date,lines=excluded.lines');
+            $products=[];$productQuery=$pdo->prepare('SELECT * FROM products WHERE user_id=? AND marketplace=? AND barcode=? LIMIT 2');
+            foreach($rows as $row)foreach($row['lines']??[] as $line){$barcode=$line['barcode']??'';if(!is_string($barcode)||$barcode===''||array_key_exists($barcode,$products))continue;$productQuery->execute([$userId,$marketplace,$barcode]);$matches=$productQuery->fetchAll();$products[$barcode]=count($matches)===1?$matches[0]:null;}
+            $previous=$pdo->prepare('SELECT profit_inputs FROM orders WHERE user_id=? AND marketplace=? AND package_number=?');
+            $insert=$pdo->prepare('INSERT INTO orders(user_id,marketplace,order_number,package_number,status,customer_name,total_price,order_date,lines,profit_inputs) VALUES (?,?,?,?,?,?,?,?,?,?)
+                ON CONFLICT(user_id,marketplace,package_number) DO UPDATE SET order_number=excluded.order_number,status=excluded.status,customer_name=excluded.customer_name,total_price=excluded.total_price,order_date=excluded.order_date,lines=excluded.lines,profit_inputs=excluded.profit_inputs');
             foreach ($rows as $row) {
                 $package=trim((string)($row['packageNumber']??''));
                 if ($package==='') throw new SyncFailure('Sipariş paket kimliği eksik.');
                 $date=sync_timestamp($row['orderDate']??null,true);
                 if (!isset($row['totalPrice']) || !is_array($row['lines']??null)) throw new SyncFailure('Sipariş tutarı veya satırları eksik.');
                 profit_validate([$row['totalPrice']]);
-                $insert->execute([$userId,$marketplace,(string)($row['orderNumber']??''),$package,(string)($row['status']??''),(string)($row['customerName']??''),(float)$row['totalPrice'],$date,json_encode($row['lines'],JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR)]);
+                $previous->execute([$userId,$marketplace,$package]);$saved=$previous->fetchColumn();
+                $inputs=merge_order_profit_inputs($saved===false?null:$saved,capture_order_profit_inputs($row['lines'],$products,$started));
+                $insert->execute([$userId,$marketplace,(string)($row['orderNumber']??''),$package,(string)($row['status']??''),(string)($row['customerName']??''),(float)$row['totalPrice'],$date,json_encode($row['lines'],JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR),json_encode($inputs,JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR)]);
             }
             $pdo->prepare('UPDATE integrations SET last_orders_sync=?,orders_coverage_from=? WHERE user_id=? AND marketplace=?')->execute([$started,$from,$userId,$marketplace]);
             return ['ok'=>true,'count'=>count($rows)];

@@ -84,3 +84,51 @@ function complete_checkout(string $token, array $result): bool
         throw $e;
     }
 }
+
+function application_base_url(string $raw): string
+{
+    $url=rtrim(trim($raw),'/');$p=parse_url($url);
+    if(!$p||empty($p['host'])||isset($p['user'],$p['pass'])||isset($p['user'])||isset($p['query'])||isset($p['fragment'])||!filter_var($url,FILTER_VALIDATE_URL))throw new RuntimeException('Geçerli sabit uygulama adresi tanımlayın.');
+    $local=in_array(strtolower($p['host']),['localhost','127.0.0.1','[::1]'],true);
+    if(($p['scheme']??'')!=='https'&&!(($p['scheme']??'')==='http'&&$local))throw new RuntimeException('Canlı uygulama adresi HTTPS olmalı.');
+    return $url;
+}
+
+function checkout_provider_context(string $key,string $secret,bool $sandbox): string
+{
+    if($key===''||$secret==='')throw new RuntimeException('Ödeme sağlayıcısı bilgileri eksik.');
+    return encrypt_string(json_encode(['api_key'=>$key,'secret'=>$secret,'sandbox'=>$sandbox],JSON_THROW_ON_ERROR));
+}
+
+function checkout_event(string $token,string $code,string $status): void
+{
+    if(!in_array($code,['retrieval_error','provider_failure','fraud_review','verification_failed','verified','context_missing'],true)||!in_array($status,['pending','failed','review','approved'],true))throw new InvalidArgumentException('Geçersiz ödeme olayı.');
+    $pdo=db();$pdo->exec('BEGIN IMMEDIATE');
+    try {
+        $pdo->prepare("UPDATE checkout_sessions SET checked_at=?,attempts=attempts+1,error_code=?,status=CASE WHEN status='approved' THEN status ELSE ? END WHERE token=?")->execute([time(),$code==='verified'?'':$code,$status,$token]);
+        $pdo->prepare('INSERT INTO checkout_events(token,code,created_at) VALUES(?,?,?)')->execute([$token,$code,time()]);
+        $pdo->exec('COMMIT');
+    }catch(Throwable $e){$pdo->exec('ROLLBACK');throw $e;}
+}
+
+/** Uses the environment and encrypted credentials captured at checkout creation. Never charges a card. */
+function verify_checkout(string $token,?callable $factory=null): array
+{
+    $q=db()->prepare('SELECT * FROM checkout_sessions WHERE token=?');$q->execute([$token]);$checkout=$q->fetch();
+    if(!$checkout)return ['ok'=>false,'code'=>'not_found'];
+    if($checkout['status']==='approved')return ['ok'=>true,'already_approved'=>true];
+    {
+        try {
+            $context=json_decode(decrypt_string($checkout['provider_context']??''),true,512,JSON_THROW_ON_ERROR);
+            if(!is_array($context)||!is_string($context['api_key']??null)||!is_string($context['secret']??null)||!is_bool($context['sandbox']??null))throw new RuntimeException('Bağlam eksik.');
+            require_once __DIR__.'/iyzico.php';$client=$factory?$factory($context):new IyzicoClient($context['api_key'],$context['secret'],$context['sandbox']);
+        }catch(Throwable $e){checkout_event($token,'context_missing','review');return ['ok'=>false,'code'=>'context_missing'];}
+    }
+    try {$result=$client->retrieveCheckoutFormResult($token);}catch(Throwable $e){$result=['ok'=>false];}
+    if(empty($result['ok'])||!is_array($result['result']??null)){checkout_event($token,'retrieval_error','pending');return ['ok'=>false,'code'=>'retrieval_error'];}
+    $data=$result['result'];
+    if(($data['status']??'')==='failure') {checkout_event($token,'provider_failure','failed');return ['ok'=>false,'code'=>'provider_failure'];}
+    if(($data['status']??'')==='success'&&($data['paymentStatus']??'')==='SUCCESS'&&(string)($data['fraudStatus']??'')==='0') {checkout_event($token,'fraud_review','review');return ['ok'=>false,'code'=>'fraud_review'];}
+    try {complete_checkout($token,$data);checkout_event($token,'verified','approved');return ['ok'=>true];}
+    catch(Throwable $e){checkout_event($token,'verification_failed','review');return ['ok'=>false,'code'=>'verification_failed'];}
+}

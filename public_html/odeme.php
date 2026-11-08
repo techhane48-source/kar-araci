@@ -11,15 +11,34 @@ $iyzicoKey = setting('iyzico_api_key');
 $iyzicoSecret = setting('iyzico_secret_key');
 $iyzicoSandbox = setting('iyzico_sandbox') === '1';
 $iyzicoReady = $iyzicoKey !== '' && $iyzicoSecret !== '';
+try {application_base_url(getenv('KARFIYAT_APP_URL')?:setting('app_url'));} catch (RuntimeException $e) {$iyzicoReady=false;}
 
 // Ödeme bildirimi
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'report') {
     if (!csrf_verify($_POST['csrf'] ?? null)) {
         flash_set('error', 'Oturum süresi doldu.');
+    } elseif (!is_finite($price)||$price<=0||$iban===''||$accountName===''||!empty($u['is_demo'])) {
+        flash_set('error','Havale bildirimi bu hesap için kullanılamıyor.');
     } else {
-        db()->prepare("INSERT INTO payments (user_id, amount, reference, status) VALUES (?, ?, ?, 'pending')")
+        $pdo=db();$pdo->exec('BEGIN IMMEDIATE');
+        try {
+        $pending=$pdo->prepare("SELECT id FROM payments WHERE user_id=? AND status='pending'");$pending->execute([$u['id']]);
+        if (!$pending->fetchColumn()) db()->prepare("INSERT INTO payments (user_id, amount, reference, status) VALUES (?, ?, ?, 'pending')")
             ->execute([$u['id'], $price, 'KF-' . $u['id'] . '-' . date('ymd')]);
+        $pdo->exec('COMMIT');
+        }catch(Throwable $e){$pdo->exec('ROLLBACK');throw $e;}
         flash_set('info', 'Ödemen bildirildi. Onaylandığında Pro planın aktif olacak.');
+    }
+    e_redirect('odeme.php');
+}
+
+// Re-query an existing owned checkout. This operation never creates a new charge.
+if ($_SERVER['REQUEST_METHOD']==='POST'&&($_POST['action']??'')==='recheck') {
+    if(!csrf_verify($_POST['csrf']??null)||!empty($u['is_demo']))flash_set('error','Bu işlem için oturum doğrulanamadı.');
+    else {
+        $token=$_POST['checkout_token']??'';$q=db()->prepare('SELECT token FROM checkout_sessions WHERE user_id=? AND token=?');$q->execute([$u['id'],is_string($token)?$token:'']);
+        if(!$q->fetchColumn())flash_set('error','Ödeme kaydı bulunamadı.');
+        else {$result=verify_checkout($token);flash_set($result['ok']?'success':'info',$result['ok']?'Ödemeniz doğrulandı.':'Ödeme kontrol bekliyor. Yeniden ödeme yapmadan bu işlemin sonucunu kontrol edin.');}
     }
     e_redirect('odeme.php');
 }
@@ -30,7 +49,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'iyzic
         flash_set('error', 'Oturum süresi doldu.');
     } elseif (!is_finite($price) || $price <= 0) {
         flash_set('error', 'Geçerli bir üyelik ücreti tanımlanmamış.');
-    } elseif (!$iyzicoReady) {
+    } elseif (!$iyzicoReady || !empty($u['is_demo'])) {
         flash_set('error', 'Kartlı ödeme henüz yapılandırılmadı.');
     } else {
         $bName = trim($_POST['b_name'] ?? '');
@@ -55,8 +74,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'iyzic
                 flash_set('error', 'Geçerli bir GSM numarası girin (örn. 05XX XXX XX XX).');
             } else {
                 require_once __DIR__ . '/../includes/iyzico.php';
-                $scheme = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
-                $callbackUrl = $scheme . '://' . ($_SERVER['HTTP_HOST'] ?? 'localhost') . '/iyzico-callback.php';
+                $callbackUrl=application_base_url(getenv('KARFIYAT_APP_URL')?:setting('app_url')).'/iyzico-callback.php';
+                $providerContext=checkout_provider_context($iyzicoKey,$iyzicoSecret,$iyzicoSandbox);
                 $basketId = 'KF-' . $u['id'] . '-' . bin2hex(random_bytes(16));
                 $buyer = [
                     'id' => 'U' . $u['id'],
@@ -101,8 +120,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'iyzic
                 $client = new IyzicoClient($iyzicoKey, $iyzicoSecret, $iyzicoSandbox);
                 $res = $client->initializeCheckoutForm($params);
                 if ($res['ok'] && ($res['paymentPageUrl'] ?? '') !== '' && ($res['token'] ?? '') !== '') {
-                    db()->prepare('INSERT INTO checkout_sessions (token, user_id, basket_id, amount) VALUES (?, ?, ?, ?)')
-                        ->execute([$res['token'], $u['id'], $basketId, $params['price']]);
+                    db()->prepare('INSERT INTO checkout_sessions (token, user_id, basket_id, amount, provider_context) VALUES (?, ?, ?, ?, ?)')
+                        ->execute([$res['token'], $u['id'], $basketId, $params['price'], $providerContext]);
                     header('Location: ' . $res['paymentPageUrl']);
                     exit;
                 }
@@ -118,6 +137,7 @@ $pending = db()->prepare("SELECT * FROM payments WHERE user_id = ? AND status = 
 $pending->execute([$u['id']]);
 $pendingPayment = $pending->fetch();
 
+$cq=db()->prepare('SELECT token,status,error_code,created_at FROM checkout_sessions WHERE user_id=? ORDER BY created_at DESC LIMIT 10');$cq->execute([$u['id']]);$checkouts=$cq->fetchAll();
 $pageTitle = 'Planım — ' . APP_NAME;
 require __DIR__ . '/../includes/header.php';
 ?>
@@ -140,11 +160,11 @@ require __DIR__ . '/../includes/header.php';
       <?php endif; ?>
     </div>
 
-    <?php if (!$pro): ?>
+    <?php if (empty($u['is_demo'])): ?>
     <div class="card">
-      <h2>Pro'ya Yükselt — <?= h(number_format($price, 2, ',', '.')) ?> ₺/ay</h2>
+      <h2><?= $pro ? 'Pro Süresini Uzat' : 'Pro’ya Yükselt' ?> — <?= h(number_format($price, 2, ',', '.')) ?> ₺/ay</h2>
       <p style="color:var(--muted);font-size:14px;margin-bottom:16px">
-        Sınırsız ürün kaydı, toplu CSV içe aktarma ve tüm ürünlerinin tek tabloda kârlılık analizi.
+        Sınırsız ürün kaydı ve analiz araçları. Yenileme otomatik değildir; ödeme mevcut bitiş tarihinize bir ay ekler. Yenilemezseniz dönem sonunda ücretsiz plana geçersiniz.
       </p>
 
       <?php if ($pendingPayment): ?>
@@ -155,7 +175,7 @@ require __DIR__ . '/../includes/header.php';
       <?php elseif (!$iyzicoReady && ($iban === '' || $accountName === '')): ?>
         <div class="flash flash-error" style="margin:0 0 16px">Ödeme bilgileri henüz yapılandırılmadı. Lütfen daha sonra tekrar deneyin.</div>
       <?php else: ?>
-        <div class="row">
+        <?php if ($iban!=='' && $accountName!==''): ?><div class="row">
           <label>Hesap Sahibi</label>
           <div class="pay-ref"><?= h($accountName) ?></div>
         </div>
@@ -174,8 +194,9 @@ require __DIR__ . '/../includes/header.php';
           <button type="submit" class="btn-primary" style="width:100%">Ödeme Yaptım, Bildir</button>
         </form>
 
+        <?php endif; ?>
         <?php if ($iyzicoReady): ?>
-        <div style="margin:22px 0 12px;text-align:center;color:var(--muted);font-size:13px">— veya —</div>
+        <?php if ($iban!==''&&$accountName!==''): ?><div style="margin:22px 0 12px;text-align:center;color:var(--muted);font-size:13px">— veya —</div><?php endif; ?>
         <form method="post">
           <input type="hidden" name="csrf" value="<?= h(csrf_token()) ?>">
           <input type="hidden" name="action" value="iyzico_pay">
@@ -199,4 +220,5 @@ require __DIR__ . '/../includes/header.php';
     <?php endif; ?>
   </div>
 </div>
+<?php if($checkouts): ?><div class="wrap"><div class="card"><h2>Kartlı Ödeme Durumları</h2><p>Kontrol düğmesi mevcut ödemeyi sorgular; yeni tahsilat başlatmaz.</p><div style="overflow-x:auto"><table><tr><th>Tarih</th><th>Durum</th><th>İşlem</th></tr><?php foreach($checkouts as $c):$labels=['pending'=>'Kontrol bekliyor','review'=>'İnceleme bekliyor','failed'=>'Sağlayıcı işlemi onaylamadı','approved'=>'Doğrulandı']; ?><tr><td><?= h($c['created_at']) ?></td><td><?= h($labels[$c['status']]??'Kontrol bekliyor') ?></td><td><?php if($c['status']!=='approved'): ?><form method="post"><input type="hidden" name="csrf" value="<?= h(csrf_token()) ?>"><input type="hidden" name="action" value="recheck"><input type="hidden" name="checkout_token" value="<?= h($c['token']) ?>"><button class="btn-ghost">Durumu Yeniden Kontrol Et</button></form><?php endif; ?></td></tr><?php endforeach; ?></table></div></div></div><?php endif; ?>
 <?php require __DIR__ . '/../includes/footer.php'; ?>

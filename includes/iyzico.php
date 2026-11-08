@@ -61,7 +61,7 @@ final class IyzicoClient
             CURLOPT_TIMEOUT => 30,
             CURLOPT_CONNECTTIMEOUT => 15,
             CURLOPT_SSL_VERIFYPEER => true,
-            CURLOPT_CAINFO => __DIR__ . '/cacert.pem',
+            CURLOPT_CAINFO => getenv('CURL_CA_BUNDLE')?:getenv('SSL_CERT_FILE')?:__DIR__ . '/cacert.pem',
         ]);
         if ($method === 'POST') {
             curl_setopt($ch, CURLOPT_POST, true);

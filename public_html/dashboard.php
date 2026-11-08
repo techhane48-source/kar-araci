@@ -93,6 +93,7 @@ require __DIR__ . '/../includes/header.php';
 <div class="wrap">
   <div class="toolbar">
     <h1>Dashboard</h1>
+  <p class="hint">Siparişlerin ilk bilinen maliyet ve gider varsayımları aktarımda sabitlenir; eksikler sonraki senkronlarda tamamlanır. Bunlar sipariş tarihindeki gerçek alış maliyeti doğrulaması değildir. Eski, sabitlenmemiş kayıtlarda güncel ürün ayarları kullanılır.</p>
     <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
       <select onchange="location.href='?mp='+encodeURIComponent(this.value)+'&days=<?= $days ?>'" style="width:auto">
         <?php foreach ($mps as $c): ?>

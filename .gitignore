@@ -1,5 +1,8 @@
 crawler/node_modules/
 data/app.sqlite
 data/.enc-key
+data/*.sqlite-*
+data/promotion-imports/
+data/backups/
 *.zip
  maybe

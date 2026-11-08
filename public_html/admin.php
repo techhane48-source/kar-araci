@@ -76,13 +76,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
             }
         } elseif ($action === 'settings') {
+            $base=trim($_POST['app_url']??'');$amount=trim($_POST['pro_price']??(string)PRO_PRICE);
+            try {
+            if($base!=='')$base=application_base_url($base);
+            if(!is_numeric($amount)||!is_finite((float)$amount)||(float)$amount<=0)throw new RuntimeException('Üyelik ücreti pozitif olmalı.');
             set_setting('iban', trim($_POST['iban'] ?? ''));
             set_setting('account_name', trim($_POST['account_name'] ?? ''));
-            set_setting('pro_price', trim($_POST['pro_price'] ?? (string) PRO_PRICE));
+            set_setting('pro_price', $amount);
+            set_setting('app_url',$base);
             set_setting('iyzico_api_key', trim($_POST['iyzico_api_key'] ?? ''));
             set_setting('iyzico_secret_key', trim($_POST['iyzico_secret_key'] ?? ''));
             set_setting('iyzico_sandbox', isset($_POST['iyzico_sandbox']) ? '1' : '0');
             $notice = 'Ayarlar kaydedildi.';
+            }catch(RuntimeException $e){$notice=$e->getMessage();}
         } elseif ($action === 'deactivate') {
             $uid = (int) ($_POST['uid'] ?? 0);
             db()->prepare("UPDATE users SET plan = 'free', plan_expires = NULL WHERE id = ? AND is_admin = 0")
@@ -232,7 +238,8 @@ require __DIR__ . '/../includes/header.php';
         <input type="hidden" name="action" value="settings">
         <div class="row"><label>Hesap Sahibi</label><input type="text" name="account_name" value="<?= h(setting('account_name')) ?>"></div>
         <div class="row"><label>IBAN</label><input type="text" name="iban" value="<?= h(setting('iban')) ?>" placeholder="TR00 0000 0000 0000 0000 0000 00"></div>
-        <div class="row"><label>Pro Aylık Ücret (₺)</label><input type="number" name="pro_price" value="<?= h(setting('pro_price')) ?>" step="0.01"></div>
+        <div class="row"><label>Pro Aylık Ücret (₺)</label><input type="number" name="pro_price" value="<?= h(setting('pro_price')) ?>" step="0.01" min="0.01"></div>
+        <div class="row"><label>Sabit Uygulama Adresi</label><input type="url" name="app_url" value="<?= h(setting('app_url')) ?>" placeholder="https://ornek.com"><p class="hint">Kartlı ödeme dönüş adresi için kullanılır; canlıda HTTPS gerekir.</p></div>
         <div class="row"><label>iyzico API Key</label><input type="text" name="iyzico_api_key" value="<?= h(setting('iyzico_api_key')) ?>" autocomplete="off"></div>
         <div class="row"><label>iyzico Secret Key</label><input type="text" name="iyzico_secret_key" value="<?= h(setting('iyzico_secret_key')) ?>" autocomplete="off"></div>
         <div class="row"><label><input type="checkbox" name="iyzico_sandbox" value="1" <?= setting('iyzico_sandbox') === '1' ? 'checked' : '' ?> style="width:auto;margin-right:8px"> Sandbox (test) modu</label></div>

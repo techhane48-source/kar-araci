@@ -9,12 +9,13 @@ function db(): PDO
     if ($pdo === null) {
         $dir = dirname(DB_PATH);
         if (!is_dir($dir)) {
-            mkdir($dir, 0775, true);
+            mkdir($dir, 0700, true);
         }
         $pdo = new PDO('sqlite:' . DB_PATH, null, null, [
             PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
             PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
         ]);
+        @chmod(DB_PATH,0600);
         $pdo->exec('PRAGMA journal_mode=WAL');
         $pdo->exec('PRAGMA busy_timeout=5000');
         $pdo->exec('PRAGMA foreign_keys=ON');
@@ -283,6 +284,14 @@ function migrate(): void
     $pdo->exec("CREATE INDEX IF NOT EXISTS idx_price_updates_user ON price_updates(user_id,marketplace,status)");
     $pcols3=array_column($pdo->query('PRAGMA table_info(products)')->fetchAll(PDO::FETCH_ASSOC),'name');
     if (!in_array('list_price',$pcols3,true)) $pdo->exec('ALTER TABLE products ADD COLUMN list_price REAL DEFAULT NULL');
+    $checkoutColumns=array_column($pdo->query('PRAGMA table_info(checkout_sessions)')->fetchAll(),'name');
+    foreach(['provider_context'=>'TEXT DEFAULT NULL','checked_at'=>'INTEGER DEFAULT NULL','attempts'=>'INTEGER NOT NULL DEFAULT 0','error_code'=>"TEXT NOT NULL DEFAULT ''"] as $column=>$type) {
+        if(!in_array($column,$checkoutColumns,true))$pdo->exec("ALTER TABLE checkout_sessions ADD COLUMN $column $type");
+    }
+    $pdo->exec("CREATE TABLE IF NOT EXISTS checkout_events (id INTEGER PRIMARY KEY AUTOINCREMENT, token TEXT NOT NULL REFERENCES checkout_sessions(token), code TEXT NOT NULL, created_at INTEGER NOT NULL)");
+    $pdo->exec('CREATE INDEX IF NOT EXISTS idx_checkout_events_token ON checkout_events(token,created_at)');
+    $orderColumns=array_column($pdo->query('PRAGMA table_info(orders)')->fetchAll(),'name');
+    if(!in_array('profit_inputs',$orderColumns,true))$pdo->exec('ALTER TABLE orders ADD COLUMN profit_inputs TEXT DEFAULT NULL');
 
     // Eski sürümün bilinen kurulum şifresiyle kalan hesabını devre dışı bırak.
     // Şifresi değiştirilmiş yöneticilere ve normal kullanıcılara dokunma.
@@ -305,6 +314,7 @@ function migrate(): void
         'iyzico_api_key' => '',
         'iyzico_secret_key' => '',
         'iyzico_sandbox' => '1',
+        'app_url' => '',
     ];
     $ins = $pdo->prepare("INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)");
     foreach ($defaults as $k => $v) {
@@ -317,11 +327,14 @@ function setting(string $key): string
     $stmt = db()->prepare("SELECT value FROM settings WHERE key = ?");
     $stmt->execute([$key]);
     $r = $stmt->fetch();
-    return $r ? $r['value'] : '';
+    $value=$r ? $r['value'] : '';
+    if(in_array($key,['iyzico_api_key','iyzico_secret_key'],true)&&str_starts_with($value,'secret:'))return decrypt_string(substr($value,7));
+    return $value;
 }
 
 function set_setting(string $key, string $value): void
 {
+    if(in_array($key,['iyzico_api_key','iyzico_secret_key'],true)&&$value!=='')$value='secret:'.encrypt_string($value);
     db()->prepare("INSERT INTO settings (key, value) VALUES (?, ?)
                    ON CONFLICT(key) DO UPDATE SET value = excluded.value")
         ->execute([$key, $value]);

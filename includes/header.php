@@ -18,21 +18,24 @@ $flash = flash_get();
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="assets/style.css?v=10">
+<link rel="stylesheet" href="assets/style.css?v=11">
 </head>
 <body>
 <header class="site-header">
   <div class="header-inner">
     <a href="index.php" class="logo"><span class="logo-mark">K</span>Kâr<span>&</span>Fiyat</a>
-    <nav class="main-nav">
+    <?php if (!$u): ?><nav class="main-nav">
       <a href="index.php#hesapla">Hesapla</a>
       <a href="index.php#ozellikler">Özellikler</a>
       <a href="index.php#fiyatlandirma">Fiyatlandırma</a>
       <a href="index.php#sss">SSS</a>
       <a href="blog.php">Blog</a>
-    </nav>
+    </nav><?php endif; ?>
     <div class="nav-auth">
       <?php if ($u): ?>
+        <details class="account-nav">
+          <summary>Menü</summary>
+          <nav class="account-nav-links" aria-label="Hesap menüsü">
         <a href="dashboard.php" class="nav-link">Dashboard</a>
         <a href="urunler.php" class="nav-link">Ürünlerim</a>
         <a href="toplu-analiz.php" class="nav-link">Toplu Analiz</a>
@@ -40,13 +43,16 @@ $flash = flash_get();
         <a href="canli-performans.php" class="nav-link">Canlı Performans</a>
         <a href="kar-marji.php" class="nav-link">Kâr Marjı</a>
         <a href="raporlar.php" class="nav-link">Raporlar</a>
+        <a href="buybox.php" class="nav-link">Buybox</a>
         <a href="hakedis-desi.php" class="nav-link">Hakediş &amp; Desi</a>
         <a href="uyarilar.php" class="nav-link">Uyarılar</a>
         <a href="pazar-zekasi.php" class="nav-link">Pazar Zekası</a>
         <a href="magaza.php" class="nav-link">Mağaza Bağla</a>
         <?php if ($u['is_admin']): ?><a href="admin.php" class="nav-link">Panel</a><?php endif; ?>
+          </nav>
+        </details>
         <div class="user-menu">
-          <a href="hesabim.php" class="user-name"><?= h($u['name'] ?: $u['email']) ?><?= $pro ? ' <span class="pro-badge">PRO</span>' : '' ?></a>
+          <a href="hesabim.php" class="user-name"><span class="user-label"><?= h($u['name'] ?: $u['email']) ?></span><?= $pro ? ' <span class="pro-badge">PRO</span>' : '' ?></a>
           <a href="cikis.php" class="btn-ghost">Çıkış</a>
         </div>
       <?php else: ?>

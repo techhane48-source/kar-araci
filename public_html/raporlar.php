@@ -230,6 +230,7 @@ require __DIR__ . '/../includes/header.php';
 ?>
 <div class="page-head">
   <h1>Raporlar</h1>
+  <p class="hint">Siparişlerin ilk bilinen maliyet ve gider varsayımları aktarımda sabitlenir; eksikler sonraki senkronlarda tamamlanır. Bunlar sipariş tarihindeki gerçek alış maliyeti doğrulaması değildir. Eski, sabitlenmemiş kayıtlarda güncel ürün ayarları kullanılır.</p>
   <p class="muted">Kârlılık analizleri · <a href="raporlar.php?r=<?= h($rapor) ?>&mp=<?= urlencode($mp) ?>&days=<?= $days ?>&export=1">⬇ Raporu İndir (CSV)</a></p>
 </div>
 

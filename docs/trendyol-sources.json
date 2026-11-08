@@ -70,5 +70,23 @@
     "updatedAt": "2026-07-13T06:21:20.000Z",
     "sha256": "f16505a5f23cab494316733c17454c20a910f0734a76db89f153e46c8aceaef4",
     "retrieved_date_utc": "2026-11-07"
+  },
+  {
+    "url": "https://developers.trendyol.com/reference/getotherfinancials.md",
+    "updatedAt": "2026-02-16T13:44:40.000Z",
+    "sha256": "0722027148ae4e7d7b5ffdb5fd60560dc8b1fb38ee7cd13dfb0dc6603ecf82c6",
+    "retrieved_date_utc": "2026-11-08"
+  },
+  {
+    "url": "https://developers.trendyol.com/reference/getpaymentorder.md",
+    "updatedAt": "2026-08-25T09:48:58.000Z",
+    "sha256": "b8ecc3c1d38f417b83f7899cd4dcc8270fec9636b30c27e73618e5275a927380",
+    "retrieved_date_utc": "2026-11-08"
+  },
+  {
+    "url": "https://developers.trendyol.com/reference/getbuyboxinformation.md",
+    "updatedAt": "2026-06-09T08:58:38.000Z",
+    "sha256": "dcb6f2d5ded4da65dba40820c0604f0cbd1c41232b1d248a22092b1c16c8940f",
+    "retrieved_date_utc": "2026-11-08"
   }
 ]

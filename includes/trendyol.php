@@ -18,18 +18,20 @@ final class TrendyolClient
     private string $base;
     private $transport;
     private array $lastRequestAt=[];
+    private bool $readOnly;
 
     // Üretim ortamı (varsayılan). Test için stageapigw kullanılabilir.
     public const PROD = 'https://apigw.trendyol.com';
     public const STAGE = 'https://stageapigw.trendyol.com';
 
-    public function __construct(string $sellerId, string $apiKey, string $apiSecret, bool $stage = false, ?callable $transport = null)
+    public function __construct(string $sellerId, string $apiKey, string $apiSecret, bool $stage = false, ?callable $transport = null, bool $readOnly = false)
     {
         $this->transport = $transport;
         $this->sellerId = trim($sellerId);
         $this->apiKey = trim($apiKey);
         $this->apiSecret = trim($apiSecret);
         $this->base = $stage ? self::STAGE : self::PROD;
+        $this->readOnly=$readOnly;
     }
 
     /**
@@ -258,6 +260,73 @@ final class TrendyolClient
         return ['ok'=>true,'complete'=>true,'settlements'=>$all,'count'=>count($all)];
     }
 
+    /** Read-only product query, despite the POST verb mandated by the provider. */
+    public function getBuyboxInformation(array $barcodes): array
+    {
+        if (!$barcodes || count($barcodes)>10 || count(array_unique($barcodes))!==count($barcodes)) return $this->incomplete('Bir sorguda 1–10 farklı barkod gerekir.');
+        foreach($barcodes as $b)if(!is_string($b)||$b==='')return $this->incomplete('Barkod geçersiz.');
+        $r=$this->request('POST',"/integration/product/sellers/{$this->sellerId}/products/buybox-information",[],json_encode(['barcodes'=>array_values($barcodes)],JSON_THROW_ON_ERROR));
+        if(($r['http']??0)!==200||!is_array($r['body']['buyboxInfo']??null))return $this->incomplete('Buybox yanıtı alınamadı.');
+        $rows=[];
+        foreach($r['body']['buyboxInfo'] as $row){
+            if(!is_array($row)||!is_string($row['barcode']??null)||!in_array($row['barcode'],$barcodes,true)||isset($rows[$row['barcode']]))return $this->incomplete('Buybox barkodları tutarsız.');
+            foreach(['buyboxOrder','buyboxPrice'] as $key)if(isset($row[$key])&&(!is_numeric($row[$key])||!is_finite((float)$row[$key])||(float)$row[$key]<0))return $this->incomplete('Buybox sayısal alanı geçersiz.');
+            if(isset($row['buyboxOrder'])&&(float)$row['buyboxOrder']!==(float)(int)$row['buyboxOrder'])return $this->incomplete('Buybox sırası geçersiz.');
+            if(isset($row['hasMultipleSeller'])&&!is_bool($row['hasMultipleSeller']))return $this->incomplete('Buybox satıcı bilgisi geçersiz.');
+            $rows[$row['barcode']]=$row;
+        }
+        return ['ok'=>true,'rows'=>$rows,'missing'=>array_values(array_diff($barcodes,array_keys($rows))),'checked_at'=>time()];
+    }
+
+    private function financeRows(string $endpoint,array $params,int $maxPage,int $size): array
+    {
+        $all=[];$seen=[];$pages=null;$total=null;
+        for($p=0;;$p++){
+            $r=$this->request('GET',"/integration/finance/che/sellers/{$this->sellerId}/$endpoint",$params+['page'=>(string)$p,'size'=>(string)$size]);
+            $info=$this->page($r,$p,$maxPage,'Finans');if(!$info['ok'])return $info;
+            if(($pages!==null&&$pages!==$info['pages'])||($total!==null&&$info['total']!==$total))return $this->incomplete('Finans sayfaları sorgu sırasında değişti.');
+            $pages=$info['pages'];$total=$info['total'];
+            foreach($info['items'] as $row){
+                if(!is_array($row)||!isset($row['id'])||!is_scalar($row['id'])||(string)$row['id']===''||isset($seen[(string)$row['id']]))return $this->incomplete('Finans işlem kimlikleri eksik veya tekrarlı.');
+                $seen[(string)$row['id']]=true;$all[]=$row;
+            }
+            if($p+1>=$pages)break;
+        }
+        if($total!==null&&count($all)!==$total)return $this->incomplete('Finans kayıt sayısı uyuşmuyor.');
+        return ['ok'=>true,'complete'=>true,'rows'=>$all];
+    }
+
+    public function getPaymentOrders(int $maxPage=20,?int $onlyPage=null): array
+    {
+        if($onlyPage!==null) {
+            if($onlyPage<0)return $this->incomplete('Sayfa geçersiz.');
+            $info=$this->page($this->request('GET',"/integration/finance/che/sellers/{$this->sellerId}/payment-order",['page'=>(string)$onlyPage,'size'=>'10']),$onlyPage,PHP_INT_MAX,'Ödeme emri');
+            if(!$info['ok'])return $info;
+            $r=['ok'=>true,'rows'=>$info['items'],'page'=>$onlyPage,'pages'=>$info['pages'],'total'=>$info['total']];
+        } else $r=$this->financeRows('payment-order',[],$maxPage,10);
+        if(!$r['ok'])return $r;
+        foreach($r['rows'] as $row)if(($row['status']??'')!=='PAID'||!is_numeric($row['amount']??null)||!is_finite((float)$row['amount'])||(float)$row['amount']<0||!preg_match('/^[1-9][0-9]*$/D',(string)$row['id']))return $this->incomplete('Ödeme emri bilgileri geçersiz.');
+        return $r;
+    }
+
+    public function getPaymentOrderLedger(string $id,int $maxPage=100): array
+    {
+        if(!preg_match('/^[1-9][0-9]*$/D',$id))return $this->incomplete('Ödeme emri kimliği geçersiz.');
+        $types=[
+            'settlements'=>'Sale,Return,Discount,DiscountCancel,Coupon,CouponCancel,ProvisionPositive,ProvisionNegative,ManualRefund,ManualRefundCancel,TyDiscount,TyDiscountCancel,TyCoupon,TyCouponCancel,SellerRevenuePositive,SellerRevenueNegative,CommissionPositive,CommissionNegative,SellerRevenuePositiveCancel,SellerRevenueNegativeCancel,CommissionPositiveCancel,CommissionNegativeCancel,DeliveryFee,DeliveryFeeCancel,PayByLink',
+            'otherfinancials'=>'Stoppage,CashAdvance,WireTransfer,IncomingTransfer,ReturnInvoice,CommissionAgreementInvoice,PaymentOrder,DeductionInvoices,FinancialItem',
+        ];$rows=[];
+        foreach($types as $endpoint=>$list){
+            $r=$this->financeRows($endpoint,['paymentOrderId'=>$id,'transactionTypes'=>$list],$maxPage,500);if(!$r['ok'])return $r;
+            foreach($r['rows'] as $row){
+                if((string)($row['paymentOrderId']??'')!==$id)return $this->incomplete('Finans kaydı seçilen ödeme emrine ait değil.');
+                foreach(['debt','credit'] as $k)if(!is_numeric($row[$k]??null)||!is_finite((float)$row[$k])||abs((float)$row[$k])>1e12)return $this->incomplete('Finans tutarı eksik veya geçersiz.');
+                $row['source']=$endpoint;$rows[]=$row;
+            }
+        }
+        return ['ok'=>true,'complete'=>true,'rows'=>$rows,'payment_order_id'=>$id,'checked_at'=>time()];
+    }
+
     private function incomplete(string $error): array
     {
         return ['ok'=>false,'complete'=>false,'error'=>$error];
@@ -301,6 +370,7 @@ final class TrendyolClient
      */
     private function request(string $method, string $path, array $query = [], ?string $body = null): array
     {
+        if($this->readOnly && $method!=='GET' && !($method==='POST'&&str_ends_with($path,'/products/buybox-information'))) return ['http'=>0,'error'=>'Salt okunur doğrulama fiyat/stok yazımını engelledi.'];
         if ($this->transport!==null) return ($this->transport)($method,$path,$query,$body);
         $this->pace($path);
         $url = $this->base . $path;
@@ -326,7 +396,7 @@ final class TrendyolClient
             CURLOPT_CONNECTTIMEOUT => 10,
             CURLOPT_FOLLOWLOCATION => false,
             CURLOPT_SSL_VERIFYPEER => true,
-            CURLOPT_CAINFO => __DIR__ . '/cacert.pem',
+            CURLOPT_CAINFO => getenv('CURL_CA_BUNDLE')?:getenv('SSL_CERT_FILE')?:__DIR__ . '/cacert.pem',
         ]);
         if ($method === 'POST' || $method === 'PUT') {
             curl_setopt($ch, CURLOPT_CUSTOMREQUEST, $method);

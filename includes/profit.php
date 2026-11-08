@@ -105,12 +105,34 @@ function order_is_sale(array $order): bool
     return !in_array($status,['awaiting','verified','unpacked','cancelled','canceled','returned','undelivered','unsupplied','undeliveredandreturned','iptal','iade'],true);
 }
 
+/** Captures assumptions when they first become known, not proof of the purchase cost on order date. */
+function capture_order_profit_inputs(array $lines,array $products,int $capturedAt): array
+{
+    $fields=array_fill_keys(['name','category','cost','cargo','rate','kdv','extra_fee','service_fee','stopaj','return_rate','stopaj_mode'],true);$snapshot=[];
+    foreach($lines as $line){$barcode=$line['barcode']??'';if(!is_string($barcode)||$barcode==='')continue;$p=$products[$barcode]??null;$snapshot[$barcode]=$p&&is_numeric($p['cost']??null)&&(float)$p['cost']>0?array_intersect_key($p,$fields)+['_captured_at'=>$capturedAt]:null;}
+    return ['version'=>1,'origin'=>'import_estimate','captured_at'=>$capturedAt,'products'=>$snapshot];
+}
+
+function merge_order_profit_inputs(?string $old,array $new): array
+{
+    if($old===null)return $new;
+    $saved=json_decode($old,true);
+    if(!is_array($saved)||($saved['version']??null)!==1||!is_array($saved['products']??null))throw new RuntimeException('Sipariş maliyet kaydı okunamıyor; önce kayıt düzeltilmeli.');
+    foreach($new['products'] as $barcode=>$p)if(!isset($saved['products'][$barcode])&&$p!==null){$saved['products'][$barcode]=$p;$saved['updated_at']=$new['captured_at'];}
+    return $saved;
+}
+
 /** Paket tutarı satırların satış ağırlığıyla dağıtılır; her satır kendi KDV/giderleriyle hesaplanır. */
 function calc_order_profit(array $order,array $byBarcode): array
 {
     $sale=(float)($order['total_price']??0);
     $lines=$order['lines']??[];
     $unknown=['ok'=>false,'missing'=>true,'sale'=>$sale,'profit'=>null,'lines'=>[]];
+    if(isset($order['profit_inputs'])){
+        $snapshot=is_string($order['profit_inputs'])?json_decode($order['profit_inputs'],true):$order['profit_inputs'];
+        if(!is_array($snapshot)||($snapshot['version']??null)!==1||!is_array($snapshot['products']??null))return $unknown;
+        $byBarcode=$snapshot['products'];
+    }
     if (!order_is_sale($order)) return $unknown+['excluded'=>true];
     if (!is_array($lines) || !$lines || !is_finite($sale) || $sale<=0) return $unknown;
     $weights=[];

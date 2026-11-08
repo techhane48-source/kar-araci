@@ -55,12 +55,15 @@ try {
 }
 
 // Ücretsiz plan limiti
-if (!is_pro($u)) {
+$pdo=db();$pdo->exec('BEGIN IMMEDIATE');
+try {
+if (!is_pro($u) || !empty($u['is_demo'])) {
     $stmt = db()->prepare("SELECT COUNT(*) c FROM products WHERE user_id = ?");
     $stmt->execute([$u['id']]);
     $count = (int) $stmt->fetch()['c'];
-    if ($count >= FREE_PRODUCT_LIMIT) {
-        echo json_encode(['ok' => false, 'error' => 'Ücretsiz plan 5 ürünle sınırlıdır. Daha fazlası için Pro plana geçin.', 'redirect' => 'odeme.php']);
+    if ($count >= (!empty($u['is_demo'])?50:FREE_PRODUCT_LIMIT)) {
+        $pdo->exec('ROLLBACK');
+        echo json_encode(['ok' => false, 'error' => !empty($u['is_demo'])?'Demo hesabı 50 ürünle sınırlıdır.':'Ücretsiz plan 5 ürünle sınırlıdır. Daha fazlası için Pro plana geçin.', 'redirect' => 'odeme.php']);
         exit;
     }
 }
@@ -84,5 +87,7 @@ db()->prepare("INSERT INTO products (user_id, name, marketplace, category, rate,
         (float) ($data['return_rate'] ?? 0),
         $data['stopaj_mode'] ?? 'manual',
     ]);
+$pdo->exec('COMMIT');
+}catch(Throwable $e){$pdo->exec('ROLLBACK');echo json_encode(['ok'=>false,'error'=>'Ürün kaydedilemedi.']);exit;}
 
 echo json_encode(['ok' => true]);

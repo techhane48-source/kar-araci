@@ -122,6 +122,8 @@ function get_integration(int $userId, string $marketplace): ?array
 
 function save_integration(int $userId, string $marketplace, string $sellerId, string $apiKey, string $apiSecret, bool $stage = false): void
 {
+    $q=db()->prepare('SELECT is_demo FROM users WHERE id=?');$q->execute([$userId]);
+    if($q->fetchColumn())throw new RuntimeException('Demo hesabı gerçek mağaza bağlantısı kuramaz.');
     $encKey = encrypt_string($apiKey);
     $encSecret = encrypt_string($apiSecret);
     db()->prepare("INSERT INTO integrations (user_id, marketplace, seller_id, api_key, api_secret, stage)
