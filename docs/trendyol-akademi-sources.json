@@ -1,0 +1,83 @@
+{
+  "reviewed_on": "2026-11-08",
+  "hash_format": "SHA-256 of UTF-8 JSON, ensure_ascii=false, sort_keys=true, separators=(comma,colon)",
+  "sources": [
+    {
+      "title": "Otomatik Fiyatlandırma - Buybox Kuralları",
+      "url": "https://akademi.trendyol.com/satici-bilgi-merkezi/detay/otomatik-fiyatlandirma-buybox-kurallari",
+      "api_url": "https://lms-service.trendyol.com/knb/contents/guest/otomatik-fiyatlandirma-buybox-kurallari",
+      "retrieved_on": "2026-11-08",
+      "sha256": "0b32aac84101443cfa6473fc843b63b3c5f9d7298beb11ffc5fa165d2cdf945c"
+    },
+    {
+      "title": "Buybox",
+      "url": "https://akademi.trendyol.com/satici-bilgi-merkezi/detay/buybox-nedir",
+      "api_url": "https://lms-service.trendyol.com/knb/contents/guest/buybox-nedir",
+      "retrieved_on": "2026-11-08",
+      "sha256": "fef05cf8fa8e17dc9fa3b53508f122aa0a9ee843695157b7a6b588a3bb9946d1"
+    },
+    {
+      "title": "Flaş Ürünler",
+      "url": "https://akademi.trendyol.com/satici-bilgi-merkezi/detay/flas-urunler",
+      "api_url": "https://lms-service.trendyol.com/knb/contents/guest/flas-urunler",
+      "retrieved_on": "2026-11-08",
+      "sha256": "1be9adc0ac80be2a000ffa3854a397107e8de96c58597d4a2ce33ab02fb58007"
+    },
+    {
+      "title": "Promosyon & Fiyat Ana Sayfa",
+      "url": "https://akademi.trendyol.com/satici-bilgi-merkezi/detay/promosyon-fiyat-ana-sayfa",
+      "api_url": "https://lms-service.trendyol.com/knb/contents/guest/promosyon-fiyat-ana-sayfa",
+      "retrieved_on": "2026-11-08",
+      "sha256": "bda1e6e747244d1b78c0bc19caef46e3e825110f46d4aa7b9b01d425681b834e"
+    },
+    {
+      "title": "İndirimler",
+      "url": "https://akademi.trendyol.com/satici-bilgi-merkezi/detay/indirim",
+      "api_url": "https://lms-service.trendyol.com/knb/contents/guest/indirim",
+      "retrieved_on": "2026-11-08",
+      "sha256": "ec5d4cdbbb635c8ca2938259410535288c8cb79b393ae8075ea746322982150b"
+    },
+    {
+      "title": "Avantajlı Ürün Etiketleri",
+      "url": "https://akademi.trendyol.com/satici-bilgi-merkezi/detay/avantajli-urun-etiketleri",
+      "api_url": "https://lms-service.trendyol.com/knb/contents/guest/avantajli-urun-etiketleri",
+      "retrieved_on": "2026-11-08",
+      "sha256": "bfc49ca5661f8d6f8e980fb7af0a9263e6e6c8075b115ac04295e59a82350661"
+    },
+    {
+      "title": "Kampanyalar",
+      "url": "https://akademi.trendyol.com/satici-bilgi-merkezi/detay/kampanyalara-nasil-katilirim",
+      "api_url": "https://lms-service.trendyol.com/knb/contents/guest/kampanyalara-nasil-katilirim",
+      "retrieved_on": "2026-11-08",
+      "sha256": "0fbb03d51f40056a50de421439363a73ead7af9ca4825001117c3e78ef839fc7"
+    },
+    {
+      "title": "Kuponlar",
+      "url": "https://akademi.trendyol.com/satici-bilgi-merkezi/detay/kuponlar",
+      "api_url": "https://lms-service.trendyol.com/knb/contents/guest/kuponlar",
+      "retrieved_on": "2026-11-08",
+      "sha256": "e11d9b3226b5e498f522398cfcecab4483983ab80695f4670674bc343ae5bbc6"
+    },
+    {
+      "title": "Plus Komisyon Tarifeleri",
+      "url": "https://akademi.trendyol.com/satici-bilgi-merkezi/detay/plus-komisyon-tarifeleri",
+      "api_url": "https://lms-service.trendyol.com/knb/contents/guest/plus-komisyon-tarifeleri",
+      "retrieved_on": "2026-11-08",
+      "sha256": "abc4f73f028c412668fb5088be328ebb2d9c0761220c9fe78deeee82c02c6dc5"
+    },
+    {
+      "title": "Trendyol Plus Kampanyaları",
+      "url": "https://akademi.trendyol.com/satici-bilgi-merkezi/detay/trendyol-plus-kampanyalari",
+      "api_url": "https://lms-service.trendyol.com/knb/contents/guest/trendyol-plus-kampanyalari",
+      "retrieved_on": "2026-11-08",
+      "sha256": "50f380a51d9ce48f03539fdfdc00607f61fd5919f9ed8e034f18522466b650b1"
+    },
+    {
+      "title": "İndirimlerin Uygulanma Sırası",
+      "url": "https://akademi.trendyol.com/satici-bilgi-merkezi/detay/indirimlerin-uygulanma-sirasi",
+      "api_url": "https://lms-service.trendyol.com/knb/contents/guest/indirimlerin-uygulanma-sirasi",
+      "retrieved_on": "2026-11-08",
+      "sha256": "48c89600faa188fbbb759054dba859dd8b46d09d6ff17fea54e94d09bd5f7965"
+    }
+  ]
+}

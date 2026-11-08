@@ -229,3 +229,8 @@ Kalıcı maliyet kaydı, desi geri alma, tek varyant arşivleme/geri alma, filtr
 ## 8 Kasım 2026 — Gerçek promosyon Excel dosyaları sağlandı
 
 Kullanıcının sağladığı üç kaynak dosyayla komisyon tarifesi, yıldız etiketi ve flaş tekliflerinde yükleme–seçim–XLSX indirme zinciri doğrulandı. Bu üç akış için kaynak dosya engeli giderildi. Sonuçlar, tarih/komisyon eşleştirmeleri ve kalan sınırlar [Excel doğrulama raporunda](docs/MELONTIK-EXCEL-DOGRULAMA.md).
+
+
+## 8 Kasım 2026 — Resmi iş kuralları ve ilk XLSX düzeltmesi
+
+Trendyol Satıcı Bilgi Merkezi kaynaklarıyla iş kuralları belgelendi. Ürün komisyonu, avantajlı etiket ve flaş dosyalarının genel CSV akışı yerine şemaya özel XLSX okuma, kademe/dönem eşleştirme, satır bazında seçim ve kaynağı koruyan çıktı eklendi. Önceki eksik listesi bu düzeltmeden önceki sürümü anlatır. Uygulanan kapsam, testler ve kalan sınırlamalar [değişiklik notunda](docs/PROMOSYON-XLSX.md). Canlı pazaryeri yazımı yapılmadı.

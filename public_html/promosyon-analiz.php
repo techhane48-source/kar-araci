@@ -1,220 +1,178 @@
 <?php
 declare(strict_types=1);
 require_once __DIR__ . '/../includes/functions.php';
-require_once __DIR__ . '/../includes/xlsx.php';
-
+require_once __DIR__ . '/../includes/promotion.php';
 $u = require_login();
-$pro = is_pro($u);
-if (!$pro) { flash_set('error', 'Promosyon Kârlılık Analizi Pro plan özelliğidir.'); e_redirect('odeme.php'); }
+if (!is_pro($u)) { flash_set('error','Promosyon Kârlılık Analizi Pro plan özelliğidir.'); e_redirect('odeme.php'); }
+$modules = ['komisyon'=>'Ürün Komisyon Tarifesi','etiket'=>'Avantajlı Ürün Etiketi','flash'=>'Flaş Ürünler','plus'=>'Plus Komisyon Tarifesi','indirim'=>'İndirimler','kampanya'=>'Kampanyalar'];
+$mod = is_string($_GET['mod']??null) && isset($modules[$_GET['mod']]) ? $_GET['mod'] : 'komisyon';
+$supported = in_array($mod,['komisyon','etiket','flash'],true);
+$url = 'promosyon-analiz.php?mod='.$mod;
+$page = max(1,min(500,(int)($_GET['page']??1)));
 
-// Modüller: her biri aynı Excel round-trip akışı; fark "Kolon Seçimi"
-$modules = [
-    'komisyon' => ['title' => 'Ürün Komisyon Tarifesi', 'col' => '4. Fiyat Aralığı', 'desc' => 'Trendyol Ürün Komisyon Tarifesi Excel yükle. Her fiyat kademesindeki kârlılığı hesaplar.'],
-    'plus' => ['title' => 'Plus Komisyon Tarifesi', 'col' => 'Trendyol Plus Fiyat Aralığı', 'desc' => 'Trendyol Plus Komisyon Tarifesi Excel yükle.'],
-    'etiket' => ['title' => 'Avantajlı Ürün Etiketi', 'col' => 'Süper Avantaj Fiyat Aralığı', 'desc' => 'Avantajlı Ürün Etiketleri Excel yükle.'],
-    'flash' => ['title' => 'Flaş Ürünler', 'col' => '24 saatlik / 3 saatlik', 'desc' => 'Flaş Ürünler Excel yükle.'],
-    'indirim' => ['title' => 'İndirimler', 'col' => 'Kampanya Maksimum Fiyatı', 'desc' => 'İndirimler Excel yükle (bölge/çeşit/tür/min sepet).'],
-    'kampanya' => ['title' => 'Kampanyalar', 'col' => 'Kampanya Maksimum Fiyatı', 'desc' => 'Kampanyalar Excel yükle (bölge/karşılama oranı/çeşit/tür/min sepet).'],
-];
-$mod = $_GET['mod'] ?? 'komisyon';
-if (!isset($modules[$mod])) $mod = 'komisyon';
+function promo_saved_import(string $kind,int $uid): ?array {
+    $m = $_SESSION['promotion_imports'][$kind]??null;
+    if (!$m || (int)($m['owner']??0)!==$uid || ($m['created']??0)<time()-86400 || !is_file($m['path']??'')) return null;
+    return $m;
+}
 
-function parse_price2(string $raw): float { return (float) str_replace(',', '.', str_replace(' ', '', trim($raw))); }
-
-// --- Analiz ---
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'analyze') {
-    if (!csrf_verify($_POST['csrf'] ?? '')) { flash_set('error', 'Oturum süresi doldu.'); e_redirect('promosyon-analiz.php?mod=' . $mod); }
-    if (empty($_FILES['csv']['tmp_name'])) { flash_set('error', 'CSV dosyası seçin.'); e_redirect('promosyon-analiz.php?mod=' . $mod); }
-    $mp = $_POST['mp'] ?? 'trendyol';
-    $file = fopen($_FILES['csv']['tmp_name'], 'r');
-    $firstLine = fgets($file); rewind($file);
-    $delim = (substr_count((string)$firstLine, ';') > substr_count((string)$firstLine, ',')) ? ';' : ',';
-    $header = fgetcsv($file, null, $delim, '"', '\\');
-    if ($header === false) { flash_set('error', 'Dosya boş.'); e_redirect('promosyon-analiz.php?mod=' . $mod); }
-    $header = array_map(fn($x) => strtolower(trim($x)), $header);
-    $fold = fn($x) => strtr($x, ['ç'=>'c','Ç'=>'c','ğ'=>'g','Ğ'=>'g','ı'=>'i','İ'=>'i','ö'=>'o','Ö'=>'o','ş'=>'s','Ş'=>'s','ü'=>'u','Ü'=>'u']);
-    $norm = fn($x) => preg_replace('/[^a-z0-9]/', '', $fold($x));
-    $normHeader = array_map($norm, $header);
-    $idx = static function (array $names) use ($normHeader): ?int {
-        foreach ($names as $n) { $k = array_search($n, $normHeader, true); if ($k !== false) return $k; }
-        return null;
-    };
-    // Barkod
-    $bIdx = $idx(['barkod', 'barcode', 'sku']);
-    // Tier columns: find any column containing 'fiyat' keyword variants
-    $tierCols = [];
-    foreach ($header as $i => $col) {
-        $c = $norm($col);
-        if (str_contains($c, 'fiyat') || str_contains($c, 'price')) {
-            // skip base sale price column if it's just "satis"/"fiyat" without tier keyword
-            $tierCols[$i] = $col;
+session_boot();
+if ($_SERVER['REQUEST_METHOD']==='POST' && ($_POST['action']??'')==='upload') {
+    try {
+        if (!$supported) throw new RuntimeException('Bu dosya türü henüz desteklenmiyor.');
+        if (!csrf_verify(is_string($_POST['csrf']??null)?$_POST['csrf']:null)) throw new RuntimeException('Oturum süresi doldu.');
+        $file = $_FILES['workbook']??[];
+        if (($file['error']??UPLOAD_ERR_NO_FILE)!==UPLOAD_ERR_OK || !is_uploaded_file($file['tmp_name']??'')) throw new RuntimeException('XLSX dosyası alınamadı. Dosya boyutunu ve sunucunun yükleme sınırını kontrol edin.');
+        if (strtolower(pathinfo((string)$file['name'],PATHINFO_EXTENSION))!=='xlsx') throw new RuntimeException('Trendyol’dan indirdiğiniz XLSX dosyasını seçin.');
+        $period = $mod==='flash' ? null : promo_range((string)($_POST['start']??''),(string)($_POST['end']??''));
+        $book = promo_workbook($file['tmp_name']);
+        promo_schema($book,$mod);
+        if ($mod==='komisyon') promo_tariff($book,$period);
+        $dir = dirname(DB_PATH).'/promotion-imports/'.(int)$u['id'];
+        if (!is_dir($dir) && !mkdir($dir,0700,true) && !is_dir($dir)) throw new RuntimeException('Dosya saklama alanı açılamadı.');
+        $total = 0;
+        foreach (glob($dir.'/*.xlsx')?:[] as $stored) {
+            if (filemtime($stored)<time()-86400) @unlink($stored); else $total+=filesize($stored);
         }
-    }
-    // If no tier columns found, treat a single 'fiyat' column as one tier
-    if (!$tierCols) {
-        $pIdx = $idx(['fiyat', 'price', 'satis', 'satisfiyati']);
-        if ($pIdx !== null) $tierCols[$pIdx] = $header[$pIdx];
-    }
+        if ($total+filesize($file['tmp_name'])>50*1024*1024) throw new RuntimeException('Geçici dosya alanı dolu. Önceki dosyalar 24 saat sonra temizlenir.');
+        $version = bin2hex(random_bytes(16)); $path = $dir.'/'.$version.'.xlsx';
+        if (!move_uploaded_file($file['tmp_name'],$path)) throw new RuntimeException('Dosya saklanamadı.');
+        chmod($path,0600);
+        $old = promo_saved_import($mod,(int)$u['id']);
+        $_SESSION['promotion_imports'][$mod] = ['path'=>$path,'version'=>$version,'owner'=>(int)$u['id'],'period'=>$period,'created'=>time(),'name'=>mb_substr(basename((string)$file['name']),0,160)];
+        unset($_SESSION['promotion_choices'][$mod]);
+        if ($old) @unlink($old['path']);
+        flash_set('success','Excel okundu. Teklifleri inceleyip her satır için bir seçim yapabilirsiniz.');
+    } catch (Throwable $e) { flash_set('error',$e instanceof RuntimeException?$e->getMessage():'Excel dosyası işlenemedi.'); }
+    e_redirect($url);
+}
 
-    if ($bIdx === null || !$tierCols) {
-        flash_set('error', 'CSV "barkod" ve en az bir "fiyat" kolonu içermeli.');
-        e_redirect('promosyon-analiz.php?mod=' . $mod);
-    }
-
-    $stmt = db()->prepare("SELECT * FROM products WHERE user_id = ? AND marketplace = ?");
-    $stmt->execute([$u['id'], $mp]);
-    $byBarcode = [];
-    foreach ($stmt->fetchAll() as $p) if ($p['barcode'] !== '') $byBarcode[$p['barcode']] = $p;
-
-    $rows = [];
-    while (($row = fgetcsv($file, null, $delim, '"', '\\')) !== false) {
-        $barcode = trim($row[$bIdx] ?? '');
-        if ($barcode === '') continue;
-        $p = $byBarcode[$barcode] ?? null;
-        $cost = $p ? (float)$p['cost'] : null;
-        $hasCost = $p !== null && $cost > 0;
-        $tiers = [];
-        $best = null;
-        foreach ($tierCols as $colIdx => $colName) {
-            $price = parse_price2($row[$colIdx] ?? '');
-            $t = ['price' => $price, 'profit' => null, 'margin' => null, 'ratio' => null, 'col' => $colName];
-            if ($hasCost && $price > 0) {
-                $r = calc_product_profit($p, $price);
-                if (!$r['ok']) continue;
-                $t = ['price' => $price, 'profit' => $r['profit'], 'margin' => $r['margin'], 'ratio' => $r['ratio'], 'col' => $colName];
-                if ($best === null || $r['profit'] > $best) $best = $r['profit'];
+$meta = $supported ? promo_saved_import($mod,(int)$u['id']) : null;
+$analysis = null; $book = null; $error = null; $context = ''; $tariffMeta = null;
+if ($meta) {
+    try {
+        $book=promo_workbook($meta['path']);$map=promo_schema($book,$mod);$barcodes=[];
+        foreach ($book['records'] as $row) {
+            try {$barcode=promo_cell($row,$map,'BARKOD');if($barcode!=='')$barcodes[$barcode]=true;} catch (RuntimeException $e) { /* The row's error is reported by promo_analyze. */ }
+        }
+        $products=[];
+        foreach (array_chunk(array_keys($barcodes),400) as $chunk) {
+            $q=db()->prepare("SELECT * FROM products WHERE user_id=? AND marketplace='trendyol' AND barcode IN (".implode(',',array_fill(0,count($chunk),'?')).") ORDER BY id");
+            $q->execute(array_merge([$u['id']],$chunk));
+            while ($product=$q->fetch()) {
+                $b=(string)$product['barcode'];
+                if (array_key_exists($b,$products)) $products[$b]=['ambiguous'=>true]; else $products[$b]=$product;
             }
-            $tiers[$colName] = $t;
         }
-        $rows[] = ['barcode' => $barcode, 'name' => $p['name'] ?? $barcode, 'cost' => $cost, 'matched' => $p !== null, 'tiers' => $tiers, 'best' => $best];
-    }
-    fclose($file);
-    $_SESSION['promo_rows'] = $rows;
-    $_SESSION['promo_tiers'] = array_values($tierCols);
-    $_SESSION['promo_mod'] = $mod;
-    $_SESSION['promo_mp'] = $mp;
-    e_redirect('promosyon-analiz.php?mod=' . $mod);
+        unset($barcodes);
+        $tariffMeta=promo_saved_import('komisyon',(int)$u['id']); $tariffs=[];
+        if ($tariffMeta) $tariffs=promo_tariff($mod==='komisyon'?$book:promo_workbook($tariffMeta['path']),$tariffMeta['period']);
+        $analysis=promo_analyze($book,$mod,$products,$meta['period'],$tariffs);
+        $context=hash('sha256',json_encode([$meta['version'],$tariffMeta['version']??null,$products],JSON_THROW_ON_ERROR));
+        // Export needs only the original ZIP path and sheet name, not a second copy of every input cell.
+        $book=['path'=>$book['path'],'sheet'=>$book['sheet']];
+        unset($products,$tariffs);
+    } catch (Throwable $e) { $error=$e instanceof RuntimeException?$e->getMessage():'Excel analizi tamamlanamadı.'; }
 }
 
-// --- İndir ---
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'download') {
-    if (!csrf_verify($_POST['csrf'] ?? '')) { flash_set('error', 'Oturum süresi doldu.'); e_redirect('promosyon-analiz.php?mod=' . $mod); }
-    $rows = $_SESSION['promo_rows'] ?? [];
-    $tierCols = $_SESSION['promo_tiers'] ?? [];
-    $sel = array_fill_keys(array_map('strval', $_POST['sel'] ?? []), true);
-    if (!$rows) { flash_set('error', 'Önce bir CSV analiz edin.'); e_redirect('promosyon-analiz.php?mod=' . $mod); }
-    header('Content-Type: text/csv; charset=utf-8');
-    header('Content-Disposition: attachment; filename="promosyon-secimler.csv"');
-    echo "\xEF\xBB\xBF";
-    $out = fopen('php://output', 'w');
-    $head = ['barkod', 'urun_adi', 'maliyet'];
-    foreach ($tierCols as $c) { $head[] = $c; $head[] = $c . '_net_kar'; }
-    $head[] = 'secim';
-    write_csv($out, $head, ';');
-    foreach ($rows as $r) {
-        $isSel = isset($sel[(string)$r['barcode']]) ? 1 : 0;
-        $line = [$r['barcode'], $r['name'], $r['cost'] !== null ? number_format($r['cost'], 2, ',', '') : ''];
-        foreach ($tierCols as $c) {
-            $t = $r['tiers'][$c] ?? null;
-            $line[] = $t && $t['price'] > 0 ? number_format($t['price'], 2, ',', '') : '';
-            $line[] = $t && $t['profit'] !== null ? number_format($t['profit'], 2, ',', '') : '';
+if ($_SERVER['REQUEST_METHOD']==='POST') {
+    $temp=null;
+    try {
+        if (!csrf_verify(is_string($_POST['csrf']??null)?$_POST['csrf']:null)) throw new RuntimeException('Oturum süresi doldu.');
+        if (!$analysis || !$meta || !$context || !is_string($_POST['version']??null) || !hash_equals($context,$_POST['version'])) throw new RuntimeException('Dosya, tarife veya ürün bilgileri değişti. Sayfayı yenileyip seçimi kontrol edin.');
+        $action=$_POST['action']??'';
+        if (!in_array($action,['save','download','clear'],true)) throw new RuntimeException('Geçersiz işlem.');
+        $choices=$_SESSION['promotion_choices'][$mod]??[];
+        if ($action==='clear') $choices=[];
+        else {
+            if (!is_array($_POST['choice']??[])) throw new RuntimeException('Seçim biçimi geçersiz.');
+            foreach ($_POST['choice']??[] as $row=>$key) {
+                if (!preg_match('/^[0-9]+$/D',(string)$row) || !is_string($key) || !isset($analysis['rows'][(int)$row]) || ($key!==''&&!isset($analysis['rows'][(int)$row]['offers'][$key]))) throw new RuntimeException('Geçersiz teklif seçimi.');
+                if ($key==='') unset($choices[(int)$row]); else $choices[(int)$row]=$key;
+            }
         }
-        $line[] = $isSel;
-        write_csv($out, $line, ';');
+        if ($action==='download') {
+            $changes=promo_export_changes($analysis,$choices);
+            $temp=tempnam(sys_get_temp_dir(),'kf-promo-');
+            promo_export_workbook($book,$changes,$temp);
+            $_SESSION['promotion_choices'][$mod]=$choices;
+            header('Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+            header('Content-Disposition: attachment; filename="trendyol-'.$mod.'-secimler.xlsx"');
+            header('Content-Length: '.filesize($temp));
+            header('Cache-Control: no-store');
+            readfile($temp);unlink($temp);exit;
+        }
+        $_SESSION['promotion_choices'][$mod]=$choices;
+        flash_set('success',$action==='clear'?'Taslak seçimler temizlendi. Kaynak Excel değişmedi.':'Seçimler bu taslakta saklandı.');
+    } catch (Throwable $e) {
+        if ($temp && is_file($temp)) unlink($temp);
+        flash_set('error',$e instanceof RuntimeException?$e->getMessage():'Dosya oluşturulamadı.');
     }
-    fclose($out);
-    exit;
+    e_redirect($url.'&page='.$page);
 }
 
-$rows = $_SESSION['promo_rows'] ?? null;
-$tierCols = $_SESSION['promo_tiers'] ?? [];
-$mp = $_SESSION['promo_mp'] ?? 'trendyol';
-
-$pageTitle = 'Promosyon Kârlılık Analizi — ' . APP_NAME;
-require __DIR__ . '/../includes/header.php';
+$choices=$_SESSION['promotion_choices'][$mod]??[];
+$pageTitle=$modules[$mod].' — '.APP_NAME;
+require __DIR__.'/../includes/header.php';
 ?>
 <div class="wrap">
-  <div class="toolbar">
-    <h1>Promosyon Kârlılık Analizi</h1>
+  <h1>Promosyon Kârlılık Analizi</h1>
+  <div style="display:flex;gap:8px;flex-wrap:wrap;margin:16px 0">
+    <?php foreach ($modules as $key=>$title): ?><a class="<?= $key===$mod?'btn-primary':'btn-ghost' ?>" href="promosyon-analiz.php?mod=<?= h($key) ?>"><?= h($title) ?></a><?php endforeach; ?>
   </div>
-  <p class="hint" style="max-width:760px">Melontik'in killer özelliği: Trendyol'dan indirdiğin promosyon Excel'ini CSV olarak kaydet ve yükle. Kâr&Fiyat, barkodu kayıtlı ürünlerinle eşleştirip <b>her fiyat kademesinin</b> net kârını hesaplar. Kârlıları işaretle, seçimleri indir, Trendyol'a geri yükle.</p>
-
+  <?php if (isset($_SESSION['flash'])): $f=$_SESSION['flash'];unset($_SESSION['flash']); ?><div role="status" class="alert alert-<?= h($f['type']) ?>"><?= h($f['msg']) ?></div><?php endif; ?>
+  <?php if (!$supported): ?>
+    <div class="card"><h2><?= h($modules[$mod]) ?></h2><p>Bu dosya türü için analiz desteği henüz hazır değil. Ürün komisyon tarifesi, avantajlı ürün etiketi ve flaş ürünler dosyalarını analiz edebilirsiniz.</p></div>
+  <?php else: ?>
   <div class="card" style="margin:16px 0">
-    <h2>Modül Seç</h2>
-    <div style="display:flex;gap:8px;flex-wrap:wrap">
-      <?php foreach ($modules as $k => $m): ?>
-        <a href="promosyon-analiz.php?mod=<?= $k ?>" class="<?= $mod === $k ? 'btn-primary' : 'btn-ghost' ?>" style="text-decoration:none;font-size:13px"><?= h($m['title']) ?></a>
-      <?php endforeach; ?>
-    </div>
-    <p class="hint" style="margin-top:10px"><b><?= h($modules[$mod]['title']) ?></b> — <?= h($modules[$mod]['desc']) ?> Kolon: <code><?= h($modules[$mod]['col']) ?></code></p>
-  </div>
-
-  <?php if (isset($_SESSION['flash'])): $f = $_SESSION['flash']; unset($_SESSION['flash']); ?>
-    <div class="alert alert-<?= h($f['type']) ?>"><?= h($f['msg']) ?></div>
-  <?php endif; ?>
-
-  <div class="card" style="margin:16px 0">
-    <h2>1. CSV Yükle</h2>
-    <form method="post" enctype="multipart/form-data" style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end">
-      <input type="hidden" name="csrf" value="<?= h(csrf_token()) ?>">
-      <input type="hidden" name="action" value="analyze">
-      <div class="field" style="margin:0"><label>Pazaryeri</label>
-        <select name="mp" style="width:auto">
-          <?php foreach (['trendyol'=>'Trendyol','hepsiburada'=>'Hepsiburada'] as $c=>$l): ?>
-            <option value="<?= $c ?>" <?= $mp === $c ? 'selected' : '' ?>><?= $l ?></option>
-          <?php endforeach; ?>
-        </select>
-      </div>
-      <div class="field" style="margin:0"><label>CSV dosyası</label><input type="file" name="csv" accept=".csv" required style="width:auto;font-size:13px"></div>
-      <button type="submit" class="btn-primary">Analiz Et</button>
+    <h2><?= h($modules[$mod]) ?> Excel’i</h2>
+    <p>Trendyol’dan indirdiğiniz özgün XLSX dosyasını yükleyin. Barkodlar Trendyol ürünlerinizle eşleştirilir. Maliyet ve giderler kayıtlı ürün ayarlarınızdan alınır.</p>
+    <form method="post" enctype="multipart/form-data" style="display:flex;gap:12px;flex-wrap:wrap;align-items:end">
+      <input type="hidden" name="csrf" value="<?= h(csrf_token()) ?>"><input type="hidden" name="action" value="upload">
+      <div class="field"><label for="workbook">Trendyol Excel dosyası (en fazla 10 MB)</label><input id="workbook" type="file" name="workbook" accept=".xlsx" required></div>
+      <?php if ($mod!=='flash'): ?>
+      <div class="field"><label for="start">Tarife başlangıcı (Türkiye saati)</label><input id="start" type="datetime-local" name="start" required></div>
+      <div class="field"><label for="end">Tarife bitişi (Türkiye saati)</label><input id="end" type="datetime-local" name="end" required></div>
+      <?php endif; ?>
+      <button class="btn-primary" type="submit">Excel’i Analiz Et</button>
     </form>
-    <p class="hint" style="margin-top:10px">Başlıklar: <code>barkod</code> + fiyat kademesi kolonları (örn. <code>süper_avantaj_fiyat</code>, <code>çok_avantaj_fiyat</code>, <code>avantaj_fiyat</code>, <code>4. fiyat aralığı</code>). Ayraç virgül veya noktalı virgül.</p>
+    <p class="hint"><?= $mod==='flash'?'Teklif tarihleri Excel’deki her satırdan okunur. Aynı barkodun farklı tarihlerdeki teklifleri ayrı değerlendirilir.':'Tarih ve saatleri Trendyol’daki tarife dönemiyle aynı girin; tam gün varsayılmaz.' ?> Dosyalar bu oturumda 24 saat kullanılabilir.</p>
+    <?php if ($mod!=='komisyon'): ?><p class="hint">Üründe komisyon tarifesi varsa önce <a href="promosyon-analiz.php?mod=komisyon">ürün komisyon dosyasını</a> da yükleyin. Teklif dönemini kısmen kapsayan tarifelerde tek komisyonla tahmin yapılmaz.</p><?php endif; ?>
   </div>
-
-  <?php if ($rows !== null): ?>
-  <div class="card table-card" style="margin:16px 0">
-    <h2>2. Sonuçlar (<?= count($rows) ?> satır)</h2>
-    <?php if (!$rows): ?>
-      <p class="hint">CSV'de satır bulunamadı.</p>
-    <?php else: ?>
-      <form method="post">
-        <input type="hidden" name="csrf" value="<?= h(csrf_token()) ?>">
-        <input type="hidden" name="action" value="download">
-        <div style="margin-bottom:10px;display:flex;gap:10px;flex-wrap:wrap">
-          <button type="button" class="btn-ghost" onclick="selectProfitable()">Kârlıları Otomatik Seç</button>
-          <button type="button" class="btn-ghost" onclick="clearSel()">Seçimi Temizle</button>
-          <button type="submit" class="btn-primary">Seçimleri İndir (CSV)</button>
-        </div>
-        <table>
-          <tr><th></th><th>Barkod</th><th>Ürün</th><th>Maliyet</th>
-            <?php foreach ($tierCols as $c): ?><th><?= h($c) ?> (fiyat→kâr)</th><?php endforeach; ?>
-          </tr>
-          <?php foreach ($rows as $r): ?>
-          <tr>
-            <td><?php if ($r['best'] !== null): ?><input type="checkbox" name="sel[]" value="<?= h($r['barcode']) ?>" data-profit="<?= $r['best'] ?>"><?php endif; ?></td>
-            <td style="font-size:12px"><?= h($r['barcode']) ?></td>
-            <td><?= h($r['name']) ?></td>
-            <td><?= $r['cost'] !== null ? tl($r['cost']) : '<span class="hint">bulunamadı</span>' ?></td>
-            <?php foreach ($tierCols as $c): $t = $r['tiers'][$c] ?? null; ?>
-              <td>
-                <?php if ($t && $t['profit'] !== null): ?>
-                  <div style="font-size:11px;color:var(--muted)"><?= tl($t['price']) ?></div>
-                  <div class="<?= $t['profit'] < 0 ? 'neg' : 'pos' ?>"><?= tl($t['profit']) ?></div>
-                  <div style="font-size:11px;color:var(--muted)">%<?= number_format($t['margin'], 1, ',', '.') ?> marj</div>
-                <?php elseif ($r['matched']): ?><span class="hint">maliyet yok</span>
-                <?php else: ?><span class="hint">ürün bulunamadı</span><?php endif; ?>
-              </td>
-            <?php endforeach; ?>
-          </tr>
-          <?php endforeach; ?>
-        </table>
-      </form>
-    <?php endif; ?>
+  <p class="hint">Gösterilen kâr teklif fiyatı üzerinden bir tahmindir. Mevcut kupon, koşullu indirim ve kampanya birleşimleri bu hesaba dahil değildir. Kargo, hizmet bedeli ve vergi ayarlarınızı kontrol edin. Excel’i indirmek Trendyol’daki fiyatları değiştirmez.</p>
+  <?php if ($error): ?><div class="alert alert-error"><?= h($error) ?></div><?php endif; ?>
+  <?php if ($analysis): $rows=array_values($analysis['rows']);$total=count($rows);$pages=max(1,(int)ceil($total/100));$page=min($page,$pages);$shown=array_slice($rows,($page-1)*100,100);$ready=count(array_filter($rows,fn($r)=>!empty($r['offers']))); ?>
+  <div class="card" style="margin:16px 0">
+    <h2>Teklifler</h2>
+    <p><?= h($meta['name']) ?> — <?= $total ?> satır; <?= $ready ?> satırda hesaplanabilir teklif, <?= $total-$ready ?> satırda eksik bilgi veya geçersiz teklif. Taslakta <?= count($choices) ?> seçim var.</p>
+    <form method="post" action="<?= h($url.'&page='.$page) ?>">
+      <input type="hidden" name="csrf" value="<?= h(csrf_token()) ?>"><input type="hidden" name="version" value="<?= h($context) ?>">
+      <div style="display:flex;gap:10px;flex-wrap:wrap;margin:12px 0">
+        <button type="submit" name="action" value="save" class="btn-ghost">Sayfadaki Seçimleri Sakla</button>
+        <button type="submit" name="action" value="clear" class="btn-ghost">Tüm Taslak Seçimleri Temizle</button>
+        <button type="submit" name="action" value="download" class="btn-primary">Seçimleri İndir (XLSX)</button>
+      </div>
+      <p class="hint">Her satırda bir teklif seçin. Başka sayfaya geçmeden seçimlerinizi saklayın. Seçilmemiş satırların özgün değerleri korunur.</p>
+      <div style="overflow-x:auto"><table>
+        <thead><tr><th>Excel satırı / barkod</th><th>Ürün</th><th>Teklif seçimi — fiyat / tahmini kâr / komisyon</th><th>Bilgi</th></tr></thead>
+        <tbody><?php foreach ($shown as $r): ?><tr>
+          <td><?= $r['row'] ?><br><?= h($r['barcode']) ?></td><td><?= h($r['name']) ?></td>
+          <td><?php if ($r['offers']): ?>
+            <select aria-label="<?= h('Satır '.$r['row'].' teklif seçimi') ?>" name="choice[<?= $r['row'] ?>]" style="min-width:340px">
+              <option value="">Kaynak satırı değiştirme</option>
+              <?php foreach ($r['offers'] as $key=>$offer): ?><option value="<?= h((string)$key) ?>" <?= (string)($choices[$r['row']]??'')===(string)$key?'selected':'' ?>><?= h($offer['label'].' — '.tl($offer['price']).' / kâr '.tl($offer['profit']).' / komisyon %'.number_format($offer['rate'],2,',','.')) ?></option><?php endforeach; ?>
+            </select>
+            <?php foreach ($r['offers'] as $offer): ?><div class="hint"><?= h($offer['label'].' · '.$offer['rate_source'].' · '.date('d.m.Y H:i',$offer['period']['start']).' – '.date('d.m.Y H:i',$offer['period']['end'])) ?></div><?php endforeach; ?>
+          <?php else: ?><span class="hint">Seçim için bilgi eksik</span><?php endif; ?></td>
+          <td><?php if ($r['error']): ?><div><?= h($r['error']) ?></div><?php endif; ?><?php foreach (array_unique($r['warnings']) as $warning): ?><div class="hint"><?= h($warning) ?></div><?php endforeach; ?></td>
+        </tr><?php endforeach; ?></tbody>
+      </table></div>
+    </form>
+    <nav aria-label="Teklif sayfaları" style="display:flex;gap:12px;margin-top:16px">
+      <?php if ($page>1): ?><a href="<?= h($url.'&page='.($page-1)) ?>">Önceki</a><?php endif; ?><span><?= $page ?> / <?= $pages ?></span><?php if ($page<$pages): ?><a href="<?= h($url.'&page='.($page+1)) ?>">Sonraki</a><?php endif; ?>
+    </nav>
   </div>
+  <?php endif; ?>
   <?php endif; ?>
 </div>
-<script>
-function selectProfitable(){ document.querySelectorAll('input[name="sel[]"]').forEach(cb=>{ cb.checked = parseFloat(cb.dataset.profit) > 0; }); }
-function clearSel(){ document.querySelectorAll('input[name="sel[]"]').forEach(cb=>{ cb.checked = false; }); }
-</script>
-<?php require __DIR__ . '/../includes/footer.php'; ?>
+<?php require __DIR__.'/../includes/footer.php'; ?>

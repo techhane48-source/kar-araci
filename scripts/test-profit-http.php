@@ -3,14 +3,17 @@ declare(strict_types=1);
 $path=getenv('KARFIYAT_DB');
 if (!$path || realpath($path)===realpath(__DIR__.'/../data/app.sqlite')) throw new RuntimeException('Ayrı test veritabanı seçin.');
 require_once __DIR__.'/../includes/functions.php';
+require_once __DIR__.'/../includes/promotion.php';
+require_once __DIR__.'/promotion-fixtures.php';
 $failed=0;
+$base=getenv('KARFIYAT_TEST_BASE')?:'http://127.0.0.1:8090';
 function check(bool $ok,string $label):void {global $failed;echo ($ok?'PASS ':'FAIL ').$label."\n";if(!$ok)$failed++;}
 $jar=tempnam(sys_get_temp_dir(),'kf-profit-cookie-');
 $ch=curl_init();
 curl_setopt_array($ch,[CURLOPT_RETURNTRANSFER=>true,CURLOPT_COOKIEJAR=>$jar,CURLOPT_COOKIEFILE=>$jar,CURLOPT_FOLLOWLOCATION=>false,CURLOPT_TIMEOUT=>15]);
 function req(string $page,?array $data=null,bool $json=false):array {
-    global $ch;
-    curl_setopt($ch,CURLOPT_URL,'http://127.0.0.1:8090/'.$page);
+    global $ch,$base;
+    curl_setopt($ch,CURLOPT_URL,$base.'/'.$page);
     curl_setopt($ch,CURLOPT_POST,$data!==null);
     curl_setopt($ch,CURLOPT_HTTPHEADER,$json?['Content-Type: application/json','X-CSRF-Token: '.($GLOBALS['csrf']??'')]:[]);
     if($data!==null)curl_setopt($ch,CURLOPT_POSTFIELDS,$json?json_encode($data):http_build_query($data));
@@ -56,14 +59,24 @@ foreach(['urunler.php','kar-marji.php'] as $page) {
 }
 $csv=['barkod;fiyat','A;400','B;300'];
 $tmp=tempnam(sys_get_temp_dir(),'kf-profit-csv-');file_put_contents($tmp,implode("\n",$csv));
-foreach(['toplu-analiz.php','promosyon-analiz.php'] as $page) {
-    curl_setopt($ch,CURLOPT_URL,'http://127.0.0.1:8090/'.$page);
+foreach(['toplu-analiz.php'] as $page) {
+    curl_setopt($ch,CURLOPT_URL,$base.'/'.$page);
     curl_setopt($ch,CURLOPT_POST,true);curl_setopt($ch,CURLOPT_HTTPHEADER,[]);
     curl_setopt($ch,CURLOPT_POSTFIELDS,['csrf'=>$csrf,'action'=>'analyze','mp'=>'trendyol','csv'=>new CURLFile($tmp,'text/csv','prices.csv')]);
     curl_exec($ch);$r=req($page);
     check(str_contains($r['body'],number_format(53.8,2,',','.')),"$page aynı ürün kârını gösterir");
 }
 unlink($tmp);
+$row=promotion_fixture_commission();
+foreach(['BARKOD'=>'A','1.Fiyat Alt Limit'=>400,'2.Fiyat Üst Limiti'=>399.99,'2.Fiyat Alt Limit'=>300,'3.Fiyat Üst Limiti'=>299.99,'3.Fiyat Alt Limit'=>200,'4.Fiyat Üst Limiti'=>199.99,'1.KOMİSYON'=>21.36] as $key=>$value) $row[$key]=$value;
+$tmp=promotion_fixture('commission',[$row]);
+try {
+    curl_setopt($ch,CURLOPT_URL,$base.'/promosyon-analiz.php');
+    curl_setopt($ch,CURLOPT_POST,true);curl_setopt($ch,CURLOPT_HTTPHEADER,[]);
+    curl_setopt($ch,CURLOPT_POSTFIELDS,['csrf'=>$csrf,'action'=>'upload','start'=>'2050-11-05T08:00','end'=>'2050-11-12T07:59','workbook'=>new CURLFile($tmp,'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet','commission.xlsx')]);
+    curl_exec($ch);$r=req('promosyon-analiz.php');
+    check(str_contains($r['body'],number_format(53.8,2,',','.')),'promosyon-analiz.php kaynak kademe komisyonuyla aynı ürün kârını gösterir');
+} finally {unlink($tmp);}
 foreach(['order','product','category'] as $type) {
     $r=req('raporlar.php?r='.$type.'&export=1');$rows=csv_rows($r['body']);
     $index=['order'=>3,'product'=>5,'category'=>4][$type];

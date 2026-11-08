@@ -1,0 +1,53 @@
+{
+  "date": "2026-11-08",
+  "test_costs": "synthetic_only",
+  "real_workbook_round_trip": [
+    {
+      "kind": "commission",
+      "inputRows": 1895,
+      "outputRows": 1895,
+      "headerEqual": true,
+      "changedCells": 1,
+      "changedRows": 1,
+      "changedHeaders": [
+        "YENİ TSF (FİYAT GÜNCELLE)"
+      ]
+    },
+    {
+      "kind": "star",
+      "inputRows": 4787,
+      "outputRows": 4787,
+      "headerEqual": true,
+      "changedCells": 1,
+      "changedRows": 1,
+      "changedHeaders": [
+        "YENİ TSF (FİYAT GÜNCELLE)"
+      ]
+    },
+    {
+      "kind": "flash",
+      "inputRows": 13851,
+      "outputRows": 13851,
+      "headerEqual": true,
+      "changedCells": 1,
+      "changedRows": 1,
+      "changedHeaders": [
+        "Güncellenecek Fiyat"
+      ]
+    }
+  ],
+  "php_memory_limit_mb": 128,
+  "php_peak_mb": 69.8,
+  "marketplace_write_performed": false,
+  "core_tests": "passed",
+  "http_tests": "passed",
+  "profit_regression": "passed",
+  "existing_cost_xlsx_regression": "passed",
+  "profit_http_regression": "passed",
+  "browser": {
+    "native_upload": true,
+    "offer_selection": true,
+    "xlsx_download": true,
+    "javascript_errors": 0
+  }
+}

@@ -59,3 +59,8 @@ Testlerden sonra üç özgün dosya yeniden yüklenerek deneme seçimleri temizl
 Bu üç modülde yükleme–seçim–indirme zinciri doğrulandı. Plus komisyon, indirim ve kampanya dosyaları bu üç dosya değildir; onların özgün dosya şemaları bu çalışmada doğrulanmadı. Paket erişimi olmayan modüller, gerçek tahsilat ve canlı pazaryeri fiyat yazımı için önceki sınırlar geçerlidir.
 
 [Seçilmiş sonuçlar](melontik-excel-dogrulama-sonuclari.json) ve [yalnızca başlıklardan oluşan dosya şemaları](trendyol-promosyon-dosya-semalari.json) depodadır. Gerçek dosyalar, barkodlar, ürün adları, hesap/oturum bilgileri ve gerçek kâr tutarları eklenmedi. Ham kanıtlar özel geçici çalışma alanında tutulur.
+
+
+## 8 Kasım 2026 — Resmi iş kuralları ve ilk XLSX düzeltmesi
+
+Trendyol Satıcı Bilgi Merkezi kaynaklarıyla iş kuralları belgelendi. Ürün komisyonu, avantajlı etiket ve flaş dosyalarının genel CSV akışı yerine şemaya özel XLSX okuma, kademe/dönem eşleştirme, satır bazında seçim ve kaynağı koruyan çıktı eklendi. Önceki eksik listesi bu düzeltmeden önceki sürümü anlatır. Uygulanan kapsam, testler ve kalan sınırlamalar [değişiklik notunda](PROMOSYON-XLSX.md). Canlı pazaryeri yazımı yapılmadı.
