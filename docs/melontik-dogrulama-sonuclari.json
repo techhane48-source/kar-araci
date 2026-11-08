@@ -1,0 +1,175 @@
+{
+  "date": "2026-11-08",
+  "calculator": [
+    {
+      "mode": "tutar",
+      "vat": 20,
+      "output": {
+        "price": 1788.85,
+        "cost": 1000,
+        "commission": 357.77,
+        "cargo": 100,
+        "service": 13.19,
+        "stopaj": 14.91,
+        "netVat": 52.97,
+        "international": 0,
+        "profit": 250,
+        "signedVatDifference": 0.01,
+        "clampedVatDifference": 0.01,
+        "reconcilesWithOnePolicy": true
+      },
+      "stable": true
+    },
+    {
+      "mode": "tutar",
+      "vat": 10,
+      "output": {
+        "price": 1724.7,
+        "cost": 1000,
+        "commission": 344.94,
+        "cargo": 100,
+        "service": 13.19,
+        "stopaj": 15.68,
+        "netVat": -10.48,
+        "international": 0,
+        "profit": 250,
+        "signedVatDifference": 11.37,
+        "clampedVatDifference": 0.89,
+        "reconcilesWithOnePolicy": false
+      },
+      "stable": true
+    },
+    {
+      "mode": "tutar",
+      "vat": 0,
+      "output": {
+        "price": 1721.8,
+        "cost": 1000,
+        "commission": 344.36,
+        "cargo": 100,
+        "service": 13.19,
+        "stopaj": 17.22,
+        "netVat": -76.26,
+        "international": 0,
+        "profit": 250,
+        "signedVatDifference": 73.29,
+        "clampedVatDifference": -2.97,
+        "reconcilesWithOnePolicy": false
+      },
+      "stable": true
+    },
+    {
+      "mode": "oran",
+      "vat": 20,
+      "output": {
+        "price": 1788.85,
+        "cost": 1000,
+        "commission": 357.77,
+        "cargo": 100,
+        "service": 13.19,
+        "stopaj": 14.91,
+        "netVat": 52.97,
+        "international": 0,
+        "profit": 250,
+        "signedVatDifference": 0.01,
+        "clampedVatDifference": 0.01,
+        "reconcilesWithOnePolicy": true
+      },
+      "stable": true
+    },
+    {
+      "mode": "oran",
+      "vat": 10,
+      "output": {
+        "price": 1724.7,
+        "cost": 1000,
+        "commission": 344.94,
+        "cargo": 100,
+        "service": 13.19,
+        "stopaj": 15.68,
+        "netVat": -10.48,
+        "international": 0,
+        "profit": 250,
+        "signedVatDifference": 11.37,
+        "clampedVatDifference": 0.89,
+        "reconcilesWithOnePolicy": false
+      },
+      "stable": true
+    },
+    {
+      "mode": "oran",
+      "vat": 0,
+      "output": {
+        "price": 1721.8,
+        "cost": 1000,
+        "commission": 344.36,
+        "cargo": 100,
+        "service": 13.19,
+        "stopaj": 17.22,
+        "netVat": -76.26,
+        "international": 0,
+        "profit": 250,
+        "signedVatDifference": 73.29,
+        "clampedVatDifference": -2.97,
+        "reconcilesWithOnePolicy": false
+      },
+      "stable": true
+    }
+  ],
+  "filters": [
+    {
+      "case": "barcode_target_present",
+      "passed": true,
+      "actualCount": 2
+    },
+    {
+      "case": "cost_inclusive_bounds",
+      "passed": true,
+      "actualCount": 1
+    },
+    {
+      "case": "cost_above_target",
+      "passed": true,
+      "actualCount": 0
+    },
+    {
+      "case": "cost_below_target",
+      "passed": true,
+      "actualCount": 0
+    },
+    {
+      "case": "zero_stock_upper_bound",
+      "passed": true,
+      "actualCount": 1
+    },
+    {
+      "case": "positive_stock_excludes_zero",
+      "passed": true,
+      "actualCount": 0
+    },
+    {
+      "case": "no_match",
+      "passed": true,
+      "actualCount": 0
+    }
+  ],
+  "persistence": {
+    "independentBrowserContext": true,
+    "onlyAuthStorageCopied": true,
+    "targetFound": true,
+    "costFivePersisted": true,
+    "desiRestored": true,
+    "otherCostsUnchanged": true
+  },
+  "archiveRestore": {
+    "archiveConfirmed": true,
+    "restoreConfirmed": true,
+    "updatedPerOperation": 1
+  },
+  "orderArithmetic": {
+    "allEvaluableProfitRowsReconciled": true,
+    "allEvaluableRatiosReconciled": true,
+    "allEvaluableMarginsReconciled": true,
+    "unknownProfitRowsExcluded": true
+  }
+}

@@ -157,3 +157,8 @@ Sadece hesap makinesine sentetik maliyet 1.000 TL, hedef kâr 250 TL, kargo
 Uygulama iş akışının görünen mantığı daha ayrıntılı çıkarıldı; **tüm özelliklerin
 ve bütün butonların uçtan uca doğrulandığı iddia edilmez**. Kalan testlerin
 önündeki dosya, erişim ve test ürünü gereksinimleri yukarıda somut olarak listelidir.
+
+
+## 8 Kasım 2026 — İşlev doğrulaması devamı
+
+Kalıcı maliyet kaydı, desi geri alma, tek varyant arşivleme/geri alma, filtre sonuçları ve bağımsız finansal kontroller tamamlandı. Düşük KDV hesaplayıcısı tutarsızlığı ve erişim nedeniyle kalan sınırlar [ayrı doğrulama raporunda](MELONTIK-ISLEV-DOGRULAMA.md) açıklanmıştır. Önceki aşamanın işlem yapılmadığına dair ifadeleri o aşamanın kapsamını anlatır.

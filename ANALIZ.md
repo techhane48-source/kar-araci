@@ -219,3 +219,8 @@ promosyonlarda kaynak Excel eksikliği nedeniyle tam kabul testi tamamlanamadı.
 çıktısının özgün kolonları korumadığı kanıtlandı; bu hatalar henüz düzeltilmedi.
 [Üyelikli inceleme ve kontrol envanteri](docs/MELONTIK-UYELIKLI-INCELEME.md).
 Gerçek hesaba ait ekran görüntüleri, dosyalar ve oturum bilgileri repoya eklenmedi.
+
+
+## 8 Kasım 2026 — İşlev doğrulaması devamı
+
+Kalıcı maliyet kaydı, desi geri alma, tek varyant arşivleme/geri alma, filtre sonuçları ve bağımsız finansal kontroller tamamlandı. Düşük KDV hesaplayıcısı tutarsızlığı ve erişim nedeniyle kalan sınırlar [ayrı doğrulama raporunda](docs/MELONTIK-ISLEV-DOGRULAMA.md) açıklanmıştır. Önceki aşamanın işlem yapılmadığına dair ifadeleri o aşamanın kapsamını anlatır.
