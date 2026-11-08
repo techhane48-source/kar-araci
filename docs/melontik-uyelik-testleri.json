@@ -1,0 +1,1587 @@
+{
+  "date_turkey": "2026-11-08",
+  "scope": "Giriş yapılmış hesapta salt okunur işlev incelemesi; tam kabul sertifikası değildir",
+  "page_count": 32,
+  "page_results": [
+    {
+      "page": "/dashboard",
+      "http": 200,
+      "redirect": false,
+      "target_page": null,
+      "page_js_error_count": 0
+    },
+    {
+      "page": "/old-dashboard",
+      "http": 200,
+      "redirect": false,
+      "target_page": null,
+      "page_js_error_count": 0
+    },
+    {
+      "page": "/live-performance",
+      "http": 200,
+      "redirect": false,
+      "target_page": null,
+      "page_js_error_count": 0
+    },
+    {
+      "page": "/promotion-profitability-analysis/product-commission-tariff-profitability-analysis",
+      "http": 200,
+      "redirect": false,
+      "target_page": null,
+      "page_js_error_count": 0
+    },
+    {
+      "page": "/promotion-profitability-analysis/product-plus-commission-tariff-profitability-analysis",
+      "http": 200,
+      "redirect": false,
+      "target_page": null,
+      "page_js_error_count": 0
+    },
+    {
+      "page": "/promotion-profitability-analysis/star-product-labels-profitability-analysis",
+      "http": 200,
+      "redirect": false,
+      "target_page": null,
+      "page_js_error_count": 0
+    },
+    {
+      "page": "/promotion-profitability-analysis/flash-offer",
+      "http": 200,
+      "redirect": false,
+      "target_page": null,
+      "page_js_error_count": 0
+    },
+    {
+      "page": "/promotion-profitability-analysis/discounts",
+      "http": 200,
+      "redirect": false,
+      "target_page": null,
+      "page_js_error_count": 0
+    },
+    {
+      "page": "/promotion-profitability-analysis/campaign-profitability-analysis",
+      "http": 200,
+      "redirect": false,
+      "target_page": null,
+      "page_js_error_count": 0
+    },
+    {
+      "page": "/campaign/build-your-campaign",
+      "http": 200,
+      "redirect": false,
+      "target_page": null,
+      "page_js_error_count": 0
+    },
+    {
+      "page": "/campaign/offers",
+      "http": 200,
+      "redirect": false,
+      "target_page": null,
+      "page_js_error_count": 0
+    },
+    {
+      "page": "/campaign/basket-campaigns",
+      "http": 200,
+      "redirect": false,
+      "target_page": null,
+      "page_js_error_count": 0
+    },
+    {
+      "page": "/reports/order-profitability-analysis",
+      "http": 200,
+      "redirect": false,
+      "target_page": null,
+      "page_js_error_count": 0
+    },
+    {
+      "page": "/reports/product-profitability-analysis",
+      "http": 200,
+      "redirect": false,
+      "target_page": null,
+      "page_js_error_count": 0
+    },
+    {
+      "page": "/reports/category-profitability-analysis",
+      "http": 200,
+      "redirect": false,
+      "target_page": null,
+      "page_js_error_count": 0
+    },
+    {
+      "page": "/reports/return-loss-analysis",
+      "http": 200,
+      "redirect": false,
+      "target_page": null,
+      "page_js_error_count": 0
+    },
+    {
+      "page": "/reports/ads-profitability-analysis",
+      "http": 200,
+      "redirect": false,
+      "target_page": null,
+      "page_js_error_count": 0
+    },
+    {
+      "page": "/reports/offer-profitability-analysis",
+      "http": 200,
+      "redirect": false,
+      "target_page": null,
+      "page_js_error_count": 0
+    },
+    {
+      "page": "/profit-margin-list",
+      "http": 200,
+      "redirect": false,
+      "target_page": null,
+      "page_js_error_count": 0
+    },
+    {
+      "page": "/buybox",
+      "http": 200,
+      "redirect": false,
+      "target_page": null,
+      "page_js_error_count": 0
+    },
+    {
+      "page": "/product-pricing",
+      "http": 200,
+      "redirect": false,
+      "target_page": null,
+      "page_js_error_count": 0
+    },
+    {
+      "page": "/product-settings",
+      "http": 200,
+      "redirect": false,
+      "target_page": null,
+      "page_js_error_count": 0
+    },
+    {
+      "page": "/warning-page",
+      "http": 200,
+      "redirect": false,
+      "target_page": null,
+      "page_js_error_count": 0
+    },
+    {
+      "page": "/entitlement",
+      "http": 200,
+      "redirect": false,
+      "target_page": null,
+      "page_js_error_count": 0
+    },
+    {
+      "page": "/market-intelligence/dashboard",
+      "http": 200,
+      "redirect": false,
+      "target_page": null,
+      "page_js_error_count": 0
+    },
+    {
+      "page": "/market-intelligence/store-tracking",
+      "http": 200,
+      "redirect": false,
+      "target_page": null,
+      "page_js_error_count": 0
+    },
+    {
+      "page": "/market-intelligence/product-tracking",
+      "http": 200,
+      "redirect": false,
+      "target_page": null,
+      "page_js_error_count": 0
+    },
+    {
+      "page": "/market-intelligence/alerts",
+      "http": 200,
+      "redirect": false,
+      "target_page": null,
+      "page_js_error_count": 0
+    },
+    {
+      "page": "/market-intelligence/ad-intelligence",
+      "http": 200,
+      "redirect": false,
+      "target_page": null,
+      "page_js_error_count": 0
+    },
+    {
+      "page": "/market-intelligence/influencer-radar",
+      "http": 200,
+      "redirect": false,
+      "target_page": null,
+      "page_js_error_count": 0
+    },
+    {
+      "page": "/partner",
+      "http": 200,
+      "redirect": true,
+      "target_page": "/dashboard",
+      "page_js_error_count": 0
+    },
+    {
+      "page": "/settings",
+      "http": 200,
+      "redirect": false,
+      "target_page": null,
+      "page_js_error_count": 0
+    }
+  ],
+  "control_record_count": 145,
+  "activated_record_count": 132,
+  "control_catalog_count": 419,
+  "tests": [
+    {
+      "id": 1,
+      "phase": "Ana kontrol",
+      "page": "/dashboard",
+      "control": "Ülke / Bölge Seçimi",
+      "activated": true,
+      "interface_change": false,
+      "issue": null
+    },
+    {
+      "id": 2,
+      "phase": "Ana kontrol",
+      "page": "/dashboard",
+      "control": "Tarih aralığı aç",
+      "activated": true,
+      "interface_change": false,
+      "issue": null
+    },
+    {
+      "id": 3,
+      "phase": "Ana kontrol",
+      "page": "/dashboard",
+      "control": "Dün",
+      "activated": true,
+      "interface_change": true,
+      "issue": null
+    },
+    {
+      "id": 4,
+      "phase": "Ana kontrol",
+      "page": "/dashboard",
+      "control": "Filtrele",
+      "activated": true,
+      "interface_change": false,
+      "issue": null
+    },
+    {
+      "id": 5,
+      "phase": "Ana kontrol",
+      "page": "/promotion-profitability-analysis/product-commission-tariff-profitability-analysis",
+      "control": "Ürün adı araması",
+      "activated": true,
+      "interface_change": false,
+      "issue": null
+    },
+    {
+      "id": 6,
+      "phase": "Ana kontrol",
+      "page": "/promotion-profitability-analysis/product-commission-tariff-profitability-analysis",
+      "control": "Filtrele",
+      "activated": true,
+      "interface_change": true,
+      "issue": null
+    },
+    {
+      "id": 7,
+      "phase": "Ana kontrol",
+      "page": "/promotion-profitability-analysis/product-commission-tariff-profitability-analysis",
+      "control": "Filtreleri Temizle",
+      "activated": true,
+      "interface_change": true,
+      "issue": null
+    },
+    {
+      "id": 8,
+      "phase": "Ana kontrol",
+      "page": "/promotion-profitability-analysis/product-commission-tariff-profitability-analysis",
+      "control": "Komisyon Tarifesi Excel Dosyası Yükle",
+      "activated": true,
+      "interface_change": false,
+      "issue": null
+    },
+    {
+      "id": 9,
+      "phase": "Ana kontrol",
+      "page": "/promotion-profitability-analysis/product-commission-tariff-profitability-analysis",
+      "control": "Toplu Seçim",
+      "activated": true,
+      "interface_change": true,
+      "issue": null
+    },
+    {
+      "id": 10,
+      "phase": "Ana kontrol",
+      "page": "/promotion-profitability-analysis/product-plus-commission-tariff-profitability-analysis",
+      "control": "Ürün adı araması",
+      "activated": true,
+      "interface_change": false,
+      "issue": null
+    },
+    {
+      "id": 11,
+      "phase": "Ana kontrol",
+      "page": "/promotion-profitability-analysis/product-plus-commission-tariff-profitability-analysis",
+      "control": "Filtrele",
+      "activated": true,
+      "interface_change": true,
+      "issue": null
+    },
+    {
+      "id": 12,
+      "phase": "Ana kontrol",
+      "page": "/promotion-profitability-analysis/product-plus-commission-tariff-profitability-analysis",
+      "control": "Filtreleri Temizle",
+      "activated": true,
+      "interface_change": true,
+      "issue": null
+    },
+    {
+      "id": 13,
+      "phase": "Ana kontrol",
+      "page": "/promotion-profitability-analysis/product-plus-commission-tariff-profitability-analysis",
+      "control": "Plus Komisyon Tarifesi Excel Dosyası Yükle",
+      "activated": true,
+      "interface_change": false,
+      "issue": null
+    },
+    {
+      "id": 14,
+      "phase": "Ana kontrol",
+      "page": "/promotion-profitability-analysis/product-plus-commission-tariff-profitability-analysis",
+      "control": "Toplu Seçim",
+      "activated": true,
+      "interface_change": true,
+      "issue": null
+    },
+    {
+      "id": 15,
+      "phase": "Ana kontrol",
+      "page": "/promotion-profitability-analysis/star-product-labels-profitability-analysis",
+      "control": "Ürün adı araması",
+      "activated": true,
+      "interface_change": false,
+      "issue": null
+    },
+    {
+      "id": 16,
+      "phase": "Ana kontrol",
+      "page": "/promotion-profitability-analysis/star-product-labels-profitability-analysis",
+      "control": "Filtrele",
+      "activated": true,
+      "interface_change": true,
+      "issue": null
+    },
+    {
+      "id": 17,
+      "phase": "Ana kontrol",
+      "page": "/promotion-profitability-analysis/star-product-labels-profitability-analysis",
+      "control": "Filtreleri Temizle",
+      "activated": true,
+      "interface_change": true,
+      "issue": null
+    },
+    {
+      "id": 18,
+      "phase": "Ana kontrol",
+      "page": "/promotion-profitability-analysis/star-product-labels-profitability-analysis",
+      "control": "Avantajlı Ürün Etiketi Excel Dosyası Yükle",
+      "activated": true,
+      "interface_change": true,
+      "issue": null
+    },
+    {
+      "id": 19,
+      "phase": "Ana kontrol",
+      "page": "/promotion-profitability-analysis/star-product-labels-profitability-analysis",
+      "control": "Toplu Seçim",
+      "activated": true,
+      "interface_change": true,
+      "issue": null
+    },
+    {
+      "id": 20,
+      "phase": "Ana kontrol",
+      "page": "/promotion-profitability-analysis/flash-offer",
+      "control": "Ürün adı araması",
+      "activated": true,
+      "interface_change": false,
+      "issue": null
+    },
+    {
+      "id": 21,
+      "phase": "Ana kontrol",
+      "page": "/promotion-profitability-analysis/flash-offer",
+      "control": "Filtrele",
+      "activated": true,
+      "interface_change": true,
+      "issue": null
+    },
+    {
+      "id": 22,
+      "phase": "Ana kontrol",
+      "page": "/promotion-profitability-analysis/flash-offer",
+      "control": "Filtreleri Temizle",
+      "activated": true,
+      "interface_change": true,
+      "issue": null
+    },
+    {
+      "id": 23,
+      "phase": "Ana kontrol",
+      "page": "/promotion-profitability-analysis/flash-offer",
+      "control": "Flash Ürünler Excel Dosyası Yükle",
+      "activated": true,
+      "interface_change": true,
+      "issue": null
+    },
+    {
+      "id": 24,
+      "phase": "Ana kontrol",
+      "page": "/promotion-profitability-analysis/flash-offer",
+      "control": "Toplu Seçim",
+      "activated": true,
+      "interface_change": true,
+      "issue": null
+    },
+    {
+      "id": 25,
+      "phase": "Ana kontrol",
+      "page": "/promotion-profitability-analysis/discounts",
+      "control": "Ürün adı araması",
+      "activated": true,
+      "interface_change": false,
+      "issue": null
+    },
+    {
+      "id": 26,
+      "phase": "Ana kontrol",
+      "page": "/promotion-profitability-analysis/discounts",
+      "control": "Filtrele",
+      "activated": true,
+      "interface_change": true,
+      "issue": null
+    },
+    {
+      "id": 27,
+      "phase": "Ana kontrol",
+      "page": "/promotion-profitability-analysis/discounts",
+      "control": "Filtreleri Temizle",
+      "activated": true,
+      "interface_change": true,
+      "issue": null
+    },
+    {
+      "id": 28,
+      "phase": "Ana kontrol",
+      "page": "/promotion-profitability-analysis/discounts",
+      "control": "İndirimler Excel Dosyası Yükle",
+      "activated": true,
+      "interface_change": true,
+      "issue": null
+    },
+    {
+      "id": 29,
+      "phase": "Ana kontrol",
+      "page": "/promotion-profitability-analysis/discounts",
+      "control": "Toplu Seçim",
+      "activated": true,
+      "interface_change": true,
+      "issue": null
+    },
+    {
+      "id": 30,
+      "phase": "Ana kontrol",
+      "page": "/promotion-profitability-analysis/campaign-profitability-analysis",
+      "control": "Ürün adı araması",
+      "activated": true,
+      "interface_change": false,
+      "issue": null
+    },
+    {
+      "id": 31,
+      "phase": "Ana kontrol",
+      "page": "/promotion-profitability-analysis/campaign-profitability-analysis",
+      "control": "Filtrele",
+      "activated": true,
+      "interface_change": true,
+      "issue": null
+    },
+    {
+      "id": 32,
+      "phase": "Ana kontrol",
+      "page": "/promotion-profitability-analysis/campaign-profitability-analysis",
+      "control": "Filtreleri Temizle",
+      "activated": true,
+      "interface_change": false,
+      "issue": null
+    },
+    {
+      "id": 33,
+      "phase": "Ana kontrol",
+      "page": "/promotion-profitability-analysis/campaign-profitability-analysis",
+      "control": "Kampanya Excel Dosyası Yükle",
+      "activated": true,
+      "interface_change": true,
+      "issue": null
+    },
+    {
+      "id": 34,
+      "phase": "Ana kontrol",
+      "page": "/promotion-profitability-analysis/campaign-profitability-analysis",
+      "control": "Toplu Seçim",
+      "activated": true,
+      "interface_change": true,
+      "issue": null
+    },
+    {
+      "id": 35,
+      "phase": "Ana kontrol",
+      "page": "/campaign/build-your-campaign",
+      "control": "Ürün adı araması",
+      "activated": true,
+      "interface_change": false,
+      "issue": null
+    },
+    {
+      "id": 36,
+      "phase": "Ana kontrol",
+      "page": "/campaign/build-your-campaign",
+      "control": "Filtrele",
+      "activated": true,
+      "interface_change": true,
+      "issue": null
+    },
+    {
+      "id": 37,
+      "phase": "Ana kontrol",
+      "page": "/campaign/build-your-campaign",
+      "control": "Filtreleri Temizle",
+      "activated": true,
+      "interface_change": true,
+      "issue": null
+    },
+    {
+      "id": 38,
+      "phase": "Ana kontrol",
+      "page": "/campaign/build-your-campaign",
+      "control": "Kampanyanı Oluştur Excel Dosyası Yükle",
+      "activated": true,
+      "interface_change": true,
+      "issue": null
+    },
+    {
+      "id": 39,
+      "phase": "Ana kontrol",
+      "page": "/campaign/build-your-campaign",
+      "control": "Toplu Seçim",
+      "activated": true,
+      "interface_change": true,
+      "issue": null
+    },
+    {
+      "id": 40,
+      "phase": "Ana kontrol",
+      "page": "/campaign/offers",
+      "control": "Ürün adı araması",
+      "activated": true,
+      "interface_change": false,
+      "issue": null
+    },
+    {
+      "id": 41,
+      "phase": "Ana kontrol",
+      "page": "/campaign/offers",
+      "control": "Filtrele",
+      "activated": true,
+      "interface_change": true,
+      "issue": null
+    },
+    {
+      "id": 42,
+      "phase": "Ana kontrol",
+      "page": "/campaign/offers",
+      "control": "Filtreleri Temizle",
+      "activated": true,
+      "interface_change": true,
+      "issue": null
+    },
+    {
+      "id": 43,
+      "phase": "Ana kontrol",
+      "page": "/campaign/offers",
+      "control": "Avantajlı Teklifler Excel Dosyası Yükle",
+      "activated": true,
+      "interface_change": true,
+      "issue": null
+    },
+    {
+      "id": 44,
+      "phase": "Ana kontrol",
+      "page": "/campaign/offers",
+      "control": "Toplu Seçim",
+      "activated": true,
+      "interface_change": true,
+      "issue": null
+    },
+    {
+      "id": 45,
+      "phase": "Ana kontrol",
+      "page": "/campaign/basket-campaigns",
+      "control": "Ürün adı araması",
+      "activated": true,
+      "interface_change": false,
+      "issue": null
+    },
+    {
+      "id": 46,
+      "phase": "Ana kontrol",
+      "page": "/campaign/basket-campaigns",
+      "control": "Filtrele",
+      "activated": true,
+      "interface_change": true,
+      "issue": null
+    },
+    {
+      "id": 47,
+      "phase": "Ana kontrol",
+      "page": "/campaign/basket-campaigns",
+      "control": "Filtreleri Temizle",
+      "activated": true,
+      "interface_change": true,
+      "issue": null
+    },
+    {
+      "id": 48,
+      "phase": "Ana kontrol",
+      "page": "/campaign/basket-campaigns",
+      "control": "Kampanya Excel Dosyası Yükle",
+      "activated": true,
+      "interface_change": true,
+      "issue": null
+    },
+    {
+      "id": 49,
+      "phase": "Ana kontrol",
+      "page": "/campaign/basket-campaigns",
+      "control": "Toplu Seçim",
+      "activated": true,
+      "interface_change": true,
+      "issue": null
+    },
+    {
+      "id": 50,
+      "phase": "Ana kontrol",
+      "page": "/reports/order-profitability-analysis",
+      "control": "Filtrele",
+      "activated": true,
+      "interface_change": true,
+      "issue": null
+    },
+    {
+      "id": 51,
+      "phase": "Ana kontrol",
+      "page": "/reports/order-profitability-analysis",
+      "control": "Detaylar",
+      "activated": true,
+      "interface_change": true,
+      "issue": null
+    },
+    {
+      "id": 52,
+      "phase": "Ana kontrol",
+      "page": "/reports/order-profitability-analysis",
+      "control": "Raporu İndir",
+      "activated": true,
+      "interface_change": true,
+      "issue": null
+    },
+    {
+      "id": 53,
+      "phase": "Ana kontrol",
+      "page": "/reports/product-profitability-analysis",
+      "control": "Filtrele",
+      "activated": true,
+      "interface_change": true,
+      "issue": null
+    },
+    {
+      "id": 54,
+      "phase": "Ana kontrol",
+      "page": "/reports/product-profitability-analysis",
+      "control": "Detaylar",
+      "activated": false,
+      "interface_change": false,
+      "issue": null
+    },
+    {
+      "id": 55,
+      "phase": "Ana kontrol",
+      "page": "/reports/product-profitability-analysis",
+      "control": "Raporu İndir",
+      "activated": true,
+      "interface_change": true,
+      "issue": null
+    },
+    {
+      "id": 56,
+      "phase": "Ana kontrol",
+      "page": "/reports/category-profitability-analysis",
+      "control": "Filtrele",
+      "activated": true,
+      "interface_change": true,
+      "issue": null
+    },
+    {
+      "id": 57,
+      "phase": "Ana kontrol",
+      "page": "/reports/category-profitability-analysis",
+      "control": "Detaylar",
+      "activated": false,
+      "interface_change": false,
+      "issue": null
+    },
+    {
+      "id": 58,
+      "phase": "Ana kontrol",
+      "page": "/reports/category-profitability-analysis",
+      "control": "Raporu İndir",
+      "activated": true,
+      "interface_change": true,
+      "issue": null
+    },
+    {
+      "id": 59,
+      "phase": "Ana kontrol",
+      "page": "/reports/return-loss-analysis",
+      "control": "Filtrele",
+      "activated": true,
+      "interface_change": true,
+      "issue": null
+    },
+    {
+      "id": 60,
+      "phase": "Ana kontrol",
+      "page": "/reports/return-loss-analysis",
+      "control": "Detaylar",
+      "activated": false,
+      "interface_change": false,
+      "issue": null
+    },
+    {
+      "id": 61,
+      "phase": "Ana kontrol",
+      "page": "/reports/return-loss-analysis",
+      "control": "Raporu İndir",
+      "activated": false,
+      "interface_change": false,
+      "issue": null
+    },
+    {
+      "id": 62,
+      "phase": "Ana kontrol",
+      "page": "/reports/ads-profitability-analysis",
+      "control": "Filtrele",
+      "activated": true,
+      "interface_change": true,
+      "issue": null
+    },
+    {
+      "id": 63,
+      "phase": "Ana kontrol",
+      "page": "/reports/ads-profitability-analysis",
+      "control": "Detaylar",
+      "activated": false,
+      "interface_change": false,
+      "issue": null
+    },
+    {
+      "id": 64,
+      "phase": "Ana kontrol",
+      "page": "/reports/ads-profitability-analysis",
+      "control": "Raporu İndir",
+      "activated": false,
+      "interface_change": false,
+      "issue": null
+    },
+    {
+      "id": 65,
+      "phase": "Ana kontrol",
+      "page": "/reports/offer-profitability-analysis",
+      "control": "Filtrele",
+      "activated": true,
+      "interface_change": true,
+      "issue": null
+    },
+    {
+      "id": 66,
+      "phase": "Ana kontrol",
+      "page": "/reports/offer-profitability-analysis",
+      "control": "Detaylar",
+      "activated": false,
+      "interface_change": false,
+      "issue": null
+    },
+    {
+      "id": 67,
+      "phase": "Ana kontrol",
+      "page": "/reports/offer-profitability-analysis",
+      "control": "Raporu İndir",
+      "activated": true,
+      "interface_change": true,
+      "issue": null
+    },
+    {
+      "id": 68,
+      "phase": "Ana kontrol",
+      "page": "/profit-margin-list",
+      "control": "3 Kolon",
+      "activated": true,
+      "interface_change": false,
+      "issue": null
+    },
+    {
+      "id": 69,
+      "phase": "Ana kontrol",
+      "page": "/profit-margin-list",
+      "control": "4 Kolon",
+      "activated": true,
+      "interface_change": false,
+      "issue": null
+    },
+    {
+      "id": 70,
+      "phase": "Ana kontrol",
+      "page": "/profit-margin-list",
+      "control": "Filtrele",
+      "activated": true,
+      "interface_change": true,
+      "issue": null
+    },
+    {
+      "id": 71,
+      "phase": "Ana kontrol",
+      "page": "/profit-margin-list",
+      "control": "Filtreleri Temizle",
+      "activated": true,
+      "interface_change": false,
+      "issue": null
+    },
+    {
+      "id": 72,
+      "phase": "Ana kontrol",
+      "page": "/profit-margin-list",
+      "control": "Fiyatı düzenle",
+      "activated": false,
+      "interface_change": false,
+      "issue": "Tarayıcıda tıklama doğrulanamadı"
+    },
+    {
+      "id": 73,
+      "phase": "Ana kontrol",
+      "page": "/profit-margin-list",
+      "control": "Raporu İndir",
+      "activated": true,
+      "interface_change": true,
+      "issue": null
+    },
+    {
+      "id": 74,
+      "phase": "Ana kontrol",
+      "page": "/buybox",
+      "control": "Filtrele",
+      "activated": true,
+      "interface_change": true,
+      "issue": null
+    },
+    {
+      "id": 75,
+      "phase": "Ana kontrol",
+      "page": "/buybox",
+      "control": "Excel Dosyası Yükle",
+      "activated": true,
+      "interface_change": true,
+      "issue": null
+    },
+    {
+      "id": 76,
+      "phase": "Ana kontrol",
+      "page": "/product-settings",
+      "control": "Filtrele",
+      "activated": true,
+      "interface_change": false,
+      "issue": null
+    },
+    {
+      "id": 77,
+      "phase": "Ana kontrol",
+      "page": "/product-settings",
+      "control": "Filtreleri Temizle",
+      "activated": true,
+      "interface_change": false,
+      "issue": null
+    },
+    {
+      "id": 78,
+      "phase": "Ana kontrol",
+      "page": "/entitlement",
+      "control": "Desi Kontrolü",
+      "activated": true,
+      "interface_change": true,
+      "issue": null
+    },
+    {
+      "id": 79,
+      "phase": "Ana kontrol",
+      "page": "/entitlement",
+      "control": "Filtrele",
+      "activated": true,
+      "interface_change": true,
+      "issue": null
+    },
+    {
+      "id": 80,
+      "phase": "Ana kontrol",
+      "page": "/settings",
+      "control": "Hesap Ayarları",
+      "activated": true,
+      "interface_change": false,
+      "issue": null
+    },
+    {
+      "id": 81,
+      "phase": "Ana kontrol",
+      "page": "/settings",
+      "control": "Trendyol API Bilgileri",
+      "activated": true,
+      "interface_change": true,
+      "issue": null
+    },
+    {
+      "id": 82,
+      "phase": "Ana kontrol",
+      "page": "/settings",
+      "control": "Hepsiburada API Bilgileri",
+      "activated": true,
+      "interface_change": true,
+      "issue": null
+    },
+    {
+      "id": 83,
+      "phase": "Ana kontrol",
+      "page": "/settings",
+      "control": "Genel Ayarlar",
+      "activated": true,
+      "interface_change": true,
+      "issue": null
+    },
+    {
+      "id": 84,
+      "phase": "Ana kontrol",
+      "page": "/settings",
+      "control": "Kargo Ayarları",
+      "activated": true,
+      "interface_change": true,
+      "issue": null
+    },
+    {
+      "id": 85,
+      "phase": "Ana kontrol",
+      "page": "/settings",
+      "control": "Operasyon Ayarları",
+      "activated": true,
+      "interface_change": true,
+      "issue": null
+    },
+    {
+      "id": 86,
+      "phase": "Ana kontrol",
+      "page": "/settings",
+      "control": "Uyarılar",
+      "activated": true,
+      "interface_change": true,
+      "issue": null
+    },
+    {
+      "id": 87,
+      "phase": "Ana kontrol",
+      "page": "/settings",
+      "control": "Ürün Kârlılık Listesi",
+      "activated": true,
+      "interface_change": true,
+      "issue": null
+    },
+    {
+      "id": 88,
+      "phase": "Ana kontrol",
+      "page": "/settings",
+      "control": "Kâr Marjı Renklendirme",
+      "activated": true,
+      "interface_change": true,
+      "issue": null
+    },
+    {
+      "id": 89,
+      "phase": "Ana kontrol",
+      "page": "/settings",
+      "control": "Eposta Bildirim Ayarları",
+      "activated": true,
+      "interface_change": true,
+      "issue": null
+    },
+    {
+      "id": 90,
+      "phase": "Ana kontrol",
+      "page": "/settings",
+      "control": "Toplu İşlemler",
+      "activated": true,
+      "interface_change": true,
+      "issue": null
+    },
+    {
+      "id": 91,
+      "phase": "Ana kontrol",
+      "page": "/settings",
+      "control": "Ödeme Bilgileri",
+      "activated": true,
+      "interface_change": true,
+      "issue": null
+    },
+    {
+      "id": 92,
+      "phase": "Ana kontrol",
+      "page": "/dashboard",
+      "control": "Hesabını Yükselt",
+      "activated": true,
+      "interface_change": false,
+      "issue": null
+    },
+    {
+      "id": 93,
+      "phase": "Ek doğrulama",
+      "page": "/reports/order-profitability-analysis",
+      "control": "Detaylar",
+      "activated": true,
+      "interface_change": true,
+      "issue": null
+    },
+    {
+      "id": 94,
+      "phase": "Ek doğrulama",
+      "page": "/reports/order-profitability-analysis",
+      "control": "Raporu İndir",
+      "activated": true,
+      "interface_change": true,
+      "issue": null
+    },
+    {
+      "id": 95,
+      "phase": "Ek doğrulama",
+      "page": "/reports/order-profitability-analysis",
+      "control": "Dosyayı Oluştur",
+      "activated": true,
+      "interface_change": true,
+      "issue": null
+    },
+    {
+      "id": 96,
+      "phase": "Ek doğrulama",
+      "page": "/reports/order-profitability-analysis",
+      "control": "Tabloyu Güncelle",
+      "activated": true,
+      "interface_change": true,
+      "issue": null
+    },
+    {
+      "id": 97,
+      "phase": "Ek doğrulama",
+      "page": "/market-intelligence/store-tracking",
+      "control": "Linki nasıl bulurum?",
+      "activated": true,
+      "interface_change": true,
+      "issue": null
+    },
+    {
+      "id": 98,
+      "phase": "Ek doğrulama",
+      "page": "/market-intelligence/store-tracking",
+      "control": "Arama Geçmişi",
+      "activated": true,
+      "interface_change": false,
+      "issue": null
+    },
+    {
+      "id": 99,
+      "phase": "Ek doğrulama",
+      "page": "/market-intelligence/store-tracking",
+      "control": "Takip Ettiklerim",
+      "activated": true,
+      "interface_change": false,
+      "issue": null
+    },
+    {
+      "id": 100,
+      "phase": "Ek doğrulama",
+      "page": "/market-intelligence/store-tracking",
+      "control": "A↓",
+      "activated": true,
+      "interface_change": false,
+      "issue": null
+    },
+    {
+      "id": 101,
+      "phase": "Ek doğrulama",
+      "page": "/market-intelligence/store-tracking",
+      "control": "A↑",
+      "activated": false,
+      "interface_change": false,
+      "issue": null
+    },
+    {
+      "id": 102,
+      "phase": "Ek doğrulama",
+      "page": "/market-intelligence/store-tracking",
+      "control": "⛶",
+      "activated": true,
+      "interface_change": true,
+      "issue": null
+    },
+    {
+      "id": 103,
+      "phase": "Ek doğrulama",
+      "page": "/market-intelligence/alerts",
+      "control": "Filtrele ▾",
+      "activated": true,
+      "interface_change": true,
+      "issue": null
+    },
+    {
+      "id": 104,
+      "phase": "Ek doğrulama",
+      "page": "/market-intelligence/alerts",
+      "control": "Bildirim Ayarları ⚙",
+      "activated": true,
+      "interface_change": true,
+      "issue": null
+    },
+    {
+      "id": 105,
+      "phase": "Ek doğrulama",
+      "page": "/profit-margin-list",
+      "control": "3 Kolon",
+      "activated": true,
+      "interface_change": false,
+      "issue": null
+    },
+    {
+      "id": 106,
+      "phase": "Ek doğrulama",
+      "page": "/profit-margin-list",
+      "control": "4 Kolon",
+      "activated": true,
+      "interface_change": false,
+      "issue": null
+    },
+    {
+      "id": 107,
+      "phase": "Ek doğrulama",
+      "page": "/profit-margin-list",
+      "control": "Fiyatı düzenle",
+      "activated": true,
+      "interface_change": true,
+      "issue": null
+    },
+    {
+      "id": 108,
+      "phase": "Ek doğrulama",
+      "page": "/promotion-profitability-analysis/product-commission-tariff-profitability-analysis",
+      "control": "Komisyon Tarifesi Excel Dosyası Yükle",
+      "activated": true,
+      "interface_change": true,
+      "issue": null
+    },
+    {
+      "id": 109,
+      "phase": "Ek doğrulama",
+      "page": "/promotion-profitability-analysis/product-commission-tariff-profitability-analysis",
+      "control": "Toplu Seçim",
+      "activated": true,
+      "interface_change": true,
+      "issue": null
+    },
+    {
+      "id": 110,
+      "phase": "Ek doğrulama",
+      "page": "/promotion-profitability-analysis/product-commission-tariff-profitability-analysis",
+      "control": "Fiyat kademesi seç",
+      "activated": true,
+      "interface_change": true,
+      "issue": null
+    },
+    {
+      "id": 111,
+      "phase": "Ek doğrulama",
+      "page": "/product-pricing",
+      "control": "Fiyat Oluştur: sentetik KDV %20",
+      "activated": true,
+      "interface_change": true,
+      "issue": null
+    },
+    {
+      "id": 112,
+      "phase": "Ek doğrulama",
+      "page": "/product-pricing",
+      "control": "Fiyat Oluştur: sentetik KDV %10",
+      "activated": true,
+      "interface_change": true,
+      "issue": null
+    },
+    {
+      "id": 113,
+      "phase": "Ek doğrulama",
+      "page": "/product-pricing",
+      "control": "Fiyat Oluştur: sentetik KDV %0",
+      "activated": true,
+      "interface_change": true,
+      "issue": null
+    },
+    {
+      "id": 114,
+      "phase": "Ek doğrulama",
+      "page": "/product-settings",
+      "control": "Excel İle İçeri Aktar",
+      "activated": true,
+      "interface_change": true,
+      "issue": null
+    },
+    {
+      "id": 115,
+      "phase": "Ek doğrulama",
+      "page": "/product-settings",
+      "control": "XML Yükle",
+      "activated": true,
+      "interface_change": true,
+      "issue": null
+    },
+    {
+      "id": 116,
+      "phase": "Ek doğrulama",
+      "page": "/product-settings",
+      "control": "Excel Dosyasını İndir",
+      "activated": true,
+      "interface_change": true,
+      "issue": null
+    },
+    {
+      "id": 117,
+      "phase": "Dosya ve hakediş",
+      "page": "/reports/order-profitability-analysis",
+      "control": "Hazır raporu indir",
+      "activated": true,
+      "interface_change": null,
+      "issue": null
+    },
+    {
+      "id": 118,
+      "phase": "Dosya ve hakediş",
+      "page": "/dashboard",
+      "control": "PDF olarak indir",
+      "activated": true,
+      "interface_change": null,
+      "issue": null
+    },
+    {
+      "id": 119,
+      "phase": "Dosya ve hakediş",
+      "page": "/entitlement",
+      "control": "Hakediş Kontrolü",
+      "activated": true,
+      "interface_change": null,
+      "issue": null
+    },
+    {
+      "id": 120,
+      "phase": "Dosya ve hakediş",
+      "page": "/entitlement",
+      "control": "Kontrol Et",
+      "activated": true,
+      "interface_change": null,
+      "issue": null
+    },
+    {
+      "id": 121,
+      "phase": "Dosya ve hakediş",
+      "page": "/entitlement",
+      "control": "Desi Kontrolü",
+      "activated": true,
+      "interface_change": null,
+      "issue": null
+    },
+    {
+      "id": 122,
+      "phase": "Dosya ve hakediş",
+      "page": "/entitlement",
+      "control": "Desi Filtrele",
+      "activated": true,
+      "interface_change": null,
+      "issue": null
+    },
+    {
+      "id": 123,
+      "phase": "Son salt okunur kontroller",
+      "page": "/live-performance",
+      "control": "Ciro",
+      "activated": true,
+      "interface_change": true,
+      "issue": null
+    },
+    {
+      "id": 124,
+      "phase": "Son salt okunur kontroller",
+      "page": "/live-performance",
+      "control": "Kâr",
+      "activated": true,
+      "interface_change": true,
+      "issue": null
+    },
+    {
+      "id": 125,
+      "phase": "Son salt okunur kontroller",
+      "page": "/live-performance",
+      "control": "Verileri Güncelle",
+      "activated": true,
+      "interface_change": true,
+      "issue": null
+    },
+    {
+      "id": 126,
+      "phase": "Son salt okunur kontroller",
+      "page": "/reports/order-profitability-analysis",
+      "control": "2",
+      "activated": false,
+      "interface_change": false,
+      "issue": null
+    },
+    {
+      "id": 127,
+      "phase": "Son salt okunur kontroller",
+      "page": "/reports/order-profitability-analysis",
+      "control": "1",
+      "activated": true,
+      "interface_change": false,
+      "issue": null
+    },
+    {
+      "id": 128,
+      "phase": "Son salt okunur kontroller",
+      "page": "/reports/order-profitability-analysis",
+      "control": "Sipariş Tutarı (₺)",
+      "activated": true,
+      "interface_change": false,
+      "issue": null
+    },
+    {
+      "id": 129,
+      "phase": "Son salt okunur kontroller",
+      "page": "/reports/order-profitability-analysis",
+      "control": "Sırala (Artan)",
+      "activated": false,
+      "interface_change": false,
+      "issue": null
+    },
+    {
+      "id": 130,
+      "phase": "Son salt okunur kontroller",
+      "page": "/reports/order-profitability-analysis",
+      "control": "Tabloyu Küçült",
+      "activated": true,
+      "interface_change": true,
+      "issue": null
+    },
+    {
+      "id": 131,
+      "phase": "Son salt okunur kontroller",
+      "page": "/reports/order-profitability-analysis",
+      "control": "Resetle",
+      "activated": false,
+      "interface_change": false,
+      "issue": null
+    },
+    {
+      "id": 132,
+      "phase": "Son salt okunur kontroller",
+      "page": "/reports/order-profitability-analysis",
+      "control": "Tabloyu Büyüt",
+      "activated": true,
+      "interface_change": true,
+      "issue": null
+    },
+    {
+      "id": 133,
+      "phase": "Son salt okunur kontroller",
+      "page": "/reports/order-profitability-analysis",
+      "control": "Tabloyu Genişlet",
+      "activated": true,
+      "interface_change": true,
+      "issue": null
+    },
+    {
+      "id": 134,
+      "phase": "Son salt okunur kontroller",
+      "page": "/promotion-profitability-analysis/product-commission-tariff-profitability-analysis",
+      "control": "Tüm Kolonlardan Seçimleri Kaldır",
+      "activated": false,
+      "interface_change": false,
+      "issue": null
+    },
+    {
+      "id": 135,
+      "phase": "Son salt okunur kontroller",
+      "page": "/promotion-profitability-analysis/product-commission-tariff-profitability-analysis",
+      "control": "Seçimlerimi Kaydet ve İndir",
+      "activated": true,
+      "interface_change": false,
+      "issue": null
+    },
+    {
+      "id": 136,
+      "phase": "Son salt okunur kontroller",
+      "page": "/profit-margin-list",
+      "control": "Temizle",
+      "activated": true,
+      "interface_change": false,
+      "issue": null
+    },
+    {
+      "id": 137,
+      "phase": "Son salt okunur kontroller",
+      "page": "/market-intelligence/store-tracking",
+      "control": "İncele",
+      "activated": true,
+      "interface_change": true,
+      "issue": null
+    },
+    {
+      "id": 138,
+      "phase": "Son salt okunur kontroller",
+      "page": "/old-dashboard",
+      "control": "Sipariş Kârlılık Analizleri",
+      "activated": true,
+      "interface_change": true,
+      "issue": null
+    },
+    {
+      "id": 139,
+      "phase": "Son salt okunur kontroller",
+      "page": "/old-dashboard",
+      "control": "Ürün Kârlılık Analizleri",
+      "activated": true,
+      "interface_change": true,
+      "issue": null
+    },
+    {
+      "id": 140,
+      "phase": "Son salt okunur kontroller",
+      "page": "/old-dashboard",
+      "control": "Kategori Kârlılık Analizleri",
+      "activated": true,
+      "interface_change": true,
+      "issue": null
+    },
+    {
+      "id": 141,
+      "phase": "Son salt okunur kontroller",
+      "page": "/old-dashboard",
+      "control": "İade Zarar Analizleri",
+      "activated": true,
+      "interface_change": true,
+      "issue": null
+    },
+    {
+      "id": 142,
+      "phase": "Son salt okunur kontroller",
+      "page": "/old-dashboard",
+      "control": "Kârlılık Analizlerini İncele",
+      "activated": true,
+      "interface_change": true,
+      "issue": null
+    },
+    {
+      "id": 143,
+      "phase": "Son salt okunur kontroller",
+      "page": "/promotion-profitability-analysis/product-plus-commission-tariff-profitability-analysis",
+      "control": "Ürün Komisyon Tarifesi Sayfasına Git",
+      "activated": true,
+      "interface_change": true,
+      "issue": null
+    },
+    {
+      "id": 144,
+      "phase": "Son salt okunur kontroller",
+      "page": "/dashboard",
+      "control": "Hesap menüsü",
+      "activated": true,
+      "interface_change": true,
+      "issue": null
+    },
+    {
+      "id": 145,
+      "phase": "Son salt okunur kontroller",
+      "page": "/dashboard",
+      "control": "Ürün Ayarları Sayfasına Git",
+      "activated": true,
+      "interface_change": true,
+      "issue": null
+    }
+  ],
+  "download_validation": [
+    {
+      "format": ".pdf",
+      "signature_valid": true,
+      "html_error_page": false
+    },
+    {
+      "format": ".xlsx",
+      "signature_valid": true,
+      "html_error_page": false
+    }
+  ],
+  "xlsx_validation": [
+    {
+      "format": "xlsx",
+      "workbookPresent": true,
+      "worksheetsPresent": true
+    }
+  ],
+  "synthetic_promo_contract": {
+    "input_prices": [
+      400,
+      400
+    ],
+    "input_commission_percent": [
+      5,
+      25
+    ],
+    "actual_tier_profits": [
+      32.13,
+      32.13
+    ],
+    "profits_when_rates_are_applied": [
+      86.67,
+      20
+    ],
+    "original_commission_columns_preserved": false
+  },
+  "coverage_limitations": [
+    "Lisans ve kota gerektiren canlı takip başlatılamadı",
+    "Kaynak promosyon Excel dosyaları olmadığından tam seçim/gidiş-dönüş testi yok",
+    "Kalıcı fiyat/maliyet/API değişikliği ve arşivleme yapılmadı",
+    "Satın alma yapılmadı",
+    "Tıklama veya DOM değişimi tek başına iş doğruluğu anlamına gelmez",
+    "Aynı düğmenin her sipariş/ürün satırı tek tek çalıştırılmadı"
+  ]
+}

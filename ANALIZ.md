@@ -209,3 +209,13 @@ var; eski stok fiyat isteğiyle geri gönderilmiyor. Kaynaklar, doğrulanan sın
 ve gerçek satıcı hesabıyla yapılması gereken kabul koşulları
 [Trendyol doğrulamasında](docs/TRENDYOL-DOGRULAMA.md) listelidir.
 Önceki tarihli V1/artımlı stok notları tarihsel durumdur; güncel davranış bu rapordadır.
+
+## 8 Kasım 2026 — Üyelik oturumunda Melontik işlev incelemesi
+
+32 adres ve 145 kontrol girişimi kaydedildi; başarılı işlev sayısı olarak
+sunulmuyor. PDF/XLSX indirmesi doğrulandı. Bazı takip modüllerinde lisans/kota,
+promosyonlarda kaynak Excel eksikliği nedeniyle tam kabul testi tamamlanamadı.
+İzole uygulama testinde kademe komisyonlarının yok sayıldığı ve promosyon
+çıktısının özgün kolonları korumadığı kanıtlandı; bu hatalar henüz düzeltilmedi.
+[Üyelikli inceleme ve kontrol envanteri](docs/MELONTIK-UYELIKLI-INCELEME.md).
+Gerçek hesaba ait ekran görüntüleri, dosyalar ve oturum bilgileri repoya eklenmedi.

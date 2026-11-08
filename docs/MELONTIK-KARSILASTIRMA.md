@@ -217,3 +217,11 @@ merkezi karşılığı yok; blog liste/detay altyapısı mevcut, içerik üretim
 - [Referans genel görünüm 1](melontik-gorseller/referans-genel-0.jpg), [2](melontik-gorseller/referans-genel-16.jpg), [3](melontik-gorseller/referans-genel-32.jpg).
 - [Bizim genel görünüm 1](melontik-gorseller/bizim-genel-0.jpg), [2](melontik-gorseller/bizim-genel-16.jpg), [3](melontik-gorseller/bizim-genel-32.jpg).
 - [Filtrelenebilir görsel karşılaştırma](melontik-karsilastirma.html).
+
+
+## Giriş yapılmış hesapla ek inceleme
+
+8 Kasım 2026'da kullanıcı hesabıyla erişim sağlandı. Yukarıdaki ilk raporun demo
+kapsamına ek olarak [üyelikli inceleme ve buton envanteri](MELONTIK-UYELIKLI-INCELEME.md)
+hazırlandı. Pazar Zekası sayfaları görüldü; bazı işlevlerde lisans/kota engeli
+var. İlk rapordaki demo yönlendirmeleri tarihsel test sonucudur.

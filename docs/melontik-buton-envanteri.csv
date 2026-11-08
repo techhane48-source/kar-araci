@@ -1,0 +1,420 @@
+ekran,kontrol,durum,test_kayitlari
+/buybox,Chrome Eklentisi,Harici iletişim/eklenti; mesaj veya kurulum yapılmadı,
+/buybox,Excel Dosyası Yükle,İşlem denendi; ayrıntılı sonuç test kaydında,75
+/buybox,Filtrele,İşlem denendi; ayrıntılı sonuç test kaydında,74
+/buybox,Hesabını Yükselt,Envanterde görüldü; ayrı işlem testi tamamlanmadı,
+/buybox,Hesap menüsü,Envanterde görüldü; ayrı işlem testi tamamlanmadı,
+/buybox,Next Month,Envanterde görüldü; ayrı işlem testi tamamlanmadı,
+/buybox,Previous Month,Envanterde görüldü; ayrı işlem testi tamamlanmadı,
+/buybox,Verileri Güncelle,Envanterde görüldü; ayrı işlem testi tamamlanmadı,
+/buybox,Ürün Ayarları Sayfasına Git,Envanterde görüldü; ayrı işlem testi tamamlanmadı,
+/buybox,İkon düğmesi (metin etiketi yok),Etiketsiz kontrol; ayrı bir başarı sonucu atanmadı,
+/buybox,💬 Destek,Harici iletişim/eklenti; mesaj veya kurulum yapılmadı,
+/campaign/basket-campaigns,Chrome Eklentisi,Harici iletişim/eklenti; mesaj veya kurulum yapılmadı,
+/campaign/basket-campaigns,Filtrele,İşlem denendi; ayrıntılı sonuç test kaydında,46
+/campaign/basket-campaigns,Filtreleri Temizle,İşlem denendi; ayrıntılı sonuç test kaydında,47
+/campaign/basket-campaigns,Hesabını Yükselt,Envanterde görüldü; ayrı işlem testi tamamlanmadı,
+/campaign/basket-campaigns,Hesap menüsü,Envanterde görüldü; ayrı işlem testi tamamlanmadı,
+/campaign/basket-campaigns,Kampanya Excel Dosyası Yükle,İşlem denendi; ayrıntılı sonuç test kaydında,48
+/campaign/basket-campaigns,Seçimlerimi Kaydet ve İndir,Kaynak Excel ve seçim verisi gerekli; uçtan uca denenmedi,
+/campaign/basket-campaigns,Toplu Seçim,İşlem denendi; ayrıntılı sonuç test kaydında,49
+/campaign/basket-campaigns,Tüm Kolonlardan Seçimleri Kaldır,Envanterde görüldü; ayrı işlem testi tamamlanmadı,
+/campaign/basket-campaigns,Ürün adı araması,İşlem denendi; ayrıntılı sonuç test kaydında,45
+/campaign/basket-campaigns,İkon düğmesi (metin etiketi yok),Etiketsiz kontrol; ayrı bir başarı sonucu atanmadı,
+/campaign/basket-campaigns,💬 Destek,Harici iletişim/eklenti; mesaj veya kurulum yapılmadı,
+/campaign/build-your-campaign,Chrome Eklentisi,Harici iletişim/eklenti; mesaj veya kurulum yapılmadı,
+/campaign/build-your-campaign,Filtrele,İşlem denendi; ayrıntılı sonuç test kaydında,36
+/campaign/build-your-campaign,Filtreleri Temizle,İşlem denendi; ayrıntılı sonuç test kaydında,37
+/campaign/build-your-campaign,Hesabını Yükselt,Envanterde görüldü; ayrı işlem testi tamamlanmadı,
+/campaign/build-your-campaign,Hesap menüsü,Envanterde görüldü; ayrı işlem testi tamamlanmadı,
+/campaign/build-your-campaign,Kampanyanı Oluştur Excel Dosyası Yükle,İşlem denendi; ayrıntılı sonuç test kaydında,38
+/campaign/build-your-campaign,Seçimlerimi Kaydet ve İndir,Kaynak Excel ve seçim verisi gerekli; uçtan uca denenmedi,
+/campaign/build-your-campaign,Toplu Seçim,İşlem denendi; ayrıntılı sonuç test kaydında,39
+/campaign/build-your-campaign,Tüm Kolonlardan Seçimleri Kaldır,Envanterde görüldü; ayrı işlem testi tamamlanmadı,
+/campaign/build-your-campaign,Ürün Ayarları Sayfasına Git,Envanterde görüldü; ayrı işlem testi tamamlanmadı,
+/campaign/build-your-campaign,Ürün adı araması,İşlem denendi; ayrıntılı sonuç test kaydında,35
+/campaign/build-your-campaign,İkon düğmesi (metin etiketi yok),Etiketsiz kontrol; ayrı bir başarı sonucu atanmadı,
+/campaign/build-your-campaign,💬 Destek,Harici iletişim/eklenti; mesaj veya kurulum yapılmadı,
+/campaign/offers,Avantajlı Teklifler Excel Dosyası Yükle,İşlem denendi; ayrıntılı sonuç test kaydında,43
+/campaign/offers,Chrome Eklentisi,Harici iletişim/eklenti; mesaj veya kurulum yapılmadı,
+/campaign/offers,Filtrele,İşlem denendi; ayrıntılı sonuç test kaydında,41
+/campaign/offers,Filtreleri Temizle,İşlem denendi; ayrıntılı sonuç test kaydında,42
+/campaign/offers,Hesabını Yükselt,Envanterde görüldü; ayrı işlem testi tamamlanmadı,
+/campaign/offers,Hesap menüsü,Envanterde görüldü; ayrı işlem testi tamamlanmadı,
+/campaign/offers,Seçimlerimi Kaydet ve İndir,Kaynak Excel ve seçim verisi gerekli; uçtan uca denenmedi,
+/campaign/offers,Toplu Seçim,İşlem denendi; ayrıntılı sonuç test kaydında,44
+/campaign/offers,Tüm Kolonlardan Seçimleri Kaldır,Envanterde görüldü; ayrı işlem testi tamamlanmadı,
+/campaign/offers,Ürün Ayarları Sayfasına Git,Envanterde görüldü; ayrı işlem testi tamamlanmadı,
+/campaign/offers,Ürün adı araması,İşlem denendi; ayrıntılı sonuç test kaydında,40
+/campaign/offers,İkon düğmesi (metin etiketi yok),Etiketsiz kontrol; ayrı bir başarı sonucu atanmadı,
+/campaign/offers,💬 Destek,Harici iletişim/eklenti; mesaj veya kurulum yapılmadı,
+/dashboard,Chrome Eklentisi,Harici iletişim/eklenti; mesaj veya kurulum yapılmadı,
+/dashboard,Dün,İşlem denendi; ayrıntılı sonuç test kaydında,3
+/dashboard,Filtrele,İşlem denendi; ayrıntılı sonuç test kaydında,4
+/dashboard,Hesabını Yükselt,İşlem denendi; ayrıntılı sonuç test kaydında,92
+/dashboard,Hesap menüsü,İşlem denendi; ayrıntılı sonuç test kaydında,144
+/dashboard,Next Month,Envanterde görüldü; ayrı işlem testi tamamlanmadı,
+/dashboard,PDF olarak indir,İşlem denendi; ayrıntılı sonuç test kaydında,118
+/dashboard,Previous Month,Envanterde görüldü; ayrı işlem testi tamamlanmadı,
+/dashboard,Tarih aralığı,Envanterde görüldü; ayrı işlem testi tamamlanmadı,
+/dashboard,Tarih aralığı aç,İşlem denendi; ayrıntılı sonuç test kaydında,2
+/dashboard,WhatsApp Hattımız ↗ (yeni sekmede açılır),Harici iletişim/eklenti; mesaj veya kurulum yapılmadı,
+/dashboard,Ülke / Bölge Seçimi,İşlem denendi; ayrıntılı sonuç test kaydında,1
+/dashboard,Ürün Ayarları Sayfasına Git,İşlem denendi; ayrıntılı sonuç test kaydında,145
+/dashboard,İkon düğmesi (metin etiketi yok),Etiketsiz kontrol; ayrı bir başarı sonucu atanmadı,
+/dashboard,İzle Öğren,Envanterde görüldü; ayrı işlem testi tamamlanmadı,
+/dashboard,💬 Destek,Harici iletişim/eklenti; mesaj veya kurulum yapılmadı,
+/entitlement,Chrome Eklentisi,Harici iletişim/eklenti; mesaj veya kurulum yapılmadı,
+/entitlement,Desi Filtrele,İşlem denendi; ayrıntılı sonuç test kaydında,122
+/entitlement,Desi Kontrolü,İşlem denendi; ayrıntılı sonuç test kaydında,"78,121"
+/entitlement,Filtrele,İşlem denendi; ayrıntılı sonuç test kaydında,79
+/entitlement,Hakediş Kontrolü,İşlem denendi; ayrıntılı sonuç test kaydında,119
+/entitlement,Hesabını Yükselt,Envanterde görüldü; ayrı işlem testi tamamlanmadı,
+/entitlement,Hesap menüsü,Envanterde görüldü; ayrı işlem testi tamamlanmadı,
+/entitlement,Kontrol Et,İşlem denendi; ayrıntılı sonuç test kaydında,120
+/entitlement,Next Month,Envanterde görüldü; ayrı işlem testi tamamlanmadı,
+/entitlement,Previous Month,Envanterde görüldü; ayrı işlem testi tamamlanmadı,
+/entitlement,WhatsApp Hattımız ↗ (yeni sekmede açılır),Harici iletişim/eklenti; mesaj veya kurulum yapılmadı,
+/entitlement,Ürün Ayarları Sayfasına Git,Envanterde görüldü; ayrı işlem testi tamamlanmadı,
+/entitlement,İkon düğmesi (metin etiketi yok),Etiketsiz kontrol; ayrı bir başarı sonucu atanmadı,
+/entitlement,💬 Destek,Harici iletişim/eklenti; mesaj veya kurulum yapılmadı,
+/live-performance,Chrome Eklentisi,Harici iletişim/eklenti; mesaj veya kurulum yapılmadı,
+/live-performance,Ciro,İşlem denendi; ayrıntılı sonuç test kaydında,123
+/live-performance,Değişiklikleri Kaydet,Kalıcı değişiklik: test ürünü ve işlem kapsamı gerekli,
+/live-performance,Filtrele,Envanterde görüldü; ayrı işlem testi tamamlanmadı,
+/live-performance,Hesabını Yükselt,Envanterde görüldü; ayrı işlem testi tamamlanmadı,
+/live-performance,Hesap menüsü,Envanterde görüldü; ayrı işlem testi tamamlanmadı,
+/live-performance,Kâr,İşlem denendi; ayrıntılı sonuç test kaydında,124
+/live-performance,Raporu İndir,Envanterde görüldü; ayrı işlem testi tamamlanmadı,
+/live-performance,Verileri Güncelle,İşlem denendi; ayrıntılı sonuç test kaydında,125
+/live-performance,İkon düğmesi (metin etiketi yok),Etiketsiz kontrol; ayrı bir başarı sonucu atanmadı,
+/live-performance,💬 Destek,Harici iletişim/eklenti; mesaj veya kurulum yapılmadı,
+/market-intelligence/ad-intelligence,Chrome Eklentisi,Harici iletişim/eklenti; mesaj veya kurulum yapılmadı,
+/market-intelligence/ad-intelligence,Hesabını Yükselt,Envanterde görüldü; ayrı işlem testi tamamlanmadı,
+/market-intelligence/ad-intelligence,Hesap menüsü,Envanterde görüldü; ayrı işlem testi tamamlanmadı,
+/market-intelligence/ad-intelligence,Reklam Radarı Nedir?,Envanterde görüldü; ayrı işlem testi tamamlanmadı,
+/market-intelligence/ad-intelligence,Verileri Güncelle,Envanterde görüldü; ayrı işlem testi tamamlanmadı,
+/market-intelligence/ad-intelligence,Ürün Ayarları Sayfasına Git,Envanterde görüldü; ayrı işlem testi tamamlanmadı,
+/market-intelligence/ad-intelligence,İkon düğmesi (metin etiketi yok),Etiketsiz kontrol; ayrı bir başarı sonucu atanmadı,
+/market-intelligence/ad-intelligence,💬 Destek,Harici iletişim/eklenti; mesaj veya kurulum yapılmadı,
+/market-intelligence/alerts,Akıllı Bildirimler Nedir?,Envanterde görüldü; ayrı işlem testi tamamlanmadı,
+/market-intelligence/alerts,A↑,Envanterde görüldü; ayrı işlem testi tamamlanmadı,
+/market-intelligence/alerts,A↓,Envanterde görüldü; ayrı işlem testi tamamlanmadı,
+/market-intelligence/alerts,Bildirim Ayarları ⚙,İşlem denendi; ayrıntılı sonuç test kaydında,104
+/market-intelligence/alerts,Chrome Eklentisi,Harici iletişim/eklenti; mesaj veya kurulum yapılmadı,
+/market-intelligence/alerts,Filtrele ▾,İşlem denendi; ayrıntılı sonuç test kaydında,103
+/market-intelligence/alerts,Hesabını Yükselt,Envanterde görüldü; ayrı işlem testi tamamlanmadı,
+/market-intelligence/alerts,Hesap menüsü,Envanterde görüldü; ayrı işlem testi tamamlanmadı,
+/market-intelligence/alerts,Sayısal hücre / sayfalama (değer gizlendi),Tekrarlı veri hücreleri; her satır tek tek çalıştırılmadı,
+/market-intelligence/alerts,Ürün Ayarları Sayfasına Git,Envanterde görüldü; ayrı işlem testi tamamlanmadı,
+/market-intelligence/alerts,İkon düğmesi (metin etiketi yok),Etiketsiz kontrol; ayrı bir başarı sonucu atanmadı,
+/market-intelligence/alerts,⛶,Envanterde görüldü; ayrı işlem testi tamamlanmadı,
+/market-intelligence/alerts,💬 Destek,Harici iletişim/eklenti; mesaj veya kurulum yapılmadı,
+/market-intelligence/dashboard,Chrome Eklentisi,Harici iletişim/eklenti; mesaj veya kurulum yapılmadı,
+/market-intelligence/dashboard,Hesabını Yükselt,Envanterde görüldü; ayrı işlem testi tamamlanmadı,
+/market-intelligence/dashboard,Hesap menüsü,Envanterde görüldü; ayrı işlem testi tamamlanmadı,
+/market-intelligence/dashboard,WhatsApp Hattımız ↗ (yeni sekmede açılır),Harici iletişim/eklenti; mesaj veya kurulum yapılmadı,
+/market-intelligence/dashboard,İkon düğmesi (metin etiketi yok),Etiketsiz kontrol; ayrı bir başarı sonucu atanmadı,
+/market-intelligence/dashboard,💬 Destek,Harici iletişim/eklenti; mesaj veya kurulum yapılmadı,
+/market-intelligence/influencer-radar,Chrome Eklentisi,Harici iletişim/eklenti; mesaj veya kurulum yapılmadı,
+/market-intelligence/influencer-radar,Hesabını Yükselt,Envanterde görüldü; ayrı işlem testi tamamlanmadı,
+/market-intelligence/influencer-radar,Hesap menüsü,Envanterde görüldü; ayrı işlem testi tamamlanmadı,
+/market-intelligence/influencer-radar,Influencer Radarı Nedir?,Envanterde görüldü; ayrı işlem testi tamamlanmadı,
+/market-intelligence/influencer-radar,İkon düğmesi (metin etiketi yok),Etiketsiz kontrol; ayrı bir başarı sonucu atanmadı,
+/market-intelligence/influencer-radar,💬 Destek,Harici iletişim/eklenti; mesaj veya kurulum yapılmadı,
+/market-intelligence/product-tracking,Chrome Eklentisi,Harici iletişim/eklenti; mesaj veya kurulum yapılmadı,
+/market-intelligence/product-tracking,Hesabını Yükselt,Envanterde görüldü; ayrı işlem testi tamamlanmadı,
+/market-intelligence/product-tracking,Hesap menüsü,Envanterde görüldü; ayrı işlem testi tamamlanmadı,
+/market-intelligence/product-tracking,Verileri Güncelle,Envanterde görüldü; ayrı işlem testi tamamlanmadı,
+/market-intelligence/product-tracking,Ürün Ayarları Sayfasına Git,Envanterde görüldü; ayrı işlem testi tamamlanmadı,
+/market-intelligence/product-tracking,Ürün Takibi Nedir?,Envanterde görüldü; ayrı işlem testi tamamlanmadı,
+/market-intelligence/product-tracking,İkon düğmesi (metin etiketi yok),Etiketsiz kontrol; ayrı bir başarı sonucu atanmadı,
+/market-intelligence/product-tracking,💬 Destek,Harici iletişim/eklenti; mesaj veya kurulum yapılmadı,
+/market-intelligence/store-tracking,Arama Geçmişi,İşlem denendi; ayrıntılı sonuç test kaydında,98
+/market-intelligence/store-tracking,A↑,Bu görünümde tıklama doğrulanamadı / kontrol bulunamadı,101
+/market-intelligence/store-tracking,A↓,İşlem denendi; ayrıntılı sonuç test kaydında,100
+/market-intelligence/store-tracking,Chrome Eklentisi,Harici iletişim/eklenti; mesaj veya kurulum yapılmadı,
+/market-intelligence/store-tracking,Hesabını Yükselt,Envanterde görüldü; ayrı işlem testi tamamlanmadı,
+/market-intelligence/store-tracking,Hesap menüsü,Envanterde görüldü; ayrı işlem testi tamamlanmadı,
+/market-intelligence/store-tracking,Linki nasıl bulurum?,İşlem denendi; ayrıntılı sonuç test kaydında,97
+/market-intelligence/store-tracking,Mağaza Takibi Nedir?,Envanterde görüldü; ayrı işlem testi tamamlanmadı,
+/market-intelligence/store-tracking,Sayısal hücre / sayfalama (değer gizlendi),Tekrarlı veri hücreleri; her satır tek tek çalıştırılmadı,
+/market-intelligence/store-tracking,Takip Ettiklerim,İşlem denendi; ayrıntılı sonuç test kaydında,99
+/market-intelligence/store-tracking,Verileri Güncelle,Envanterde görüldü; ayrı işlem testi tamamlanmadı,
+/market-intelligence/store-tracking,Ürün Ayarları Sayfasına Git,Envanterde görüldü; ayrı işlem testi tamamlanmadı,
+/market-intelligence/store-tracking,İkon düğmesi (metin etiketi yok),Etiketsiz kontrol; ayrı bir başarı sonucu atanmadı,
+/market-intelligence/store-tracking,İncele,İşlem denendi; ayrıntılı sonuç test kaydında,137
+/market-intelligence/store-tracking,⛶,İşlem denendi; ayrıntılı sonuç test kaydında,102
+/market-intelligence/store-tracking,💬 Destek,Harici iletişim/eklenti; mesaj veya kurulum yapılmadı,
+/old-dashboard,Chrome Eklentisi,Harici iletişim/eklenti; mesaj veya kurulum yapılmadı,
+/old-dashboard,Hesabını Yükselt,Envanterde görüldü; ayrı işlem testi tamamlanmadı,
+/old-dashboard,Hesap menüsü,Envanterde görüldü; ayrı işlem testi tamamlanmadı,
+/old-dashboard,Kategori Kârlılık Analizleri,İşlem denendi; ayrıntılı sonuç test kaydında,140
+/old-dashboard,Kârlılık Analizlerini İncele,İşlem denendi; ayrıntılı sonuç test kaydında,142
+/old-dashboard,Next Month,Envanterde görüldü; ayrı işlem testi tamamlanmadı,
+/old-dashboard,Previous Month,Envanterde görüldü; ayrı işlem testi tamamlanmadı,
+/old-dashboard,Sipariş Kârlılık Analizleri,İşlem denendi; ayrıntılı sonuç test kaydında,138
+/old-dashboard,Ürün Ayarları Sayfasına Git,Envanterde görüldü; ayrı işlem testi tamamlanmadı,
+/old-dashboard,Ürün Kârlılık Analizleri,İşlem denendi; ayrıntılı sonuç test kaydında,139
+/old-dashboard,İade Zarar Analizleri,İşlem denendi; ayrıntılı sonuç test kaydında,141
+/old-dashboard,İkon düğmesi (metin etiketi yok),Etiketsiz kontrol; ayrı bir başarı sonucu atanmadı,
+/old-dashboard,İzle Öğren,Envanterde görüldü; ayrı işlem testi tamamlanmadı,
+/old-dashboard,💬 Destek,Harici iletişim/eklenti; mesaj veya kurulum yapılmadı,
+/partner,Chrome Eklentisi,Harici iletişim/eklenti; mesaj veya kurulum yapılmadı,
+/partner,Filtrele,Envanterde görüldü; ayrı işlem testi tamamlanmadı,
+/partner,Hesabını Yükselt,Envanterde görüldü; ayrı işlem testi tamamlanmadı,
+/partner,Hesap menüsü,Envanterde görüldü; ayrı işlem testi tamamlanmadı,
+/partner,PDF olarak indir,Envanterde görüldü; ayrı işlem testi tamamlanmadı,
+/partner,Previous Month,Envanterde görüldü; ayrı işlem testi tamamlanmadı,
+/partner,Tarih aralığı,Envanterde görüldü; ayrı işlem testi tamamlanmadı,
+/partner,WhatsApp Hattımız ↗ (yeni sekmede açılır),Harici iletişim/eklenti; mesaj veya kurulum yapılmadı,
+/partner,Ülke / Bölge Seçimi,Envanterde görüldü; ayrı işlem testi tamamlanmadı,
+/partner,Ürün Ayarları Sayfasına Git,Envanterde görüldü; ayrı işlem testi tamamlanmadı,
+/partner,İkon düğmesi (metin etiketi yok),Etiketsiz kontrol; ayrı bir başarı sonucu atanmadı,
+/partner,İzle Öğren,Envanterde görüldü; ayrı işlem testi tamamlanmadı,
+/partner,💬 Destek,Harici iletişim/eklenti; mesaj veya kurulum yapılmadı,
+/product-pricing,Chrome Eklentisi,Harici iletişim/eklenti; mesaj veya kurulum yapılmadı,
+/product-pricing,Fiyat Oluştur,İşlem denendi; ayrıntılı sonuç test kaydında,"111,112,113"
+/product-pricing,Hesabını Yükselt,Envanterde görüldü; ayrı işlem testi tamamlanmadı,
+/product-pricing,Hesap menüsü,Envanterde görüldü; ayrı işlem testi tamamlanmadı,
+/product-pricing,WhatsApp Hattımız ↗ (yeni sekmede açılır),Harici iletişim/eklenti; mesaj veya kurulum yapılmadı,
+/product-pricing,Ürün Ayarları Sayfasına Git,Envanterde görüldü; ayrı işlem testi tamamlanmadı,
+/product-pricing,İkon düğmesi (metin etiketi yok),Etiketsiz kontrol; ayrı bir başarı sonucu atanmadı,
+/product-pricing,İzle Öğren,Envanterde görüldü; ayrı işlem testi tamamlanmadı,
+/product-pricing,💬 Destek,Harici iletişim/eklenti; mesaj veya kurulum yapılmadı,
+/product-settings,Arşivle,Kalıcı değişiklik: test ürünü ve işlem kapsamı gerekli,
+/product-settings,Chrome Eklentisi,Harici iletişim/eklenti; mesaj veya kurulum yapılmadı,
+/product-settings,Excel Dosyasını İndir,İşlem denendi; ayrıntılı sonuç test kaydında,116
+/product-settings,Excel İle İçeri Aktar,İşlem denendi; ayrıntılı sonuç test kaydında,114
+/product-settings,Filtrele,İşlem denendi; ayrıntılı sonuç test kaydında,76
+/product-settings,Filtreleri Temizle,İşlem denendi; ayrıntılı sonuç test kaydında,77
+/product-settings,Güncelle,Kalıcı değişiklik: test ürünü ve işlem kapsamı gerekli,
+/product-settings,Hesabını Yükselt,Envanterde görüldü; ayrı işlem testi tamamlanmadı,
+/product-settings,Hesap menüsü,Envanterde görüldü; ayrı işlem testi tamamlanmadı,
+/product-settings,Sayısal hücre / sayfalama (değer gizlendi),Tekrarlı veri hücreleri; her satır tek tek çalıştırılmadı,
+/product-settings,Verileri Güncelle,Envanterde görüldü; ayrı işlem testi tamamlanmadı,
+/product-settings,WhatsApp Hattımız ↗ (yeni sekmede açılır),Harici iletişim/eklenti; mesaj veya kurulum yapılmadı,
+/product-settings,XML Yükle,İşlem denendi; ayrıntılı sonuç test kaydında,115
+/product-settings,Ürün Ayarları Sayfasına Git,Envanterde görüldü; ayrı işlem testi tamamlanmadı,
+/product-settings,İkon düğmesi (metin etiketi yok),Etiketsiz kontrol; ayrı bir başarı sonucu atanmadı,
+/product-settings,İzle Öğren,Envanterde görüldü; ayrı işlem testi tamamlanmadı,
+/product-settings,💬 Destek,Harici iletişim/eklenti; mesaj veya kurulum yapılmadı,
+/profit-margin-list,3 Kolon,İşlem denendi; ayrıntılı sonuç test kaydında,"68,105"
+/profit-margin-list,4 Kolon,İşlem denendi; ayrıntılı sonuç test kaydında,"69,106"
+/profit-margin-list,Chrome Eklentisi,Harici iletişim/eklenti; mesaj veya kurulum yapılmadı,
+/profit-margin-list,Filtrele,İşlem denendi; ayrıntılı sonuç test kaydında,70
+/profit-margin-list,Filtreleri Temizle,İşlem denendi; ayrıntılı sonuç test kaydında,71
+/profit-margin-list,Fiyatı düzenle,İşlem denendi; ayrıntılı sonuç test kaydında,"72,107"
+/profit-margin-list,Hesabını Yükselt,Envanterde görüldü; ayrı işlem testi tamamlanmadı,
+/profit-margin-list,Hesap menüsü,Envanterde görüldü; ayrı işlem testi tamamlanmadı,
+/profit-margin-list,Raporu İndir,İşlem denendi; ayrıntılı sonuç test kaydında,73
+/profit-margin-list,Temizle,İşlem denendi; ayrıntılı sonuç test kaydında,136
+/profit-margin-list,Tüm Ürünleri Güncelle,Kalıcı değişiklik: test ürünü ve işlem kapsamı gerekli,
+/profit-margin-list,WhatsApp Hattımız ↗ (yeni sekmede açılır),Harici iletişim/eklenti; mesaj veya kurulum yapılmadı,
+/profit-margin-list,Önerileri Uygula,Kalıcı değişiklik: test ürünü ve işlem kapsamı gerekli,
+/profit-margin-list,Ürün Ayarları Sayfasına Git,Envanterde görüldü; ayrı işlem testi tamamlanmadı,
+/profit-margin-list,İkon düğmesi (metin etiketi yok),Etiketsiz kontrol; ayrı bir başarı sonucu atanmadı,
+/profit-margin-list,İzle Öğren,Envanterde görüldü; ayrı işlem testi tamamlanmadı,
+/profit-margin-list,💬 Destek,Harici iletişim/eklenti; mesaj veya kurulum yapılmadı,
+/promotion-profitability-analysis/campaign-profitability-analysis,Chrome Eklentisi,Harici iletişim/eklenti; mesaj veya kurulum yapılmadı,
+/promotion-profitability-analysis/campaign-profitability-analysis,Filtrele,İşlem denendi; ayrıntılı sonuç test kaydında,31
+/promotion-profitability-analysis/campaign-profitability-analysis,Filtreleri Temizle,İşlem denendi; ayrıntılı sonuç test kaydında,32
+/promotion-profitability-analysis/campaign-profitability-analysis,Hesabını Yükselt,Envanterde görüldü; ayrı işlem testi tamamlanmadı,
+/promotion-profitability-analysis/campaign-profitability-analysis,Hesap menüsü,Envanterde görüldü; ayrı işlem testi tamamlanmadı,
+/promotion-profitability-analysis/campaign-profitability-analysis,Kampanya Excel Dosyası Yükle,İşlem denendi; ayrıntılı sonuç test kaydında,33
+/promotion-profitability-analysis/campaign-profitability-analysis,Seçimlerimi Kaydet ve İndir,Kaynak Excel ve seçim verisi gerekli; uçtan uca denenmedi,
+/promotion-profitability-analysis/campaign-profitability-analysis,Toplu Seçim,İşlem denendi; ayrıntılı sonuç test kaydında,34
+/promotion-profitability-analysis/campaign-profitability-analysis,Tüm Kolonlardan Seçimleri Kaldır,Envanterde görüldü; ayrı işlem testi tamamlanmadı,
+/promotion-profitability-analysis/campaign-profitability-analysis,Ürün Ayarları Sayfasına Git,Envanterde görüldü; ayrı işlem testi tamamlanmadı,
+/promotion-profitability-analysis/campaign-profitability-analysis,Ürün Komisyon Tarifesi Sayfasına Git,Envanterde görüldü; ayrı işlem testi tamamlanmadı,
+/promotion-profitability-analysis/campaign-profitability-analysis,Ürün adı araması,İşlem denendi; ayrıntılı sonuç test kaydında,30
+/promotion-profitability-analysis/campaign-profitability-analysis,İkon düğmesi (metin etiketi yok),Etiketsiz kontrol; ayrı bir başarı sonucu atanmadı,
+/promotion-profitability-analysis/campaign-profitability-analysis,İzle Öğren,Envanterde görüldü; ayrı işlem testi tamamlanmadı,
+/promotion-profitability-analysis/campaign-profitability-analysis,💬 Destek,Harici iletişim/eklenti; mesaj veya kurulum yapılmadı,
+/promotion-profitability-analysis/discounts,Chrome Eklentisi,Harici iletişim/eklenti; mesaj veya kurulum yapılmadı,
+/promotion-profitability-analysis/discounts,Filtrele,İşlem denendi; ayrıntılı sonuç test kaydında,26
+/promotion-profitability-analysis/discounts,Filtreleri Temizle,İşlem denendi; ayrıntılı sonuç test kaydında,27
+/promotion-profitability-analysis/discounts,Hesabını Yükselt,Envanterde görüldü; ayrı işlem testi tamamlanmadı,
+/promotion-profitability-analysis/discounts,Hesap menüsü,Envanterde görüldü; ayrı işlem testi tamamlanmadı,
+/promotion-profitability-analysis/discounts,Seçimlerimi Kaydet ve İndir,Kaynak Excel ve seçim verisi gerekli; uçtan uca denenmedi,
+/promotion-profitability-analysis/discounts,Toplu Seçim,İşlem denendi; ayrıntılı sonuç test kaydında,29
+/promotion-profitability-analysis/discounts,Tüm Kolonlardan Seçimleri Kaldır,Envanterde görüldü; ayrı işlem testi tamamlanmadı,
+/promotion-profitability-analysis/discounts,Ürün Komisyon Tarifesi Sayfasına Git,Envanterde görüldü; ayrı işlem testi tamamlanmadı,
+/promotion-profitability-analysis/discounts,Ürün adı araması,İşlem denendi; ayrıntılı sonuç test kaydında,25
+/promotion-profitability-analysis/discounts,İkon düğmesi (metin etiketi yok),Etiketsiz kontrol; ayrı bir başarı sonucu atanmadı,
+/promotion-profitability-analysis/discounts,İndirimler Excel Dosyası Yükle,İşlem denendi; ayrıntılı sonuç test kaydında,28
+/promotion-profitability-analysis/discounts,💬 Destek,Harici iletişim/eklenti; mesaj veya kurulum yapılmadı,
+/promotion-profitability-analysis/flash-offer,Chrome Eklentisi,Harici iletişim/eklenti; mesaj veya kurulum yapılmadı,
+/promotion-profitability-analysis/flash-offer,Filtrele,İşlem denendi; ayrıntılı sonuç test kaydında,21
+/promotion-profitability-analysis/flash-offer,Filtreleri Temizle,İşlem denendi; ayrıntılı sonuç test kaydında,22
+/promotion-profitability-analysis/flash-offer,Flash Ürünler Excel Dosyası Yükle,İşlem denendi; ayrıntılı sonuç test kaydında,23
+/promotion-profitability-analysis/flash-offer,Hesabını Yükselt,Envanterde görüldü; ayrı işlem testi tamamlanmadı,
+/promotion-profitability-analysis/flash-offer,Hesap menüsü,Envanterde görüldü; ayrı işlem testi tamamlanmadı,
+/promotion-profitability-analysis/flash-offer,Seçimlerimi Kaydet ve İndir,Kaynak Excel ve seçim verisi gerekli; uçtan uca denenmedi,
+/promotion-profitability-analysis/flash-offer,Toplu Seçim,İşlem denendi; ayrıntılı sonuç test kaydında,24
+/promotion-profitability-analysis/flash-offer,Tüm Kolonlardan Seçimleri Kaldır,Envanterde görüldü; ayrı işlem testi tamamlanmadı,
+/promotion-profitability-analysis/flash-offer,Ürün Komisyon Tarifesi Sayfasına Git,Envanterde görüldü; ayrı işlem testi tamamlanmadı,
+/promotion-profitability-analysis/flash-offer,Ürün adı araması,İşlem denendi; ayrıntılı sonuç test kaydında,20
+/promotion-profitability-analysis/flash-offer,İkon düğmesi (metin etiketi yok),Etiketsiz kontrol; ayrı bir başarı sonucu atanmadı,
+/promotion-profitability-analysis/flash-offer,İzle Öğren,Envanterde görüldü; ayrı işlem testi tamamlanmadı,
+/promotion-profitability-analysis/flash-offer,💬 Destek,Harici iletişim/eklenti; mesaj veya kurulum yapılmadı,
+/promotion-profitability-analysis/product-commission-tariff-profitability-analysis,Chrome Eklentisi,Harici iletişim/eklenti; mesaj veya kurulum yapılmadı,
+/promotion-profitability-analysis/product-commission-tariff-profitability-analysis,Filtrele,İşlem denendi; ayrıntılı sonuç test kaydında,6
+/promotion-profitability-analysis/product-commission-tariff-profitability-analysis,Filtreleri Temizle,İşlem denendi; ayrıntılı sonuç test kaydında,7
+/promotion-profitability-analysis/product-commission-tariff-profitability-analysis,Fiyat kademesi seç,İşlem denendi; ayrıntılı sonuç test kaydında,110
+/promotion-profitability-analysis/product-commission-tariff-profitability-analysis,Hesabını Yükselt,Envanterde görüldü; ayrı işlem testi tamamlanmadı,
+/promotion-profitability-analysis/product-commission-tariff-profitability-analysis,Hesap menüsü,Envanterde görüldü; ayrı işlem testi tamamlanmadı,
+/promotion-profitability-analysis/product-commission-tariff-profitability-analysis,Komisyon Tarifesi Excel Dosyası Yükle,İşlem denendi; ayrıntılı sonuç test kaydında,"8,108"
+/promotion-profitability-analysis/product-commission-tariff-profitability-analysis,Seçimlerimi Kaydet ve İndir,İşlem denendi; ayrıntılı sonuç test kaydında,135
+/promotion-profitability-analysis/product-commission-tariff-profitability-analysis,Toplu Seçim,İşlem denendi; ayrıntılı sonuç test kaydında,"9,109"
+/promotion-profitability-analysis/product-commission-tariff-profitability-analysis,Tüm Kolonlardan Seçimleri Kaldır,Bu görünümde tıklama doğrulanamadı / kontrol bulunamadı,134
+/promotion-profitability-analysis/product-commission-tariff-profitability-analysis,Ürün adı araması,İşlem denendi; ayrıntılı sonuç test kaydında,5
+/promotion-profitability-analysis/product-commission-tariff-profitability-analysis,İkon düğmesi (metin etiketi yok),Etiketsiz kontrol; ayrı bir başarı sonucu atanmadı,
+/promotion-profitability-analysis/product-commission-tariff-profitability-analysis,İzle Öğren,Envanterde görüldü; ayrı işlem testi tamamlanmadı,
+/promotion-profitability-analysis/product-commission-tariff-profitability-analysis,💬 Destek,Harici iletişim/eklenti; mesaj veya kurulum yapılmadı,
+/promotion-profitability-analysis/product-plus-commission-tariff-profitability-analysis,Chrome Eklentisi,Harici iletişim/eklenti; mesaj veya kurulum yapılmadı,
+/promotion-profitability-analysis/product-plus-commission-tariff-profitability-analysis,Filtrele,İşlem denendi; ayrıntılı sonuç test kaydında,11
+/promotion-profitability-analysis/product-plus-commission-tariff-profitability-analysis,Filtreleri Temizle,İşlem denendi; ayrıntılı sonuç test kaydında,12
+/promotion-profitability-analysis/product-plus-commission-tariff-profitability-analysis,Hesabını Yükselt,Envanterde görüldü; ayrı işlem testi tamamlanmadı,
+/promotion-profitability-analysis/product-plus-commission-tariff-profitability-analysis,Hesap menüsü,Envanterde görüldü; ayrı işlem testi tamamlanmadı,
+/promotion-profitability-analysis/product-plus-commission-tariff-profitability-analysis,Plus Komisyon Tarifesi Excel Dosyası Yükle,İşlem denendi; ayrıntılı sonuç test kaydında,13
+/promotion-profitability-analysis/product-plus-commission-tariff-profitability-analysis,Seçimlerimi Kaydet ve İndir,Kaynak Excel ve seçim verisi gerekli; uçtan uca denenmedi,
+/promotion-profitability-analysis/product-plus-commission-tariff-profitability-analysis,Toplu Seçim,İşlem denendi; ayrıntılı sonuç test kaydında,14
+/promotion-profitability-analysis/product-plus-commission-tariff-profitability-analysis,Tüm Kolonlardan Seçimleri Kaldır,Envanterde görüldü; ayrı işlem testi tamamlanmadı,
+/promotion-profitability-analysis/product-plus-commission-tariff-profitability-analysis,Ürün Ayarları Sayfasına Git,Envanterde görüldü; ayrı işlem testi tamamlanmadı,
+/promotion-profitability-analysis/product-plus-commission-tariff-profitability-analysis,Ürün Komisyon Tarifesi Sayfasına Git,İşlem denendi; ayrıntılı sonuç test kaydında,143
+/promotion-profitability-analysis/product-plus-commission-tariff-profitability-analysis,Ürün adı araması,İşlem denendi; ayrıntılı sonuç test kaydında,10
+/promotion-profitability-analysis/product-plus-commission-tariff-profitability-analysis,İkon düğmesi (metin etiketi yok),Etiketsiz kontrol; ayrı bir başarı sonucu atanmadı,
+/promotion-profitability-analysis/product-plus-commission-tariff-profitability-analysis,💬 Destek,Harici iletişim/eklenti; mesaj veya kurulum yapılmadı,
+/promotion-profitability-analysis/star-product-labels-profitability-analysis,Avantajlı Ürün Etiketi Excel Dosyası Yükle,İşlem denendi; ayrıntılı sonuç test kaydında,18
+/promotion-profitability-analysis/star-product-labels-profitability-analysis,Chrome Eklentisi,Harici iletişim/eklenti; mesaj veya kurulum yapılmadı,
+/promotion-profitability-analysis/star-product-labels-profitability-analysis,Filtrele,İşlem denendi; ayrıntılı sonuç test kaydında,16
+/promotion-profitability-analysis/star-product-labels-profitability-analysis,Filtreleri Temizle,İşlem denendi; ayrıntılı sonuç test kaydında,17
+/promotion-profitability-analysis/star-product-labels-profitability-analysis,Hesabını Yükselt,Envanterde görüldü; ayrı işlem testi tamamlanmadı,
+/promotion-profitability-analysis/star-product-labels-profitability-analysis,Hesap menüsü,Envanterde görüldü; ayrı işlem testi tamamlanmadı,
+/promotion-profitability-analysis/star-product-labels-profitability-analysis,Seçimlerimi Kaydet ve İndir,Kaynak Excel ve seçim verisi gerekli; uçtan uca denenmedi,
+/promotion-profitability-analysis/star-product-labels-profitability-analysis,Toplu Seçim,İşlem denendi; ayrıntılı sonuç test kaydında,19
+/promotion-profitability-analysis/star-product-labels-profitability-analysis,Tüm Kolonlardan Seçimleri Kaldır,Envanterde görüldü; ayrı işlem testi tamamlanmadı,
+/promotion-profitability-analysis/star-product-labels-profitability-analysis,Ürün Komisyon Tarifesi Sayfasına Git,Envanterde görüldü; ayrı işlem testi tamamlanmadı,
+/promotion-profitability-analysis/star-product-labels-profitability-analysis,Ürün adı araması,İşlem denendi; ayrıntılı sonuç test kaydında,15
+/promotion-profitability-analysis/star-product-labels-profitability-analysis,İkon düğmesi (metin etiketi yok),Etiketsiz kontrol; ayrı bir başarı sonucu atanmadı,
+/promotion-profitability-analysis/star-product-labels-profitability-analysis,İzle Öğren,Envanterde görüldü; ayrı işlem testi tamamlanmadı,
+/promotion-profitability-analysis/star-product-labels-profitability-analysis,💬 Destek,Harici iletişim/eklenti; mesaj veya kurulum yapılmadı,
+/reports/ads-profitability-analysis,Chrome Eklentisi,Harici iletişim/eklenti; mesaj veya kurulum yapılmadı,
+/reports/ads-profitability-analysis,Detaylar,Bu görünümde tıklama doğrulanamadı / kontrol bulunamadı,63
+/reports/ads-profitability-analysis,Filtrele,İşlem denendi; ayrıntılı sonuç test kaydında,62
+/reports/ads-profitability-analysis,Hesabını Yükselt,Envanterde görüldü; ayrı işlem testi tamamlanmadı,
+/reports/ads-profitability-analysis,Hesap menüsü,Envanterde görüldü; ayrı işlem testi tamamlanmadı,
+/reports/ads-profitability-analysis,Next Month,Envanterde görüldü; ayrı işlem testi tamamlanmadı,
+/reports/ads-profitability-analysis,Previous Month,Envanterde görüldü; ayrı işlem testi tamamlanmadı,
+/reports/ads-profitability-analysis,Raporu İndir,Bu görünümde tıklama doğrulanamadı / kontrol bulunamadı,64
+/reports/ads-profitability-analysis,WhatsApp Hattımız ↗ (yeni sekmede açılır),Harici iletişim/eklenti; mesaj veya kurulum yapılmadı,
+/reports/ads-profitability-analysis,Ürün Ayarları Sayfasına Git,Envanterde görüldü; ayrı işlem testi tamamlanmadı,
+/reports/ads-profitability-analysis,İkon düğmesi (metin etiketi yok),Etiketsiz kontrol; ayrı bir başarı sonucu atanmadı,
+/reports/ads-profitability-analysis,İzle Öğren,Envanterde görüldü; ayrı işlem testi tamamlanmadı,
+/reports/ads-profitability-analysis,💬 Destek,Harici iletişim/eklenti; mesaj veya kurulum yapılmadı,
+/reports/category-profitability-analysis,Chrome Eklentisi,Harici iletişim/eklenti; mesaj veya kurulum yapılmadı,
+/reports/category-profitability-analysis,Detaylar,Bu görünümde tıklama doğrulanamadı / kontrol bulunamadı,57
+/reports/category-profitability-analysis,Filtrele,İşlem denendi; ayrıntılı sonuç test kaydında,56
+/reports/category-profitability-analysis,Hesabını Yükselt,Envanterde görüldü; ayrı işlem testi tamamlanmadı,
+/reports/category-profitability-analysis,Hesap menüsü,Envanterde görüldü; ayrı işlem testi tamamlanmadı,
+/reports/category-profitability-analysis,Next Month,Envanterde görüldü; ayrı işlem testi tamamlanmadı,
+/reports/category-profitability-analysis,Previous Month,Envanterde görüldü; ayrı işlem testi tamamlanmadı,
+/reports/category-profitability-analysis,Raporu İndir,İşlem denendi; ayrıntılı sonuç test kaydında,58
+/reports/category-profitability-analysis,WhatsApp Hattımız ↗ (yeni sekmede açılır),Harici iletişim/eklenti; mesaj veya kurulum yapılmadı,
+/reports/category-profitability-analysis,Ürün Ayarları Sayfasına Git,Envanterde görüldü; ayrı işlem testi tamamlanmadı,
+/reports/category-profitability-analysis,İkon düğmesi (metin etiketi yok),Etiketsiz kontrol; ayrı bir başarı sonucu atanmadı,
+/reports/category-profitability-analysis,İzle Öğren,Envanterde görüldü; ayrı işlem testi tamamlanmadı,
+/reports/category-profitability-analysis,💬 Destek,Harici iletişim/eklenti; mesaj veya kurulum yapılmadı,
+/reports/offer-profitability-analysis,Chrome Eklentisi,Harici iletişim/eklenti; mesaj veya kurulum yapılmadı,
+/reports/offer-profitability-analysis,Detaylar,Bu görünümde tıklama doğrulanamadı / kontrol bulunamadı,66
+/reports/offer-profitability-analysis,Filtrele,İşlem denendi; ayrıntılı sonuç test kaydında,65
+/reports/offer-profitability-analysis,Hesabını Yükselt,Envanterde görüldü; ayrı işlem testi tamamlanmadı,
+/reports/offer-profitability-analysis,Hesap menüsü,Envanterde görüldü; ayrı işlem testi tamamlanmadı,
+/reports/offer-profitability-analysis,Next Month,Envanterde görüldü; ayrı işlem testi tamamlanmadı,
+/reports/offer-profitability-analysis,Previous Month,Envanterde görüldü; ayrı işlem testi tamamlanmadı,
+/reports/offer-profitability-analysis,Raporu İndir,İşlem denendi; ayrıntılı sonuç test kaydında,67
+/reports/offer-profitability-analysis,WhatsApp Hattımız ↗ (yeni sekmede açılır),Harici iletişim/eklenti; mesaj veya kurulum yapılmadı,
+/reports/offer-profitability-analysis,Ürün Ayarları Sayfasına Git,Envanterde görüldü; ayrı işlem testi tamamlanmadı,
+/reports/offer-profitability-analysis,İkon düğmesi (metin etiketi yok),Etiketsiz kontrol; ayrı bir başarı sonucu atanmadı,
+/reports/offer-profitability-analysis,💬 Destek,Harici iletişim/eklenti; mesaj veya kurulum yapılmadı,
+/reports/order-profitability-analysis,Chrome Eklentisi,Harici iletişim/eklenti; mesaj veya kurulum yapılmadı,
+/reports/order-profitability-analysis,Detaylar,İşlem denendi; ayrıntılı sonuç test kaydında,"51,93"
+/reports/order-profitability-analysis,Dosyayı Oluştur,İşlem denendi; ayrıntılı sonuç test kaydında,95
+/reports/order-profitability-analysis,Filtrele,İşlem denendi; ayrıntılı sonuç test kaydında,50
+/reports/order-profitability-analysis,Hazır raporu indir,İşlem denendi; ayrıntılı sonuç test kaydında,117
+/reports/order-profitability-analysis,Hesabını Yükselt,Envanterde görüldü; ayrı işlem testi tamamlanmadı,
+/reports/order-profitability-analysis,Hesap menüsü,Envanterde görüldü; ayrı işlem testi tamamlanmadı,
+/reports/order-profitability-analysis,Next Month,Envanterde görüldü; ayrı işlem testi tamamlanmadı,
+/reports/order-profitability-analysis,Previous Month,Envanterde görüldü; ayrı işlem testi tamamlanmadı,
+/reports/order-profitability-analysis,Raporu İndir,İşlem denendi; ayrıntılı sonuç test kaydında,"52,94"
+/reports/order-profitability-analysis,Resetle,Bu görünümde tıklama doğrulanamadı / kontrol bulunamadı,131
+/reports/order-profitability-analysis,Sayısal hücre / sayfalama (değer gizlendi),İşlem denendi; ayrıntılı sonuç test kaydında,"126,127"
+/reports/order-profitability-analysis,Sipariş Tutarı (₺),İşlem denendi; ayrıntılı sonuç test kaydında,128
+/reports/order-profitability-analysis,Sırala (Artan),Bu görünümde tıklama doğrulanamadı / kontrol bulunamadı,129
+/reports/order-profitability-analysis,Tabloyu Büyüt,İşlem denendi; ayrıntılı sonuç test kaydında,132
+/reports/order-profitability-analysis,Tabloyu Genişlet,İşlem denendi; ayrıntılı sonuç test kaydında,133
+/reports/order-profitability-analysis,Tabloyu Güncelle,İşlem denendi; ayrıntılı sonuç test kaydında,96
+/reports/order-profitability-analysis,Tabloyu Küçült,İşlem denendi; ayrıntılı sonuç test kaydında,130
+/reports/order-profitability-analysis,WhatsApp Hattımız ↗ (yeni sekmede açılır),Harici iletişim/eklenti; mesaj veya kurulum yapılmadı,
+/reports/order-profitability-analysis,Ürün Ayarları Sayfasına Git,Envanterde görüldü; ayrı işlem testi tamamlanmadı,
+/reports/order-profitability-analysis,İkon düğmesi (metin etiketi yok),Etiketsiz kontrol; ayrı bir başarı sonucu atanmadı,
+/reports/order-profitability-analysis,İzle Öğren,Envanterde görüldü; ayrı işlem testi tamamlanmadı,
+/reports/order-profitability-analysis,💬 Destek,Harici iletişim/eklenti; mesaj veya kurulum yapılmadı,
+/reports/product-profitability-analysis,Chrome Eklentisi,Harici iletişim/eklenti; mesaj veya kurulum yapılmadı,
+/reports/product-profitability-analysis,Detaylar,Bu görünümde tıklama doğrulanamadı / kontrol bulunamadı,54
+/reports/product-profitability-analysis,Filtrele,İşlem denendi; ayrıntılı sonuç test kaydında,53
+/reports/product-profitability-analysis,Hesabını Yükselt,Envanterde görüldü; ayrı işlem testi tamamlanmadı,
+/reports/product-profitability-analysis,Hesap menüsü,Envanterde görüldü; ayrı işlem testi tamamlanmadı,
+/reports/product-profitability-analysis,Next Month,Envanterde görüldü; ayrı işlem testi tamamlanmadı,
+/reports/product-profitability-analysis,Previous Month,Envanterde görüldü; ayrı işlem testi tamamlanmadı,
+/reports/product-profitability-analysis,Raporu İndir,İşlem denendi; ayrıntılı sonuç test kaydında,55
+/reports/product-profitability-analysis,Sayısal hücre / sayfalama (değer gizlendi),Tekrarlı veri hücreleri; her satır tek tek çalıştırılmadı,
+/reports/product-profitability-analysis,WhatsApp Hattımız ↗ (yeni sekmede açılır),Harici iletişim/eklenti; mesaj veya kurulum yapılmadı,
+/reports/product-profitability-analysis,Ürün Ayarları Sayfasına Git,Envanterde görüldü; ayrı işlem testi tamamlanmadı,
+/reports/product-profitability-analysis,İkon düğmesi (metin etiketi yok),Etiketsiz kontrol; ayrı bir başarı sonucu atanmadı,
+/reports/product-profitability-analysis,İzle Öğren,Envanterde görüldü; ayrı işlem testi tamamlanmadı,
+/reports/product-profitability-analysis,💬 Destek,Harici iletişim/eklenti; mesaj veya kurulum yapılmadı,
+/reports/return-loss-analysis,Chrome Eklentisi,Harici iletişim/eklenti; mesaj veya kurulum yapılmadı,
+/reports/return-loss-analysis,Detaylar,Bu görünümde tıklama doğrulanamadı / kontrol bulunamadı,60
+/reports/return-loss-analysis,Filtrele,İşlem denendi; ayrıntılı sonuç test kaydında,59
+/reports/return-loss-analysis,Hesabını Yükselt,Envanterde görüldü; ayrı işlem testi tamamlanmadı,
+/reports/return-loss-analysis,Hesap menüsü,Envanterde görüldü; ayrı işlem testi tamamlanmadı,
+/reports/return-loss-analysis,Next Month,Envanterde görüldü; ayrı işlem testi tamamlanmadı,
+/reports/return-loss-analysis,Previous Month,Envanterde görüldü; ayrı işlem testi tamamlanmadı,
+/reports/return-loss-analysis,Raporu İndir,Bu görünümde tıklama doğrulanamadı / kontrol bulunamadı,61
+/reports/return-loss-analysis,WhatsApp Hattımız ↗ (yeni sekmede açılır),Harici iletişim/eklenti; mesaj veya kurulum yapılmadı,
+/reports/return-loss-analysis,Ürün Ayarları Sayfasına Git,Envanterde görüldü; ayrı işlem testi tamamlanmadı,
+/reports/return-loss-analysis,İkon düğmesi (metin etiketi yok),Etiketsiz kontrol; ayrı bir başarı sonucu atanmadı,
+/reports/return-loss-analysis,İzle Öğren,Envanterde görüldü; ayrı işlem testi tamamlanmadı,
+/reports/return-loss-analysis,💬 Destek,Harici iletişim/eklenti; mesaj veya kurulum yapılmadı,
+/settings,Chrome Eklentisi,Harici iletişim/eklenti; mesaj veya kurulum yapılmadı,
+/settings,Eposta Bildirim Ayarları,İşlem denendi; ayrıntılı sonuç test kaydında,89
+/settings,Genel Ayarlar,İşlem denendi; ayrıntılı sonuç test kaydında,83
+/settings,Hepsiburada API Bilgileri,İşlem denendi; ayrıntılı sonuç test kaydında,82
+/settings,Hesabını Yükselt,Envanterde görüldü; ayrı işlem testi tamamlanmadı,
+/settings,Hesap Ayarları,İşlem denendi; ayrıntılı sonuç test kaydında,80
+/settings,Hesap menüsü,Envanterde görüldü; ayrı işlem testi tamamlanmadı,
+/settings,Kargo Ayarları,İşlem denendi; ayrıntılı sonuç test kaydında,84
+/settings,Kaydet,Kalıcı değişiklik: test ürünü ve işlem kapsamı gerekli,
+/settings,Kâr Marjı Renklendirme,İşlem denendi; ayrıntılı sonuç test kaydında,88
+/settings,Operasyon Ayarları,İşlem denendi; ayrıntılı sonuç test kaydında,85
+/settings,Sipariş Kârlılık Analizleri,Envanterde görüldü; ayrı işlem testi tamamlanmadı,
+/settings,Toplu İşlemler,İşlem denendi; ayrıntılı sonuç test kaydında,90
+/settings,Trendyol API Bilgileri,İşlem denendi; ayrıntılı sonuç test kaydında,81
+/settings,Uyarılar,İşlem denendi; ayrıntılı sonuç test kaydında,86
+/settings,Ödeme Bilgileri,İşlem denendi; ayrıntılı sonuç test kaydında,91
+/settings,Ürün Ayarları Sayfasına Git,Envanterde görüldü; ayrı işlem testi tamamlanmadı,
+/settings,Ürün Kârlılık Listesi,İşlem denendi; ayrıntılı sonuç test kaydında,87
+/settings,İkon düğmesi (metin etiketi yok),Etiketsiz kontrol; ayrı bir başarı sonucu atanmadı,
+/settings,İzle Öğren,Envanterde görüldü; ayrı işlem testi tamamlanmadı,
+/settings,💬 Destek,Harici iletişim/eklenti; mesaj veya kurulum yapılmadı,
+/warning-page,Bildirim Ayarları,Envanterde görüldü; ayrı işlem testi tamamlanmadı,
+/warning-page,Chrome Eklentisi,Harici iletişim/eklenti; mesaj veya kurulum yapılmadı,
+/warning-page,Filtrele,Envanterde görüldü; ayrı işlem testi tamamlanmadı,
+/warning-page,Hesabını Yükselt,Envanterde görüldü; ayrı işlem testi tamamlanmadı,
+/warning-page,Hesap menüsü,Envanterde görüldü; ayrı işlem testi tamamlanmadı,
+/warning-page,Ürün Ayarları Sayfasına Git,Envanterde görüldü; ayrı işlem testi tamamlanmadı,
+/warning-page,İkon düğmesi (metin etiketi yok),Etiketsiz kontrol; ayrı bir başarı sonucu atanmadı,
+/warning-page,İzle Öğren,Envanterde görüldü; ayrı işlem testi tamamlanmadı,
+/warning-page,💬 Destek,Harici iletişim/eklenti; mesaj veya kurulum yapılmadı,
