@@ -47,3 +47,8 @@ Bizim hesap motorumuz negatif maliyet/kargo/KDV ve %101 komisyon girdilerini zat
 ## Kanıt ve gizlilik
 
 [Seçilmiş test sonuçları](melontik-dogrulama-sonuclari.json) yalnızca sentetik hesap girdilerinin çıktıları, kontrol adları ve doğrulama durumlarını içerir. Gerçek ürün kimlikleri, hesap verileri, sipariş tutarları, oturum bilgileri, indirilen Excel/PDF ve ekran görüntüleri depoya eklenmedi. Özel ham kanıtlar geçici çalışma alanındadır; depodaki özet bağımsız bir tekrar oynatma paketi değildir.
+
+
+## 8 Kasım 2026 — Gerçek promosyon Excel dosyaları sağlandı
+
+Kullanıcının sağladığı üç kaynak dosyayla komisyon tarifesi, yıldız etiketi ve flaş tekliflerinde yükleme–seçim–XLSX indirme zinciri doğrulandı. Bu üç akış için kaynak dosya engeli giderildi. Sonuçlar, tarih/komisyon eşleştirmeleri ve kalan sınırlar [Excel doğrulama raporunda](MELONTIK-EXCEL-DOGRULAMA.md).

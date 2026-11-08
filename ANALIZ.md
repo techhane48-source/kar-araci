@@ -224,3 +224,8 @@ Gerçek hesaba ait ekran görüntüleri, dosyalar ve oturum bilgileri repoya ekl
 ## 8 Kasım 2026 — İşlev doğrulaması devamı
 
 Kalıcı maliyet kaydı, desi geri alma, tek varyant arşivleme/geri alma, filtre sonuçları ve bağımsız finansal kontroller tamamlandı. Düşük KDV hesaplayıcısı tutarsızlığı ve erişim nedeniyle kalan sınırlar [ayrı doğrulama raporunda](docs/MELONTIK-ISLEV-DOGRULAMA.md) açıklanmıştır. Önceki aşamanın işlem yapılmadığına dair ifadeleri o aşamanın kapsamını anlatır.
+
+
+## 8 Kasım 2026 — Gerçek promosyon Excel dosyaları sağlandı
+
+Kullanıcının sağladığı üç kaynak dosyayla komisyon tarifesi, yıldız etiketi ve flaş tekliflerinde yükleme–seçim–XLSX indirme zinciri doğrulandı. Bu üç akış için kaynak dosya engeli giderildi. Sonuçlar, tarih/komisyon eşleştirmeleri ve kalan sınırlar [Excel doğrulama raporunda](docs/MELONTIK-EXCEL-DOGRULAMA.md).

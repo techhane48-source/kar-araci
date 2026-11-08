@@ -1,0 +1,123 @@
+{
+  "date": "2026-11-08",
+  "scope": "Three user-provided vendor workbooks; normal authenticated UI; no marketplace publication",
+  "workbookRoundTrip": [
+    {
+      "kind": "commission",
+      "inputRows": 1895,
+      "outputRows": 1895,
+      "headerEqual": true,
+      "changedCells": 1,
+      "changedRows": 1,
+      "changedHeaders": [
+        "YENİ TSF (FİYAT GÜNCELLE)"
+      ],
+      "originalColumnsPreserved": true
+    },
+    {
+      "kind": "star",
+      "inputRows": 4787,
+      "outputRows": 4787,
+      "headerEqual": false,
+      "changedCells": 5,
+      "changedRows": 2,
+      "changedHeaders": [
+        "YENİ TSF (FİYAT GÜNCELLE)"
+      ],
+      "originalColumnsPreserved": true,
+      "addedHeaders": [
+        "Kar Tutarı",
+        "Kar/Satış Fiyatı (%)"
+      ]
+    },
+    {
+      "kind": "flash",
+      "inputRows": 13851,
+      "outputRows": 13851,
+      "headerEqual": true,
+      "changedCells": 1,
+      "changedRows": 1,
+      "changedHeaders": [
+        "Güncellenecek Fiyat"
+      ],
+      "originalColumnsPreserved": true,
+      "selectionCellValue": "24 Saat",
+      "priceComesFrom": "24 Saat Fiyat"
+    }
+  ],
+  "commissionChecks": {
+    "leafRows": 1504,
+    "matched": 1504,
+    "commissionChecks": 6016,
+    "commissionPass": 6016,
+    "priceBoundaryChecks": 6016,
+    "priceBoundaryPass": 6016,
+    "marginChecks": 6016,
+    "marginPass": 6016
+  },
+  "starChecks": {
+    "leafRows": 1603,
+    "matched": 1603,
+    "priceChecks": 4809,
+    "pricePass": 4809,
+    "marginChecks": 4809,
+    "marginPass": 4809,
+    "commissionOverlapChecks": 4512,
+    "commissionOverlapPass": 4512
+  },
+  "flashChecks": {
+    "offerRows": 11799,
+    "matchedSourceRows": 11799,
+    "priceChecks": 11799,
+    "pricePass": 11799,
+    "dateChecks": 11799,
+    "datePass": 11799,
+    "marginChecks": 11799,
+    "marginPass": 11799,
+    "dateAwareCommissionChecks": 11799,
+    "dateAwareCommissionPass": 11799,
+    "dateOutsideTariffBaseChecks": 6640,
+    "dateOutsideTariffBasePass": 6640,
+    "threeHourOffers": 0,
+    "failureReasons": {
+      "Ürün maliyeti olmadığı için karlılık hesaplanamadı": 2052
+    }
+  },
+  "profitBreakdownSamples": [
+    {
+      "kind": "commission",
+      "samples": 1,
+      "profitReconciles": true,
+      "tableMatchesDetails": true,
+      "commissionReconciles": true
+    },
+    {
+      "kind": "star",
+      "samples": 1,
+      "profitReconciles": true,
+      "tableMatchesDetails": true,
+      "commissionReconciles": true
+    },
+    {
+      "kind": "flash",
+      "samples": 1,
+      "profitReconciles": true,
+      "tableMatchesDetails": true,
+      "commissionReconciles": true
+    }
+  ],
+  "testSelectionsRestored": {
+    "commission": {
+      "pendingSelectionsEmpty": true,
+      "noSelectedLevels": true
+    },
+    "star": {
+      "pendingSelectionsEmpty": true,
+      "noSelectedLevels": true
+    },
+    "flash": {
+      "pendingSelectionsEmpty": true,
+      "noSelectedLevels": true
+    }
+  }
+}
