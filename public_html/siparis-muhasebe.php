@@ -32,18 +32,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $settlements = order_accounting_settlements((int)$user['id'], $order);
             require_once __DIR__ . '/../includes/trendyol.php';
             $client = new TrendyolClient($integration['seller_id'], $integration['api_key'],
-                $integration['api_secret'], (bool)$integration['stage'], null, true);
+                $integration['api_secret'], (bool)$integration['stage'], order_accounting_transport(), true);
             try {
                 $result = $client->getOrderClaims($order);
                 if (!$result['ok']) throw new RuntimeException($result['error']);
-                $claims = order_accounting_claims($result['rows'], $order);
+                $claims = order_accounting_claims($result['rows'], $order, $packages);
             } catch (RuntimeException $e) {
                 $errors[] = 'İadeler: ' . $e->getMessage();
             }
             if ($payment !== '') {
                 $result = $client->getPaymentOrderLedger($payment);
-                if ($result['ok']) $ledger = order_accounting_ledger($result['rows'], $order);
-                else $errors[] = 'Ödeme emri: ' . $result['error'];
+                if ($result['ok']) {
+                    $ledger = order_accounting_ledger($result['rows'], $order);
+                    $ledger['rows'] = order_accounting_flag_duplicates($ledger['rows'], $settlements);
+                } else {
+                    $errors[] = 'Ödeme emri: ' . $result['error'];
+                }
             }
             if ($invoice !== '') {
                 try {
@@ -86,8 +90,12 @@ require __DIR__ . '/../includes/header.php';
       <?php endforeach; ?>
     </section>
     <section class="card"><h2>İade kalemleri</h2>
+      <p>İade durumu talebi gösterir; finansal ters hareket ayrıca aşağıdaki cari/ödeme kayıtlarında aranır. Kabul edilen iade tek başına para hareketi kanıtı değildir.</p>
       <?php if (!$claims): ?><p>Gösterilecek iade kalemi yok.</p><?php endif; ?>
-      <ul><?php foreach ($claims as $claim): ?><li><?= h($claim['line']) ?> · <?= h($claim['status']) ?></li><?php endforeach; ?></ul>
+      <ul><?php foreach ($claims as $claim): ?><li><?= h($claim['status']) ?> ·
+        <?php if ($claim['match'] === 'matched'): ?>Paket <?= h($claim['package']) ?> · <?= h($claim['barcode']) ?>
+        <?php elseif ($claim['match'] === 'ambiguous'): ?>Eşleşme belirsiz (satır kimliği birden fazla kayıtta veya paket bilgisi çelişkili)<?php
+        else: ?>Satır eşleşmedi (yerelde kimlik bulunamadı)<?php endif; ?></li><?php endforeach; ?></ul>
     </section>
     <section class="card"><h2>Senkronize cari hareketler</h2>
       <?php if (!$settlements): ?><p>Eşleşen kimlikli cari hareket bulunamadı.</p><?php endif; ?>
@@ -98,7 +106,7 @@ require __DIR__ . '/../includes/header.php';
     <section class="card"><h2>Ödeme emri hareketleri</h2>
       <?php if (empty($ledger['rows'])): ?><p>Gösterilecek eşleşen hareket yok.</p><?php endif; ?>
       <ul><?php foreach ($ledger['rows'] ?? [] as $row): ?>
-        <li><?= h($row['type']) ?> · Paket <?= h($row['package'] ?: 'Bilinmiyor') ?> · Borç <?= tl($row['debt']) ?> · Alacak <?= tl($row['credit']) ?> · Komisyon <?= $row['commission'] === null ? 'Bilinmiyor' : tl($row['commission']) ?></li>
+        <li><?= h($row['type']) ?> · Paket <?= h($row['package'] ?: 'Bilinmiyor') ?> · Borç <?= tl($row['debt']) ?> · Alacak <?= tl($row['credit']) ?> · Komisyon <?= $row['commission'] === null ? 'Bilinmiyor' : tl($row['commission']) ?><?= !empty($row['duplicate']) ? ' · Mükerrer (cari hesapta da var)' : '' ?></li>
       <?php endforeach; ?></ul>
       <?php if (!empty($ledger['invoices'])): ?><p>Ödeme emrindeki kargo faturası adayları: <?= h(implode(', ', $ledger['invoices'])) ?></p><?php endif; ?>
     </section>

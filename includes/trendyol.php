@@ -177,7 +177,7 @@ final class TrendyolClient
             $lines[]=['barcode'=>$line['barcode'],'productName'=>$line['productName']??'',
                 'quantity'=>(int)$line['quantity'],'price'=>(float)$price,'merchantSku'=>$line['stockCode']??'',
                 'vatRate'=>$line['vatRate']??null,'commissionRate'=>$line['commission']??null,
-                'orderLineId'=>isset($line['id']) ? (string)$line['id'] : null,
+                'orderLineId'=>isset($line['lineId']) ? (string)$line['lineId'] : (isset($line['id']) ? (string)$line['id'] : null),
                 'discounts'=>array_intersect_key($line, array_flip(['discount', 'tyDiscount', 'lineTotalDiscount',
                     'lineSellerDiscount', 'lineTyDiscount', 'lineGrossAmount', 'currencyCode']))];
         }

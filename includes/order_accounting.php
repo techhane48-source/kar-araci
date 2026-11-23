@@ -13,29 +13,73 @@ function order_accounting_packages(int $userId, string $orderNumber): array
 
 function order_accounting_settlements(int $userId, string $orderNumber): array
 {
-    $query = db()->prepare("SELECT transaction_type, shipment_package_id, debt, credit
+    $query = db()->prepare("SELECT transaction_type, shipment_package_id, provider_id, barcode, debt, credit
         FROM settlements WHERE user_id = ? AND marketplace = 'trendyol' AND order_number = ?
         AND provider_id IS NOT NULL ORDER BY transaction_date, id");
     $query->execute([$userId, $orderNumber]);
     return $query->fetchAll();
 }
 
-function order_accounting_claims(array $rows, string $orderNumber): array
+/**
+ * İade kalemlerini sipariş satırlarıyla sağlayıcı kimliğiyle eşleştirir.
+ * Eşleşme anahtarı: claim `items[].orderLine.id` (resmî "Sipariş satır ID") ↔
+ * yerel satır `orderLineId` (akış `lines[].lineId`). Barkod/adet/tutar
+ * benzerliğinden eşleşme ÜRETİLMEZ; yalnızca belgelenmiş kimlik kullanılır.
+ * `orderShipmentPackageId` paket düzeyinde çapraz doğrulama içindir.
+ * Sonuç `match`: matched | ambiguous | not_found.
+ */
+function order_accounting_claims(array $rows, string $orderNumber, array $packages): array
 {
+    $byLineId = [];
+    foreach ($packages as $package) {
+        $packageNumber = (string)($package['package_number'] ?? '');
+        foreach (json_decode($package['lines'] ?? '[]', true) ?: [] as $line) {
+            if (!is_array($line)) continue;
+            $lineId = (string)($line['orderLineId'] ?? '');
+            if ($lineId === '') continue; // kimliksiz (eski) satır eşleştirilemez
+            $byLineId[$lineId][] = ['package' => $packageNumber, 'barcode' => (string)($line['barcode'] ?? '')];
+        }
+    }
+
     $items = [];
     foreach ($rows as $row) {
         if ((string)($row['orderNumber'] ?? '') !== $orderNumber || !is_array($row['items'] ?? null)) {
             throw new UnexpectedValueException('İade kaydı siparişle eşleşmedi veya eksik.');
         }
+        $claimPackage = (string)($row['orderShipmentPackageId'] ?? '');
         foreach ($row['items'] as $group) {
             if (!is_array($group['claimItems'] ?? null)) throw new UnexpectedValueException('İade kalemleri eksik.');
+            $lineId = (string)($group['orderLine']['id'] ?? '');
+            $claimBarcode = (string)($group['orderLine']['barcode'] ?? '');
             foreach ($group['claimItems'] as $item) {
                 $id = (string)($item['id'] ?? '');
                 $status = $item['claimItemStatus']['name'] ?? '';
                 if ($id === '' || isset($items[$id]) || !is_string($status) || $status === '') {
                     throw new UnexpectedValueException('İade kalemi kimliği veya durumu geçersiz.');
                 }
-                $items[$id] = ['line' => (string)($item['orderLineItemId'] ?? $group['orderLine']['id'] ?? ''), 'status' => $status];
+                $candidates = $byLineId[$lineId] ?? [];
+                if ($lineId === '' || !$candidates) {
+                    $match = 'not_found'; $package = null; $barcode = null;
+                } elseif (count($candidates) > 1) {
+                    $match = 'ambiguous'; $package = null; $barcode = null;
+                } else {
+                    $candidate = $candidates[0];
+                    if ($claimPackage !== '' && $candidate['package'] !== '' && $claimPackage !== $candidate['package']) {
+                        $match = 'ambiguous'; $package = null; $barcode = null;
+                    } else {
+                        $match = 'matched';
+                        $package = $candidate['package'] !== '' ? $candidate['package'] : ($claimPackage !== '' ? $claimPackage : null);
+                        $barcode = $candidate['barcode'] !== '' ? $candidate['barcode'] : ($claimBarcode !== '' ? $claimBarcode : null);
+                    }
+                }
+                $items[$id] = [
+                    'id' => $id,
+                    'line_id' => $lineId,
+                    'status' => $status,
+                    'package' => $package,
+                    'barcode' => $barcode,
+                    'match' => $match,
+                ];
             }
         }
     }
@@ -56,6 +100,8 @@ function order_accounting_ledger(array $rows, string $orderNumber): array
         if ((string)($row['orderNumber'] ?? '') !== $orderNumber) continue;
         $matching[] = [
             'type' => $type,
+            'source' => $source,
+            'id' => (string)($row['id'] ?? ''),
             'package' => (string)($row['shipmentPackageId'] ?? ''),
             'debt' => (float)$row['debt'],
             'credit' => (float)$row['credit'],
@@ -63,6 +109,39 @@ function order_accounting_ledger(array $rows, string $orderNumber): array
         ];
     }
     return ['rows' => $matching, 'invoices' => array_values($invoiceIds)];
+}
+
+/**
+ * Ödeme emri hareketlerinden, senkronize cari kayıtlarla aynı sağlayıcı
+ * işlem kimliğini (`id` == `provider_id`) taşıyanları mükerrer olarak
+ * işaretler. Kimlik ilişkisi doğrulanamayan kayıtlar ayrı kalır; birleşik
+ * tutar üretilmez.
+ */
+function order_accounting_flag_duplicates(array $ledgerRows, array $settlements): array
+{
+    $providerIds = [];
+    foreach ($settlements as $s) {
+        $pid = (string)($s['provider_id'] ?? '');
+        if ($pid !== '') $providerIds[$pid] = true;
+    }
+    foreach ($ledgerRows as &$row) {
+        $row['duplicate'] = ($row['source'] ?? '') === 'settlements'
+            && isset($providerIds[(string)($row['id'] ?? '')]);
+    }
+    unset($row);
+    return $ledgerRows;
+}
+
+/**
+ * Test ortamında sağlayıcı yanıtlarını taklit etmek için kullanılan taşıyıcı.
+ * Üretimde KARFIYAT_TEST_TRANSPORT tanımsızdır ve canlı istemci kullanılır.
+ */
+function order_accounting_transport(): ?callable
+{
+    $file = getenv('KARFIYAT_TEST_TRANSPORT');
+    if (!is_string($file) || $file === '' || !is_file($file)) return null;
+    $transport = require $file;
+    return is_callable($transport) ? $transport : null;
 }
 
 function order_accounting_amount(mixed $value): ?float

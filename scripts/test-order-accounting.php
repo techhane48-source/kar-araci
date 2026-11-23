@@ -20,10 +20,68 @@ function check(bool $condition, string $label): void
     echo "PASS $label\n";
 }
 
+// Sipariş kullanıcıya göre ayrılır (boş satırlar)
 $insert = db()->prepare("INSERT INTO orders (user_id, order_number, package_number) VALUES (?, '123', ?)");
 $insert->execute([1, 'own']);
 $insert->execute([2, 'foreign']);
 check(array_column(order_accounting_packages(1, '123'), 'package_number') === ['own'], 'Sipariş kullanıcıya göre ayrılır');
+
+// Kabul senaryosu: aynı sipariş '456', aynı barkod BC-1, farklı satır kimlikleri, iki paket.
+$insertOrder = db()->prepare("INSERT INTO orders (user_id, marketplace, order_number, package_number, status, total_price, order_date, lines)
+    VALUES (1, 'trendyol', '456', ?, 'Delivered', ?, 0, ?)");
+$linesA = json_encode([['barcode' => 'BC-1', 'quantity' => 3, 'price' => 100, 'orderLineId' => '100']]);
+$linesB = json_encode([['barcode' => 'BC-1', 'quantity' => 1, 'price' => 100, 'orderLineId' => '200']]);
+$insertOrder->execute(['PKG-A', 300, $linesA]);
+$insertOrder->execute(['PKG-B', 100, $linesB]);
+$packages = order_accounting_packages(1, '456');
+
+// İade kalemi → satır eşleşmesi
+$claim = ['orderNumber' => '456', 'orderShipmentPackageId' => 'PKG-A', 'items' => [[
+    'orderLine' => ['id' => 100, 'barcode' => 'BC-1'],
+    'claimItems' => [['id' => 'claim-1', 'orderLineItemId' => 5, 'claimItemStatus' => ['name' => 'Accepted']]],
+]]];
+$r = order_accounting_claims([$claim], '456', $packages);
+check(count($r) === 1 && $r[0]['match'] === 'matched' && $r[0]['package'] === 'PKG-A' && $r[0]['barcode'] === 'BC-1', 'İade doğru satır/pakete eşleşir; aynı barkodlu diğer paket etkilenmez');
+
+// Aynı barkod farklı satır kimliği → yalnızca kimlik eşleşmesi kullanılır
+$claimB = ['orderNumber' => '456', 'orderShipmentPackageId' => 'PKG-B', 'items' => [[
+    'orderLine' => ['id' => 200, 'barcode' => 'BC-1'],
+    'claimItems' => [['id' => 'claim-2', 'orderLineItemId' => 6, 'claimItemStatus' => ['name' => 'Created']]],
+]]];
+$r = order_accounting_claims([$claimB], '456', $packages);
+check(count($r) === 1 && $r[0]['match'] === 'matched' && $r[0]['package'] === 'PKG-B', 'Aynı barkodda farklı satır kimliği doğru paketi bulur');
+
+// Satır kimliği yerelde yok → not_found
+$claimMissing = ['orderNumber' => '456', 'items' => [[
+    'orderLine' => ['id' => 999, 'barcode' => 'BC-1'],
+    'claimItems' => [['id' => 'claim-3', 'claimItemStatus' => ['name' => 'Created']]],
+]]];
+$r = order_accounting_claims([$claimMissing], '456', $packages);
+check($r[0]['match'] === 'not_found', 'Yerelde bulunamayan satır kimliği eşleşme eksikliği olarak görünür');
+
+// Aynı satır kimliği birden fazla yerel satırda → ambiguous
+$dupLines = json_encode([['barcode' => 'X', 'quantity' => 1, 'price' => 1, 'orderLineId' => '777'], ['barcode' => 'Y', 'quantity' => 1, 'price' => 1, 'orderLineId' => '777']]);
+$insertDup = db()->prepare("INSERT INTO orders (user_id, marketplace, order_number, package_number, status, total_price, order_date, lines) VALUES (1,'trendyol','789','PKG-DUP','Delivered',0,0,?)");
+$insertDup->execute([$dupLines]);
+$claimDup = ['orderNumber' => '789', 'items' => [['orderLine' => ['id' => 777], 'claimItems' => [['id' => 'claim-4', 'claimItemStatus' => ['name' => 'Created']]]]]];
+$r = order_accounting_claims([$claimDup], '789', order_accounting_packages(1, '789'));
+check($r[0]['match'] === 'ambiguous', 'Aynı kimlik birden fazla satırda → belirsiz');
+
+// Paket bilgisi çelişkisi → ambiguous
+$claimConflict = ['orderNumber' => '456', 'orderShipmentPackageId' => 'PKG-B', 'items' => [[
+    'orderLine' => ['id' => 100, 'barcode' => 'BC-1'],
+    'claimItems' => [['id' => 'claim-5', 'claimItemStatus' => ['name' => 'Created']]],
+]]];
+$r = order_accounting_claims([$claimConflict], '456', $packages);
+check($r[0]['match'] === 'ambiguous', 'Paket bilgisi çelişkili → belirsiz');
+
+// Eski (kimliksiz) satır eşleştirilemez → not_found, hata yok
+$legacyLines = json_encode([['barcode' => 'LEGACY', 'quantity' => 1, 'price' => 1]]);
+$insertLegacy = db()->prepare("INSERT INTO orders (user_id, marketplace, order_number, package_number, status, total_price, order_date, lines) VALUES (1,'trendyol','999','PKG-LEG','Delivered',0,0,?)");
+$insertLegacy->execute([$legacyLines]);
+$claimLegacy = ['orderNumber' => '999', 'items' => [['orderLine' => ['id' => 100], 'claimItems' => [['id' => 'claim-6', 'claimItemStatus' => ['name' => 'Created']]]]]];
+$r = order_accounting_claims([$claimLegacy], '999', order_accounting_packages(1, '999'));
+check($r[0]['match'] === 'not_found', 'Kimliksiz eski satır okunur ve eşleşme eksikliği görünür');
 
 $client = new TrendyolClient('123', 'fixture', 'fixture', false,
     static function ($method, $path, $query): array {
@@ -42,7 +100,7 @@ $client = new TrendyolClient('123', 'fixture', 'fixture', false,
     }, true);
 
 $claims = $client->getOrderClaims('123');
-check($claims['complete'] && order_accounting_claims($claims['rows'], '123') === [['line' => '5', 'status' => 'Accepted']], 'İade kalemi eşleşir');
+check($claims['complete'] && count(order_accounting_claims($claims['rows'], '123', order_accounting_packages(1, '123'))) === 1, 'İade kalemi kaydı ayrışır');
 $cargo = $client->getCargoInvoiceItems('TEST-1');
 check($cargo['complete'] && array_column(order_accounting_cargo($cargo['rows'], '123'), 'amount') === [34.24], 'Diğer siparişin kargosu dışarıda kalır');
 
@@ -51,12 +109,25 @@ $bad = new TrendyolClient('123', 'fixture', 'fixture', false,
 check(!$bad->getOrderClaims('123')['ok'], 'Eksik sayfada başarılı sonuç yok');
 
 $ledger = order_accounting_ledger([
-    ['orderNumber' => '123', 'transactionType' => 'Satış', 'debt' => 0, 'credit' => 100],
-    ['orderNumber' => '123', 'transactionType' => 'İade', 'debt' => 25, 'credit' => 0, 'commissionAmount' => 0],
+    ['orderNumber' => '123', 'transactionType' => 'Satış', 'id' => 'FIN-1', 'source' => 'settlements', 'debt' => 0, 'credit' => 100],
+    ['orderNumber' => '123', 'transactionType' => 'İade', 'id' => 'FIN-2', 'source' => 'settlements', 'debt' => 25, 'credit' => 0, 'commissionAmount' => 0],
     ['source' => 'otherfinancials', 'transactionType' => 'Kargo Faturası', 'id' => 'TEST-1'],
 ], '123');
 check(array_column($ledger['rows'], 'commission') === [null, 0.0], 'Bilinmeyen komisyon sıfırdan ayrılır');
 check($ledger['invoices'] === ['TEST-1'], 'Ödeme emrindeki kargo faturası adayı bulunur');
+
+// Finans hareketi mükerrerliği: cari (provider_id) ile ödeme emri (id) aynı sağlayıcı kaydı.
+$settlements = [['provider_id' => 'FIN-1', 'transaction_type' => 'Satış', 'shipment_package_id' => 'PKG', 'debt' => 0, 'credit' => 100]];
+$flag = order_accounting_flag_duplicates($ledger['rows'], $settlements);
+check($flag[0]['duplicate'] === true && $flag[1]['duplicate'] === false, 'Aynı sağlayıcı hareketi cari ve ödeme emrinde mükerrer işaretlenir');
+check($flag[0]['id'] === 'FIN-1', 'Mükerrer kayıt kimliği korunur');
+
+// Doğrulanamayan kimlik mükerrer sayılmaz, birleşik tutar üretilmez.
+$flag2 = order_accounting_flag_duplicates([
+    ['source' => 'settlements', 'id' => 'UNKNOWN-1', 'debt' => 5, 'credit' => 0],
+    ['source' => 'otherfinancials', 'id' => 'UNKNOWN-1', 'debt' => 5, 'credit' => 0],
+], $settlements);
+check($flag2[0]['duplicate'] === false && $flag2[1]['duplicate'] === false, 'Doğrulanamayan kimlik mükerrer sayılmaz');
 
 check(order_accounting_discounts(['discounts' => ['lineTotalDiscount' => 10.00, 'quantity' => 2]]) === ['seller' => null, 'trendyol' => null, 'api' => 10.0], 'API indirimi ayrı gösterilir; birim türetilmez');
 check(order_accounting_discounts(['discounts' => ['lineSellerDiscount' => 3, 'lineTyDiscount' => 0]]) === ['seller' => 3.0, 'trendyol' => 0.0, 'api' => null], 'Satıcı ve sıfır Trendyol indirimi ayrı korunur');
