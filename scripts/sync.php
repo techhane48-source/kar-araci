@@ -14,6 +14,7 @@ foreach ($integrations as $int) {
         $tasks['price-status']=static fn()=>process_price_updates((int)$int['user_id'],$int['marketplace']);
         $tasks['orders']=static fn()=>sync_orders((int)$int['user_id'],$int['marketplace'],$days);
         $tasks['settlements']=static fn()=>sync_settlements((int)$int['user_id'],$int['marketplace'],$days);
+        $tasks['service-fees']=static fn()=>sync_platform_service_fees((int)$int['user_id'],$int['marketplace'],$days);
     }
     foreach ($tasks as $task=>$run) {
         $result=$run();

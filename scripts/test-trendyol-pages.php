@@ -70,6 +70,19 @@ $repeated=new TrendyolClient('seller','x','x',false,static fn($m,$p,$q)=>respons
 check(!$repeated->getSettlements('Return')['ok'],'Tekrarlanan finans işlemi reddedilir');
 $missingRate=new TrendyolClient('seller','x','x',false,static fn()=>response([['id'=>'F','transactionType'=>'Satış']],1,1));
 check(!$missingRate->getSettlements('Sale')['ok'],'Eksik satış komisyonu yüzde sıfır sayılmaz');
+$psfCalls=[];
+$psf=new TrendyolClient('seller','x','x',false,static function($m,$p,$q) use(&$psfCalls):array {$psfCalls[]=$q;$page=(int)$q['page'];return response([['id'=>'PSF'.$page,'transactionType'=>'DeductionInvoices','transactionDate'=>1700000000000,'debt'=>13.19,'credit'=>0]],2,2,$page);});
+$r=$psf->getPlatformServiceFees('2026-11-01','2026-11-02');
+check($r['ok'] && count($r['rows'])===2,'Platform hizmet bedeli tüm sayfaları eksiksiz birleşir');
+check($psfCalls[0]['transactionType']==='DeductionInvoices' && $psfCalls[0]['transactionSubType']==='PlatformServiceFee' && isset($psfCalls[0]['startDate']) && isset($psfCalls[0]['endDate']),'Hizmet bedeli resmî DeductionInvoices+PlatformServiceFee ve tarih filtresiyle çekilir');
+$psfNoId=new TrendyolClient('seller','x','x',false,static fn()=>response([['debt'=>1,'credit'=>0]],1,1));
+check(!$psfNoId->getPlatformServiceFees()['ok'],'Kimliksiz hizmet bedeli kaydı reddedilir');
+$psfRepeat=new TrendyolClient('seller','x','x',false,static fn($m,$p,$q)=>response([['id'=>'SAME','debt'=>1,'credit'=>0]],2,2,(int)$q['page']));
+check(!$psfRepeat->getPlatformServiceFees()['ok'],'Tekrarlanan hizmet bedeli işlemi reddedilir');
+$psfBad=new TrendyolClient('seller','x','x',false,static fn()=>response([['id'=>'F','debt'=>'x','credit'=>0]],1,1));
+check(!$psfBad->getPlatformServiceFees()['ok'],'Geçersiz hizmet bedeli tutarı reddedilir');
+$psfEmpty=new TrendyolClient('seller','x','x',false,static fn()=>response([],0,0));
+check($psfEmpty->getPlatformServiceFees()['ok'] && count($psfEmpty->getPlatformServiceFees()['rows'])===0,'Gerçek boş hizmet bedeli sonucu kabul edilir');
 $batch=new TrendyolClient('seller','x','x',false,static function($m,$p,$q,$body):array {
     if($m==='POST'){check(!isset(json_decode($body,true)['items'][0]['quantity']),'Fiyat isteği stok içermek zorunda değildir');return ['http'=>200,'body'=>['batchRequestId'=>'BATCH']];}
     return ['http'=>200,'body'=>['batchRequestId'=>'BATCH','items'=>[['requestItem'=>['barcode'=>'A'],'status'=>'SUCCESS','failureReasons'=>[]]]]];

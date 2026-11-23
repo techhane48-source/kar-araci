@@ -62,6 +62,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $supported) {
             } else {
                 $error = 'Cari hesap ekstresi hatası: ' . ($res['error'] ?? 'Bilinmeyen hata');
             }
+        } elseif ($action === 'service_fees') {
+            $res = sync_platform_service_fees((int)$u['id'], $mp);
+            if ($res['ok']) {
+                $ok = "Platform hizmet bedeli çekildi: {$res['records']} hareket.";
+            } else {
+                $error = 'Platform hizmet bedeli hatası: ' . ($res['error'] ?? 'Bilinmeyen hata');
+            }
         } elseif ($action === 'disconnect') {
             delete_integration((int)$u['id'], $mp);
             $int = null;
@@ -124,6 +131,13 @@ if ($supported && $hasConnection) {
 $updates=db()->prepare('SELECT * FROM price_updates WHERE user_id=? AND marketplace=? ORDER BY id DESC LIMIT 20');
 $updates->execute([$u['id'],$mp]);$priceUpdates=$updates->fetchAll();
 
+$serviceFees = [];
+if ($supported && $hasConnection) {
+    $sfq = db()->prepare("SELECT * FROM platform_service_fees WHERE user_id = ? AND marketplace = ? ORDER BY transaction_date DESC, provider_id DESC LIMIT 200");
+    $sfq->execute([(int)$u['id'], $mp]);
+    $serviceFees = $sfq->fetchAll();
+}
+
 require __DIR__ . '/../includes/header.php';
 ?>
 <div class="wrap">
@@ -183,6 +197,42 @@ require __DIR__ . '/../includes/header.php';
         </form>
       </div>
       <p class="hint" style="margin-top:14px">Ürünler çekildikten sonra <a href="urunler.php">Ürünlerim</a> sayfasında görünür. Maliyet alanını her ürün için siz girersiniz (API'den maliyet gelmez). <strong>"Komisyonları Çek"</strong> ile Trendyol'un resmi cari hesap ekstresinden finans kayıtları alınır; ürünlerin komisyon oranları en güncel satış kaydından güncellenir. Kargo ve hakediş mutabakatı ayrıca değerlendirilmelidir.</p>
+    </div>
+
+    <div class="card" style="margin-top:16px">
+      <h2>Platform Hizmet Bedeli (Trendyol)</h2>
+      <div class="detail-row"><span>Son başarılı çekim</span><strong><?= $int['last_service_fees_sync'] ? date('d.m.Y H:i', (int)$int['last_service_fees_sync']) : 'Henüz çekilmedi' ?></strong></div>
+      <p class="hint">Trendyol Other Financials → <em>DeductionInvoices / PlatformServiceFee</em> ile bildirilen gerçek hizmet bedeli hareketleri (TL). Bu tutar kâr hesabındaki tahminin yerine kullanılmaz ve siparişlere dağıtılmaz; yalnızca dönem düzeyinde referanstır. Borç ve alacak ayrı gösterilir.</p>
+      <form method="post" style="display:inline">
+        <input type="hidden" name="csrf" value="<?= csrf_token() ?>">
+        <input type="hidden" name="action" value="service_fees">
+        <button type="submit" class="btn-ghost">Hizmet Bedellerini Çek</button>
+      </form>
+      <?php if (!$int['last_service_fees_sync']): ?>
+        <p class="hint">Henüz platform hizmet bedeli çekilmedi.</p>
+      <?php elseif (!$serviceFees): ?>
+        <p class="hint">Bu dönemde platform hizmet bedeli hareketi yok (eksiksiz boş sonuç).</p>
+      <?php else: ?>
+        <div class="table-card">
+          <table>
+            <tr><th>Tarih</th><th>İşlem ID</th><th>Dekont No</th><th>Fatura Seri No</th><th>Borç</th><th>Alacak</th><th>Sipariş</th><th>Paket</th></tr>
+            <?php foreach ($serviceFees as $f): ?>
+            <tr>
+              <td><?= $f['transaction_date'] ? date('d.m.Y H:i', (int)$f['transaction_date']) : '—' ?></td>
+              <td style="font-size:12px"><?= h($f['provider_id']) ?></td>
+              <td><?= $f['receipt_id'] !== null ? h((string)$f['receipt_id']) : '—' ?></td>
+              <td style="font-size:12px"><?= $f['invoice_serial'] !== '' ? h($f['invoice_serial']) : '—' ?></td>
+              <td><?= tl((float)$f['debt']) ?></td>
+              <td><?= tl((float)$f['credit']) ?></td>
+              <td><?= $f['order_number'] !== '' ? h($f['order_number']) : '—' ?></td>
+              <td><?= $f['shipment_package_id'] !== '' ? h($f['shipment_package_id']) : '—' ?></td>
+            </tr>
+            <?php endforeach; ?>
+            <?php $debtTotal = 0.0; $creditTotal = 0.0; foreach ($serviceFees as $f) { $debtTotal += (float)$f['debt']; $creditTotal += (float)$f['credit']; } ?>
+            <tr><td colspan="4"><strong>Toplam (dönem)</strong></td><td><strong><?= tl($debtTotal) ?></strong></td><td><strong><?= tl($creditTotal) ?></strong></td><td colspan="2"></td></tr>
+          </table>
+        </div>
+      <?php endif; ?>
     </div>
 
     <div class="card" style="margin-top:16px">

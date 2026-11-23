@@ -50,9 +50,21 @@ iptal/ters kayıt tipi de yoktur.
 Kâr hesabında kullanılan 13,19₺ (`trendyol_service_fee()`) Melontik modelinden
 alınan bir **tahmindir**, gerçek bedel değildir. Bu tahmin, settlements `Sale`
 komisyonundan ayrı bir kalemdir ve kârda yalnızca bir kez düşülür. Gerçek bedel
-siparişe güvenle bağlanamadığı için tahmin korunur; gerçek bedel (senkronize
-edilirse) siparişe dağıtılmadan genel/dönem düzeyinde ayrıca gösterilmelidir.
-Bir bedelin doğrulanması sipariş kârının kesinleştiği anlamına gelmez.
+siparişe güvenle bağlanamadığı için tahmin korunur; gerçek bedel siparişe
+dağıtılmadan dönem düzeyinde ayrıca gösterilir. Bir bedelin doğrulanması sipariş
+kârının kesinleştiği anlamına gelmez.
+
+**Senkronizasyon ve gösterim:** `sync_platform_service_fees()` Other Financials'ın
+`otherfinancials` ucunu `transactionType=DeductionInvoices` +
+`transactionSubType=PlatformServiceFee` filtreleriyle ve 14 günlük (belgedeki ≤15 gün
+sınırı) tarih pencereleriyle sorgular; `page`/`size` sayfalama 500'lük sayfalar
+kullanır. Kayıtlar `platform_service_fees` tablosuna `provider_id` (`id` işlem
+kimliği) ile tekil yazılır; `debt`/`credit` borç/alacak olarak ayrı, `receiptId`
+(Dekont No) ve `commissionInvoiceSerialNumber` (fatura seri no) referans olarak
+saklanır. Para birimi alanı yoktur (tümü TL). Sonuç `magaza.php` sayfasında dönem
+düzeyinde gösterilir; borç ve alacak ayrı toplanır, tahminle değiştirilmez ve
+sipariş kârına girmez. Cron (`scripts/sync.php`) bu sorguyu ayrı bir görev olarak
+çalıştırır; başarısızlığı cari hesap işinin sonucunu etkilemez.
 
 ## Sıklık ve doğrulama
 

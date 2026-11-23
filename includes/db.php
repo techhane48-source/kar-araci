@@ -252,6 +252,7 @@ function migrate(): void
     foreach ([
         'revision' => 'INTEGER NOT NULL DEFAULT 0',
         'last_settlements_sync' => 'INTEGER DEFAULT NULL',
+        'last_service_fees_sync' => 'INTEGER DEFAULT NULL',
         'orders_coverage_from' => 'INTEGER DEFAULT NULL',
         'last_sync_error' => 'TEXT DEFAULT NULL',
         'last_sync_error_scope' => 'TEXT DEFAULT NULL',
@@ -263,6 +264,25 @@ function migrate(): void
     if (!in_array('provider_id', $scols, true)) $pdo->exec('ALTER TABLE settlements ADD COLUMN provider_id TEXT DEFAULT NULL');
     $pdo->exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_settlements_provider ON settlements(user_id, marketplace, provider_id)");
     $pdo->exec("CREATE INDEX IF NOT EXISTS idx_settlements_barcode ON settlements(user_id, marketplace, barcode, transaction_type, transaction_date DESC)");
+    $pdo->exec("CREATE TABLE IF NOT EXISTS platform_service_fees (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER NOT NULL,
+        marketplace TEXT NOT NULL DEFAULT 'trendyol',
+        provider_id TEXT NOT NULL,
+        transaction_date INTEGER DEFAULT NULL,
+        receipt_id INTEGER DEFAULT NULL,
+        invoice_serial TEXT NOT NULL DEFAULT '',
+        description TEXT NOT NULL DEFAULT '',
+        debt REAL NOT NULL DEFAULT 0,
+        credit REAL NOT NULL DEFAULT 0,
+        order_number TEXT NOT NULL DEFAULT '',
+        shipment_package_id TEXT NOT NULL DEFAULT '',
+        barcode TEXT NOT NULL DEFAULT '',
+        payment_order_id INTEGER DEFAULT NULL,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        UNIQUE(user_id, marketplace, provider_id)
+    )");
+    $pdo->exec("CREATE INDEX IF NOT EXISTS idx_psf_user_date ON platform_service_fees(user_id, marketplace, transaction_date)");
     $pdo->exec("CREATE INDEX IF NOT EXISTS idx_products_market_barcode ON products(user_id, marketplace, barcode)");
     $pdo->exec("CREATE TABLE IF NOT EXISTS settlement_legacy_archive (
         source_id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL, marketplace TEXT NOT NULL,

@@ -8,7 +8,7 @@ function check(bool $ok,string $label):void {global $failed;echo ($ok?'PASS ':'F
 function scalar(string $sql):mixed {return db()->query($sql)->fetchColumn();}
 function integration(int $id=1):array {$q=db()->prepare("SELECT * FROM integrations WHERE user_id=? AND marketplace='trendyol'");$q->execute([$id]);return $q->fetch();}
 final class FixtureClient {
-    public array $products=[],$orders=[],$settlements=[],$calls=[];
+    public array $products=[],$orders=[],$settlements=[],$serviceFees=[],$calls=[];
     public ?string $failure=null;
     public $beforeProducts=null;
     public function getProducts(...$args):array {
@@ -20,6 +20,10 @@ final class FixtureClient {
     public function getSettlements(string $type,...$args):array {
         $this->calls[]=['settlements',$type,$args];
         return $this->failure===$type?['ok'=>false,'error'=>'Fixture page unavailable']:['ok'=>true,'complete'=>true,'settlements'=>$this->settlements[$type]??[]];
+    }
+    public function getPlatformServiceFees(...$args):array {
+        $this->calls[]=['service_fees',$args];
+        return $this->failure==='service_fees'?['ok'=>false,'error'=>'Fixture page unavailable']:['ok'=>true,'complete'=>true,'rows'=>$this->serviceFees];
     }
 }
 foreach([1,2] as $id) {
@@ -95,4 +99,20 @@ check(!sync_products(1,'trendyol',$badStock)['ok'] && (float)scalar("SELECT pric
 $client->beforeProducts=static function():void { db()->exec("UPDATE sync_locks SET token='replacement',expires_at=".(time()+1800)." WHERE user_id=1"); };
 check(!sync_products(1,'trendyol',$client)['ok'] && scalar('SELECT token FROM sync_locks WHERE user_id=1')==='replacement','Eski iş yeni sahibin kilidini silemez');
 db()->exec('DELETE FROM sync_locks WHERE user_id=1');
+$client->beforeProducts=null;
+$psfBase=['id'=>'PSF-1','transactionType'=>'DeductionInvoices','transactionDate'=>$timestamp,'receiptId'=>123,'commissionInvoiceSerialNumber'=>'INV-001','description'=>'Platform hizmet bedeli','debt'=>13.19,'credit'=>0,'orderNumber'=>'ORDER','shipmentPackageId'=>77,'barcode'=>'A','paymentOrderId'=>321];
+$client->serviceFees=[$psfBase];
+$last=integration()['last_service_fees_sync'];
+check(sync_platform_service_fees(1,'trendyol',30,$client)['ok'] && (int)scalar('SELECT COUNT(*) FROM platform_service_fees WHERE user_id=1')===1,'Platform hizmet bedeli kaydedilir');
+check((float)scalar("SELECT debt FROM platform_service_fees WHERE provider_id='PSF-1'")===13.19 && (float)scalar("SELECT credit FROM platform_service_fees WHERE provider_id='PSF-1'")===0.0,'Hizmet bedeli borç/alacak doğru saklanır');
+check(scalar("SELECT invoice_serial FROM platform_service_fees WHERE provider_id='PSF-1'")==='INV-001' && scalar("SELECT order_number FROM platform_service_fees WHERE provider_id='PSF-1'")==='ORDER','Fatura seri no ve sipariş referansı korunur');
+check((int)scalar('SELECT COUNT(*) FROM platform_service_fees WHERE user_id=2')===0,'Başka kullanıcıya hizmet bedeli yazılmaz');
+check((float)scalar("SELECT service_fee FROM products WHERE user_id=1 AND barcode='A'")===0.0 && (float)scalar("SELECT rate FROM products WHERE user_id=1 AND barcode='A'")===9.0,'Hizmet bedeli senkronu kâr tahminini/komisyonu değiştirmez');
+check(sync_platform_service_fees(1,'trendyol',30,$client)['ok'] && (int)scalar('SELECT COUNT(*) FROM platform_service_fees WHERE user_id=1')===1,'Aynı dönem tekrar çekilince kayıt çoğalmaz');
+$client->serviceFees[0]['debt']=20.0;
+check(sync_platform_service_fees(1,'trendyol',30,$client)['ok'] && (float)scalar("SELECT debt FROM platform_service_fees WHERE provider_id='PSF-1'")===20.0,'Aynı işlemde düzeltme gelirse kayıt güncellenir');
+$last=integration()['last_service_fees_sync'];$client->failure='service_fees';
+check(!sync_platform_service_fees(1,'trendyol',30,$client)['ok'] && integration()['last_service_fees_sync']===$last,'Hizmet bedeli sorgusu başarısızsa başarı zamanı ilerlemez');
+$client->failure=null;$client->serviceFees[0]['id']='';
+check(!sync_platform_service_fees(1,'trendyol',30,$client)['ok'] && integration()['last_service_fees_sync']===$last,'Kimliksiz hizmet bedeli reddedilir; başarı zamanı korunur');
 echo $failed?"$failed test başarısız\n":"TÜM TESTLER GEÇTİ\n";exit($failed?1:0);

@@ -199,3 +199,42 @@ function sync_settlements(int $userId,string $marketplace,int $days=30,?object $
         });
     },$client);
 }
+
+function sync_platform_service_fees(int $userId,string $marketplace,int $days=30,?object $client=null): array
+{
+    return sync_job($userId,$marketplace,'service_fees',static function($int,$client,$token,$started) use($userId,$marketplace,$days):array {
+        if (!method_exists($client,'getPlatformServiceFees')) throw new SyncFailure('Bu pazaryerinde platform hizmet bedeli senkronu desteklenmiyor.');
+        if ($days<1 || $days>365) throw new SyncFailure('Hizmet bedeli aralığı 1–365 gün olmalı.');
+        $from=$started-$days*86400;$rows=[];
+        for ($s=$from;$s<$started;$s+=14*86400) {
+            $e=min($s+14*86400,$started);
+            $batch=sync_response($client->getPlatformServiceFees(date('c',$s),date('c',$e)),'rows');
+            foreach ($batch as $row) {
+                $id=trim((string)($row['id']??''));
+                if ($id==='') throw new SyncFailure('Hizmet bedeli işlem kimliği eksik; tekrar güvenli eşleştirme yapılamadı.');
+                $rows[$id]=[
+                    'id'=>$id,
+                    'transactionDate'=>sync_timestamp($row['transactionDate']??null),
+                    'receiptId'=>is_numeric($row['receiptId']??null)?(int)$row['receiptId']:null,
+                    'invoiceSerial'=>(string)($row['commissionInvoiceSerialNumber']??''),
+                    'description'=>(string)($row['description']??''),
+                    'debt'=>(float)$row['debt'],
+                    'credit'=>(float)$row['credit'],
+                    'orderNumber'=>(string)($row['orderNumber']??''),
+                    'shipmentPackageId'=>is_numeric($row['shipmentPackageId']??null)?(string)(int)$row['shipmentPackageId']:'',
+                    'barcode'=>(string)($row['barcode']??''),
+                    'paymentOrderId'=>is_numeric($row['paymentOrderId']??null)?(int)$row['paymentOrderId']:null,
+                ];
+            }
+        }
+        return sync_commit($int,$token,static function($pdo) use($rows,$userId,$marketplace,$started):array {
+            $insert=$pdo->prepare('INSERT INTO platform_service_fees(user_id,marketplace,provider_id,transaction_date,receipt_id,invoice_serial,description,debt,credit,order_number,shipment_package_id,barcode,payment_order_id)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(user_id,marketplace,provider_id) DO UPDATE SET transaction_date=excluded.transaction_date,receipt_id=excluded.receipt_id,invoice_serial=excluded.invoice_serial,description=excluded.description,debt=excluded.debt,credit=excluded.credit,order_number=excluded.order_number,shipment_package_id=excluded.shipment_package_id,barcode=excluded.barcode,payment_order_id=excluded.payment_order_id');
+            foreach ($rows as $r) {
+                $insert->execute([$userId,$marketplace,$r['id'],$r['transactionDate'],$r['receiptId'],$r['invoiceSerial'],$r['description'],$r['debt'],$r['credit'],$r['orderNumber'],$r['shipmentPackageId'],$r['barcode'],$r['paymentOrderId']]);
+            }
+            $pdo->prepare('UPDATE integrations SET last_service_fees_sync=? WHERE user_id=? AND marketplace=?')->execute([$started,$userId,$marketplace]);
+            return ['ok'=>true,'records'=>count($rows)];
+        });
+    },$client);
+}

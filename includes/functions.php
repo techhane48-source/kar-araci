@@ -153,6 +153,14 @@ function integration_client(array $int): object
     $apiSecret = $int['api_secret'] ?? '';
     $stage = (bool)($int['stage'] ?? false);
 
+    // Test ortamında sağlayıcı yanıtlarını taklit etmek için (üretimde env tanımsız → canlı istemci).
+    $transport = null;
+    $tf = getenv('KARFIYAT_TEST_TRANSPORT');
+    if (is_string($tf) && $tf !== '' && is_file($tf)) {
+        $t = require $tf;
+        if (is_callable($t)) $transport = $t;
+    }
+
     switch ($mp) {
         case 'hepsiburada':
             require_once __DIR__ . '/hb.php';
@@ -175,7 +183,7 @@ function integration_client(array $int): object
         case 'trendyol':
         default:
             require_once __DIR__ . '/trendyol.php';
-            return new TrendyolClient($sellerId, $apiKey, $apiSecret, $stage);
+            return new TrendyolClient($sellerId, $apiKey, $apiSecret, $stage, $transport);
     }
 }
 

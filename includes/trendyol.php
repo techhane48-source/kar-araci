@@ -331,6 +331,33 @@ final class TrendyolClient
         return ['ok'=>true,'complete'=>true,'rows'=>$rows,'payment_order_id'=>$id,'checked_at'=>time()];
     }
 
+    /**
+     * Gerçek platform hizmet bedeli kayıtları (Other Financials → DeductionInvoices +
+     * transactionSubType=PlatformServiceFee). Resmî belgede sipariş/paket bağı
+     * doğrulanmadığı için yalnızca dönem düzeyinde referanstır; kâr hesabındaki
+     * tahminle (trendyol_service_fee) değiştirilmez. Para birimi alanı yoktur (TL).
+     * Kaynak: https://developers.trendyol.com/reference/getotherfinancials.md
+     *
+     * @param string $startDate Y-m-d (işlem tarihi; aralık ≤15 gün)
+     * @param string $endDate   Y-m-d
+     */
+    public function getPlatformServiceFees(string $startDate = '', string $endDate = '', int $maxPage = 100): array
+    {
+        $params = ['transactionType' => 'DeductionInvoices', 'transactionSubType' => 'PlatformServiceFee'];
+        if ($startDate !== '') $params['startDate'] = strtotime($startDate) * 1000;
+        if ($endDate !== '') $params['endDate'] = strtotime($endDate) * 1000;
+        $r = $this->financeRows('otherfinancials', $params, $maxPage, 500);
+        if (!$r['ok']) return $r;
+        foreach ($r['rows'] as $row) {
+            foreach (['debt', 'credit'] as $k) {
+                if (!is_numeric($row[$k] ?? null) || !is_finite((float)$row[$k]) || abs((float)$row[$k]) > 1e12) {
+                    return $this->incomplete('Platform hizmet bedeli tutarı geçersiz.');
+                }
+            }
+        }
+        return $r;
+    }
+
     public function getOrderClaims(string $orderNumber, int $maxPages = 20): array
     {
         if ($orderNumber === '') return $this->incomplete('Sipariş numarası eksik.');
