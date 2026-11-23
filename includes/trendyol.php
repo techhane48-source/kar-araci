@@ -10,6 +10,8 @@ declare(strict_types=1);
  * kullanıcı hesabına şifreli kaydedilir ve istek anında kullanılır.
  */
 
+require_once __DIR__ . '/trendyol_rate_limit.php';
+
 final class TrendyolClient
 {
     private string $sellerId;
@@ -17,7 +19,6 @@ final class TrendyolClient
     private string $apiSecret;
     private string $base;
     private $transport;
-    private array $lastRequestAt=[];
     private bool $readOnly;
 
     // Üretim ortamı (varsayılan). Test için stageapigw kullanılabilir.
@@ -175,7 +176,10 @@ final class TrendyolClient
             if (!is_numeric($price) || (float)$price<0) return $this->incomplete('V2 net birim fiyatı eksik veya geçersiz.');
             $lines[]=['barcode'=>$line['barcode'],'productName'=>$line['productName']??'',
                 'quantity'=>(int)$line['quantity'],'price'=>(float)$price,'merchantSku'=>$line['stockCode']??'',
-                'vatRate'=>$line['vatRate']??null,'commissionRate'=>$line['commission']??null];
+                'vatRate'=>$line['vatRate']??null,'commissionRate'=>$line['commission']??null,
+                'orderLineId'=>isset($line['id']) ? (string)$line['id'] : null,
+                'discounts'=>array_intersect_key($line, array_flip(['discount', 'tyDiscount', 'lineTotalDiscount',
+                    'lineSellerDiscount', 'lineTyDiscount', 'lineGrossAmount', 'currencyCode']))];
         }
         // Resmî sipariş belgesi: orderDate GMT+3, createdDate GMT. Standart UTC epoch'a çevir.
         $date=(int)$item['orderDate']-10800000;
@@ -327,6 +331,43 @@ final class TrendyolClient
         return ['ok'=>true,'complete'=>true,'rows'=>$rows,'payment_order_id'=>$id,'checked_at'=>time()];
     }
 
+    public function getOrderClaims(string $orderNumber, int $maxPages = 20): array
+    {
+        if ($orderNumber === '') return $this->incomplete('Sipariş numarası eksik.');
+        return $this->accountingPages("/integration/order/sellers/{$this->sellerId}/claims",
+            ['orderNumber' => $orderNumber, 'size' => '200'], $maxPages, 'İadeler');
+    }
+
+    public function getCargoInvoiceItems(string $invoiceId, int $maxPages = 50): array
+    {
+        if ($invoiceId === '') return $this->incomplete('Kargo fatura kimliği eksik.');
+        $id = rawurlencode($invoiceId);
+        return $this->accountingPages("/integration/finance/che/sellers/{$this->sellerId}/cargo-invoice/$id/items",
+            ['size' => '500'], $maxPages, 'Kargo faturası');
+    }
+
+    private function accountingPages(string $path, array $query, int $limit, string $label): array
+    {
+        $rows = [];
+        $pages = $total = null;
+        for ($number = 0; ; $number++) {
+            $result = $this->page($this->request('GET', $path, $query + ['page' => (string)$number]), $number, $limit, $label);
+            if (!$result['ok']) return $result;
+            if ($number > 0 && ($pages !== $result['pages'] || $total !== $result['total'])) {
+                return $this->incomplete($label . ' sayfaları sorgu sırasında değişti.');
+            }
+            $pages = $result['pages'];
+            $total = $result['total'];
+            foreach ($result['items'] as $row) {
+                if (!is_array($row)) return $this->incomplete($label . ' satırı geçersiz.');
+                $rows[] = $row;
+            }
+            if ($number + 1 >= $pages) break;
+        }
+        if ($total !== null && count($rows) !== $total) return $this->incomplete($label . ' toplamı uyuşmuyor.');
+        return ['ok' => true, 'complete' => true, 'rows' => $rows];
+    }
+
     private function incomplete(string $error): array
     {
         return ['ok'=>false,'complete'=>false,'error'=>$error];
@@ -356,15 +397,6 @@ final class TrendyolClient
         return ['ok'=>true,'items'=>$body['content'],'pages'=>$pages,'total'=>$total,'nextPageToken'=>$body['nextPageToken']??null];
     }
 
-    private function pace(string $path): void
-    {
-        $group=str_contains($path,'/orders/stream')?'orders':(str_contains($path,'/finance/')?'finance':'products');
-        $interval=['orders'=>5.0,'finance'=>0.65,'products'=>0.21][$group];
-        $wait=($this->lastRequestAt[$group]??0)+$interval-microtime(true);
-        if ($wait>0) usleep((int)ceil($wait*1000000));
-        $this->lastRequestAt[$group]=microtime(true);
-    }
-
     /**
      * Düşük seviyeli HTTP isteği. Trendyol Basic auth + User-Agent zorunlu.
      */
@@ -372,7 +404,16 @@ final class TrendyolClient
     {
         if($this->readOnly && $method!=='GET' && !($method==='POST'&&str_ends_with($path,'/products/buybox-information'))) return ['http'=>0,'error'=>'Salt okunur doğrulama fiyat/stok yazımını engelledi.'];
         if ($this->transport!==null) return ($this->transport)($method,$path,$query,$body);
-        $this->pace($path);
+        $group = str_contains($path, '/orders/stream') ? 'stream' :
+            (str_contains($path, '/finance/') ? 'finance' : (str_contains($path, '/claims') ? 'claims' : 'products'));
+        $interval = ['stream' => 5.0, 'finance' => 0.65, 'claims' => 0.65, 'products' => 0.21][$group];
+        $scope = $this->base . '|' . $this->sellerId . '|' . $group;
+        try {
+            trendyol_rate_slot($scope, $interval);
+        } catch (RuntimeException $e) {
+            return ['http' => 0, 'error' => $e->getMessage()];
+        }
+        $retryAfter = null;
         $url = $this->base . $path;
         if ($query) {
             $url .= '?' . http_build_query($query);
@@ -392,6 +433,10 @@ final class TrendyolClient
         curl_setopt_array($ch, [
             CURLOPT_RETURNTRANSFER => true,
             CURLOPT_HTTPHEADER => $headers,
+            CURLOPT_HEADERFUNCTION => static function ($handle, string $header) use (&$retryAfter): int {
+                if (stripos($header, 'Retry-After:') === 0) $retryAfter = trim(substr($header, 12));
+                return strlen($header);
+            },
             CURLOPT_TIMEOUT => 20,
             CURLOPT_CONNECTTIMEOUT => 10,
             CURLOPT_FOLLOWLOCATION => false,
@@ -418,7 +463,16 @@ final class TrendyolClient
             return ['http' => 0, 'error' => 'Bağlantı hatası: ' . $errMsg];
         }
 
-        $decoded = json_decode($body, true);
+        if ($http === 429) {
+            $now = time();
+            $retryAt = $retryAfter === null ? false : (ctype_digit($retryAfter) ? $now + (int)$retryAfter : strtotime($retryAfter));
+            try {
+                trendyol_rate_slot($scope, $interval, $retryAt !== false && $retryAt > $now ? $retryAt : $now + 30);
+            } catch (RuntimeException $e) {
+                return ['http' => 429, 'error' => $e->getMessage()];
+            }
+        }
+        $decoded = json_decode($body, true, 512, JSON_BIGINT_AS_STRING);
         return ['http' => $http, 'body' => $decoded, 'raw' => $body];
     }
 

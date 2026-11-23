@@ -45,6 +45,7 @@ $flash = flash_get();
         <a href="raporlar.php" class="nav-link">Raporlar</a>
         <a href="buybox.php" class="nav-link">Buybox</a>
         <a href="hakedis-desi.php" class="nav-link">Hakediş &amp; Desi</a>
+        <a href="siparis-muhasebe.php" class="nav-link">Sipariş Muhasebesi</a>
         <a href="uyarilar.php" class="nav-link">Uyarılar</a>
         <a href="pazar-zekasi.php" class="nav-link">Pazar Zekası</a>
         <a href="magaza.php" class="nav-link">Mağaza Bağla</a>
