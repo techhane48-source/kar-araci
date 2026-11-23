@@ -180,6 +180,15 @@ function order_accounting_discount_text(array $line): string
         . ' · Birim toplam indirim ' . $fmt($d['api']);
 }
 
+/**
+ * Kargo faturası kalemlerini sipariş numarasıyla (sipariş düzeyinde) eşleştirir.
+ * Resmî Kargo Faturası Detayları belgesinde kalemi bir sipariş PAKETİNE bağlayan
+ * alan YOKTUR: `parcelUniqueId` "Kargo paketi benzersiz kimliği"dir (kargo gönderisi),
+ * `shipmentPackageId`/`cargoTrackingNumber` değildir. Bu yüzden paket eşleşmesi
+ * belirsizdir; gider sipariş geneline yazılır, paketlere paylaştırılmaz.
+ * Tutar eksik/geçersizse null (Bilinmiyor) kalır, 0'a çevrilmez. Aynı gönderi+tür
+ * iki kez sayılmaz.
+ */
 function order_accounting_cargo(array $rows, string $orderNumber): array
 {
     $items = [];
@@ -188,14 +197,15 @@ function order_accounting_cargo(array $rows, string $orderNumber): array
             throw new UnexpectedValueException('Kargo faturası satırında sipariş numarası eksik.');
         }
         if ((string)$row['orderNumber'] !== $orderNumber) continue;
-        $amount = order_accounting_amount($row['amount'] ?? null);
         $parcel = (string)($row['parcelUniqueId'] ?? '');
         $type = (string)($row['shipmentPackageType'] ?? '');
         $key = $parcel . '|' . $type;
-        if ($parcel === '' || $type === '' || $amount === null || isset($items[$key])) {
-            throw new UnexpectedValueException('Kargo kalemi eksik veya tekrarlı.');
-        }
-        $items[$key] = ['parcel' => $parcel, 'amount' => $amount, 'type' => $type];
+        if (isset($items[$key])) continue; // mükerrer satır iki kez toplanmaz
+        $items[$key] = [
+            'parcel' => $parcel,
+            'type' => $type,
+            'amount' => order_accounting_amount($row['amount'] ?? null),
+        ];
     }
     return array_values($items);
 }

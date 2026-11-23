@@ -25,10 +25,17 @@ ve sipariş kimliğine göre filtrelenir. Borç, alacak ve komisyon ayrı göste
 Ham hareketler, yerel cari kayıtla ikinci kez toplanmaz.
 
 Kargo fatura kimliği, Other Financials içindeki `DeductionInvoices` yanıtından
-alınır. `Kargo Faturası` ve `Kargo Fatura` hareketleri adaydır. Fatura kalemleri
-sipariş numarasıyla eşleştirilir. `parcelUniqueId` gönderi kimliği olarak
-gösterilir. Sipariş birden fazla pakete bölündüğünde fatura gideri otomatik
-olarak paketlere paylaştırılmaz.
+alınır (`transactionType` = "Kargo Faturası" ya da "Kargo Fatura" olan kaydın
+`id` değeri `invoiceSerialNumber`'dır). Fatura kalemleri sipariş numarasıyla
+eşleştirilir. Kargo Faturası Detayları belgesinde (`getcargoinvoiceitems.md`)
+kalem alanları yalnızca `shipmentPackageType` (gönderi/iade türü),
+`parcelUniqueId` ("Kargo paketi benzersiz kimliği" — kargo gönderisi, sipariş
+paketi DEĞİL), `orderNumber`, `amount` ve `desi`'dir. Kalemi bir sipariş
+`shipmentPackageId`'sine veya `cargoTrackingNumber`'a bağlayan alan YOKTUR.
+Bu yüzden kargo gideri sipariş düzeyinde gösterilir ve paket eşleşmesi ekranda
+"belirsiz" olarak işaretlenir; gider paketlere paylaştırılmaz. Gönderi ve iade
+kargosu `shipmentPackageType` ile ayrı gösterilir. Eksik/geçersiz tutar sıfıra
+çevrilmez, "Bilinmiyor" kalır.
 
 ## Sıklık ve doğrulama
 

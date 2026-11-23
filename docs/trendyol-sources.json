@@ -88,5 +88,11 @@
     "updatedAt": "2026-06-09T08:58:38.000Z",
     "sha256": "dcb6f2d5ded4da65dba40820c0604f0cbd1c41232b1d248a22092b1c16c8940f",
     "retrieved_date_utc": "2026-11-08"
+  },
+  {
+    "url": "https://developers.trendyol.com/reference/getcargoinvoiceitems.md",
+    "updatedAt": "2026-02-18T07:21:16.000Z",
+    "sha256": "e8612f58e18a7485442f9192d47d39feb55fa9b0d7c7ce4694144a07b7098cc3",
+    "retrieved_date_utc": "2026-11-24"
   }
 ]

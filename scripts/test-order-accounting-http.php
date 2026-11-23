@@ -2,7 +2,7 @@
 declare(strict_types=1);
 
 // Kendi kendine yeten HTTP testi: izole DB + geçici sunucu + örnek sağlayıcı yanıtları.
-// Canlı mağaza/API çağrısı YAPMAZ; getOrderClaims örnek yanıtla taklit edilir.
+// Canlı mağaza/API çağrısı YAPMAZ; getOrderClaims ve getCargoInvoiceItems örnek yanıtla taklit edilir.
 
 $dir = sys_get_temp_dir() . '/kf-oa-http-' . bin2hex(random_bytes(8));
 mkdir($dir, 0700);
@@ -13,11 +13,36 @@ file_put_contents($transportFile, <<<'PHP'
 <?php
 return static function (string $method, string $path, array $query, ?string $body): array {
     if (str_ends_with($path, '/claims')) {
-        $rows = [['orderNumber' => '456', 'orderShipmentPackageId' => 'PKG-A', 'items' => [[
-            'orderLine' => ['id' => 100, 'barcode' => 'BC-1'],
-            'claimItems' => [['id' => 'claim-1', 'orderLineItemId' => 5, 'claimItemStatus' => ['name' => 'Accepted']]],
-        ]]]];
-        return ['http' => 200, 'body' => ['content' => $rows, 'totalPages' => 1, 'totalElements' => 1]];
+        $on = (string)($query['orderNumber'] ?? '');
+        if ($on === '456') {
+            $rows = [['orderNumber' => '456', 'orderShipmentPackageId' => 'PKG-A', 'items' => [[
+                'orderLine' => ['id' => 100, 'barcode' => 'BC-1'],
+                'claimItems' => [['id' => 'claim-1', 'orderLineItemId' => 5, 'claimItemStatus' => ['name' => 'Accepted']]],
+            ]]]];
+            return ['http' => 200, 'body' => ['content' => $rows, 'totalPages' => 1, 'totalElements' => 1]];
+        }
+        if ($on === '457') { // eksiksiz ama boş iade yanıtı
+            return ['http' => 200, 'body' => ['content' => [], 'totalPages' => 0, 'totalElements' => 0]];
+        }
+        if ($on === '458') { // eksik sayfa: content boş ama totalElements 1
+            return ['http' => 200, 'body' => ['content' => [], 'totalPages' => 1, 'totalElements' => 1]];
+        }
+        return ['http' => 200, 'body' => ['content' => [], 'totalPages' => 0, 'totalElements' => 0]];
+    }
+    if (str_contains($path, '/cargo-invoice/')) {
+        if (str_contains($path, '/INV-EMPTY/')) {
+            return ['http' => 200, 'body' => ['content' => [], 'totalPages' => 0, 'totalElements' => 0]];
+        }
+        if (str_contains($path, '/INV-NOMATCH/')) {
+            $rows = [['orderNumber' => '999', 'shipmentPackageType' => 'Gönderi Kargo Bedeli', 'parcelUniqueId' => 900, 'amount' => 12.5]];
+            return ['http' => 200, 'body' => ['content' => $rows, 'totalPages' => 1, 'totalElements' => 1]];
+        }
+        // INV-A: aynı siparişte gönderi + iade kargosu
+        $rows = [
+            ['orderNumber' => '456', 'shipmentPackageType' => 'Gönderi Kargo Bedeli', 'parcelUniqueId' => 100, 'amount' => 34.24],
+            ['orderNumber' => '456', 'shipmentPackageType' => 'İade Kargo Bedeli', 'parcelUniqueId' => 200, 'amount' => 34.24],
+        ];
+        return ['http' => 200, 'body' => ['content' => $rows, 'totalPages' => 1, 'totalElements' => 2]];
     }
     return ['http' => 200, 'body' => ['content' => [], 'totalPages' => 0, 'totalElements' => 0]];
 };
@@ -35,8 +60,12 @@ $uid = (int)db()->lastInsertId();
 save_integration($uid, 'trendyol', '42', 'fake-key', 'fake-secret');
 $lines = json_encode([['barcode' => 'BC-1', 'quantity' => 2, 'price' => 100, 'orderLineId' => '100',
     'discounts' => ['lineTotalDiscount' => 10]]]);
-db()->prepare("INSERT INTO orders(user_id, marketplace, order_number, package_number, status, total_price, order_date, lines)
-    VALUES(?, 'trendyol', '456', 'PKG-A', 'Delivered', 200, 0, ?)")->execute([$uid, $lines]);
+$plain = json_encode([['barcode' => 'BC-1', 'quantity' => 1, 'price' => 100, 'orderLineId' => '100']]);
+$ins = db()->prepare("INSERT INTO orders(user_id, marketplace, order_number, package_number, status, total_price, order_date, lines)
+    VALUES(?, 'trendyol', ?, ?, 'Delivered', 200, 0, ?)");
+$ins->execute([$uid, '456', 'PKG-A', $lines]);
+$ins->execute([$uid, '457', 'PKG-B', $plain]);
+$ins->execute([$uid, '458', 'PKG-C', $plain]);
 
 $port = 8091;
 $base = "http://127.0.0.1:$port";
@@ -44,7 +73,6 @@ $proc = proc_open([PHP_BINARY, '-S', "127.0.0.1:$port", '-t', __DIR__ . '/../pub
     [1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $pipes);
 if (!is_resource($proc)) { echo "FAIL sunucu başlatılamadı\n"; exit(1); }
 
-// Sunucu hazır olana kadar bekle
 $ready = false;
 for ($i = 0; $i < 50; $i++) {
     $c = @curl_init($base . '/index.php');
@@ -69,28 +97,46 @@ try {
         return ['status' => curl_getinfo($ch, CURLINFO_RESPONSE_CODE), 'body' => $body === false ? '' : $body];
     }
     function csrf(string $html): string { preg_match('/name="csrf" value="([^"]+)"/', $html, $m); return $m[1] ?? ''; }
+    function post($ch, string $base, array $data): string {
+        $r = req($ch, $base, 'siparis-muhasebe.php');
+        return req($ch, $base, 'siparis-muhasebe.php', ['csrf' => csrf($r['body'])] + $data)['body'];
+    }
 
     // Giriş
     $r = req($ch, $base, 'giris.php');
     $r = req($ch, $base, 'giris.php', ['csrf' => csrf($r['body']), 'email' => 'pro-oa@example.test', 'password' => 'Test-Password-2026!']);
     check($r['status'] === 302, 'Pro kullanıcı giriş yapar');
 
-    // Sipariş muhasebesi sayfasını POST ile aç
-    $r = req($ch, $base, 'siparis-muhasebe.php');
-    $r = req($ch, $base, 'siparis-muhasebe.php', ['csrf' => csrf($r['body']), 'order' => '456']);
-    $html = $r['body'];
-    check($r['status'] === 200, 'Sipariş muhasebesi sayfası 200 döner');
-
-    // İndirim HTML'i
-    check(str_contains($html, 'Birim toplam indirim ₺10,00'), 'HTML: Birim toplam indirim ₺10,00 görünür');
-    check(str_contains($html, 'Satıcı indirimi Bilinmiyor'), 'HTML: satıcı payı bilinmiyor');
-    check(str_contains($html, 'Trendyol indirimi Bilinmiyor'), 'HTML: Trendyol payı bilinmiyor');
-
-    // İade eşleşmesi HTML'i
-    check(str_contains($html, 'İade kalemleri'), 'HTML: iade kalemleri bölümü var');
+    // Senaryo A: sipariş 456 — indirim + eşleşen iade
+    $html = post($ch, $base, ['order' => '456']);
+    check(str_contains($html, 'Birim toplam indirim ₺10,00'), 'HTML: Birim toplam indirim ₺10,00');
     check(str_contains($html, 'Accepted'), 'HTML: iade durumu gösterilir');
-    check(str_contains($html, 'PKG-A'), 'HTML: iade doğru pakete eşleşir');
-    check(str_contains($html, 'BC-1'), 'HTML: iade doğru barkodu gösterir');
+    check(str_contains($html, 'PKG-A') && str_contains($html, 'BC-1'), 'HTML: iade doğru paket/barkoda eşleşir');
+
+    // Senaryo B: sipariş 456 + fatura INV-A — gönderi ve iade kargosu ayrı, paket bağı belirsiz
+    $html = post($ch, $base, ['order' => '456', 'invoice' => 'INV-A']);
+    check(str_contains($html, 'paket eşleşmesi belirsizdir'), 'HTML: paket eşleşmesi belirsiz uyarısı');
+    check(str_contains($html, 'Gönderi Kargo Bedeli'), 'HTML: gönderi kargosu gösterilir');
+    check(str_contains($html, 'İade Kargo Bedeli'), 'HTML: iade kargosu ayrı gösterilir');
+    check(str_contains($html, 'Gönderi 100') && str_contains($html, 'Gönderi 200'), 'HTML: gönderi kimlikleri ayrı görünür');
+
+    // Senaryo C: fatura INV-EMPTY — eksiksiz boş fatura
+    $html = post($ch, $base, ['order' => '456', 'invoice' => 'INV-EMPTY']);
+    check(str_contains($html, 'Fatura boş (kalem içermiyor)'), 'HTML: boş fatura ayırt edilir');
+
+    // Senaryo D: fatura INV-NOMATCH — siparişe ait kalem yok
+    $html = post($ch, $base, ['order' => '456', 'invoice' => 'INV-NOMATCH']);
+    check(str_contains($html, 'Faturada bu siparişe ait kalem yok'), 'HTML: siparişe ait kalem içermeyen fatura ayırt edilir');
+
+    // Senaryo E: sipariş 457 — eksiksiz boş iade → "iade yok" (hata DEĞİL)
+    $html = post($ch, $base, ['order' => '457']);
+    check(str_contains($html, 'Gösterilecek iade kalemi yok'), 'HTML: boş iade yanıtı iade yok gösterir');
+    check(!str_contains($html, 'İade sorgusu başarısız'), 'HTML: boş iade hata gibi görünmez');
+
+    // Senaryo F: sipariş 458 — eksik sayfalı iade → hata, "iade yok" izlenimi YOK
+    $html = post($ch, $base, ['order' => '458']);
+    check(str_contains($html, 'İade sorgusu başarısız oldu'), 'HTML: eksik sayfalı iade sorgusu hata gösterir');
+    check(!str_contains($html, 'Gösterilecek iade kalemi yok'), 'HTML: hata durumunda iade yok izlenimi verilmez');
 
     curl_close($ch);
     if (is_file($jar)) unlink($jar);

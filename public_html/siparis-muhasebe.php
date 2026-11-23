@@ -10,6 +10,8 @@ $order = '';
 $payment = '';
 $invoice = '';
 $settlements = $packages = $claims = $ledger = $cargo = [];
+$cargo_total = 0;
+$claims_error = false;
 $errors = [];
 $searched = false;
 
@@ -38,6 +40,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 if (!$result['ok']) throw new RuntimeException($result['error']);
                 $claims = order_accounting_claims($result['rows'], $order, $packages);
             } catch (RuntimeException $e) {
+                $claims_error = true;
                 $errors[] = 'İadeler: ' . $e->getMessage();
             }
             if ($payment !== '') {
@@ -53,7 +56,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 try {
                     $result = $client->getCargoInvoiceItems($invoice);
                     if (!$result['ok']) throw new RuntimeException($result['error']);
-                    $cargo = order_accounting_cargo($result['rows'], $order);
+                    $cargo_total = count($result['rows'] ?? []);
+                    $cargo = order_accounting_cargo($result['rows'] ?? [], $order);
                 } catch (RuntimeException $e) {
                     $errors[] = 'Kargo: ' . $e->getMessage();
                 }
@@ -91,7 +95,8 @@ require __DIR__ . '/../includes/header.php';
     </section>
     <section class="card"><h2>İade kalemleri</h2>
       <p>İade durumu talebi gösterir; finansal ters hareket ayrıca aşağıdaki cari/ödeme kayıtlarında aranır. Kabul edilen iade tek başına para hareketi kanıtı değildir.</p>
-      <?php if (!$claims): ?><p>Gösterilecek iade kalemi yok.</p><?php endif; ?>
+      <?php if ($claims_error): ?><p>İade sorgusu başarısız oldu (yukarıdaki hataya bakın); iade durumu bilinmiyor.</p>
+      <?php elseif (!$claims): ?><p>Gösterilecek iade kalemi yok.</p><?php endif; ?>
       <ul><?php foreach ($claims as $claim): ?><li><?= h($claim['status']) ?> ·
         <?php if ($claim['match'] === 'matched'): ?>Paket <?= h($claim['package']) ?> · <?= h($claim['barcode']) ?>
         <?php elseif ($claim['match'] === 'ambiguous'): ?>Eşleşme belirsiz (satır kimliği birden fazla kayıtta veya paket bilgisi çelişkili)<?php
@@ -111,8 +116,13 @@ require __DIR__ . '/../includes/header.php';
       <?php if (!empty($ledger['invoices'])): ?><p>Ödeme emrindeki kargo faturası adayları: <?= h(implode(', ', $ledger['invoices'])) ?></p><?php endif; ?>
     </section>
     <section class="card"><h2>Kargo faturası kalemleri</h2>
-      <?php if (!$cargo): ?><p>Gösterilecek eşleşen kargo kalemi yok.</p><?php endif; ?>
-      <ul><?php foreach ($cargo as $item): ?><li><?= h($item['type']) ?> · Gönderi <?= h($item['parcel']) ?> · <?= tl($item['amount']) ?></li><?php endforeach; ?></ul>
+      <?php if ($invoice === ''): ?><p>Kargo fatura seri numarası girilmedi.</p>
+      <?php elseif ($cargo_total === 0): ?><p>Fatura boş (kalem içermiyor).</p>
+      <?php elseif (!$cargo): ?><p>Faturada bu siparişe ait kalem yok.</p>
+      <?php else: ?>
+      <p>Kargo gideri sipariş düzeyinde eşleşir; resmî sözleşmede paket bağı bulunmadığı için paket eşleşmesi belirsizdir.</p>
+      <ul><?php foreach ($cargo as $item): ?><li><?= h($item['type'] !== '' ? $item['type'] : 'Tür Bilinmiyor') ?> · Gönderi <?= h($item['parcel'] !== '' ? $item['parcel'] : 'Bilinmiyor') ?> · <?= $item['amount'] === null ? 'Bilinmiyor' : tl($item['amount']) ?></li><?php endforeach; ?></ul>
+      <?php endif; ?>
     </section>
   <?php endif; ?>
 </div>

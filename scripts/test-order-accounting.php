@@ -104,6 +104,20 @@ check($claims['complete'] && count(order_accounting_claims($claims['rows'], '123
 $cargo = $client->getCargoInvoiceItems('TEST-1');
 check($cargo['complete'] && array_column(order_accounting_cargo($cargo['rows'], '123'), 'amount') === [34.24], 'Diğer siparişin kargosu dışarıda kalır');
 
+// Kargo: paket bağı yok → sipariş düzeyi; tutar bilinmiyor/0 ayrılır; mükerrer toplanmaz
+$cargoRows = [
+    ['orderNumber' => '123', 'shipmentPackageType' => 'Gönderi Kargo Bedeli', 'parcelUniqueId' => 100, 'amount' => 34.24],
+    ['orderNumber' => '123', 'shipmentPackageType' => 'İade Kargo Bedeli', 'parcelUniqueId' => 200, 'amount' => 0],
+    ['orderNumber' => '123', 'shipmentPackageType' => 'Gönderi Kargo Bedeli', 'parcelUniqueId' => 300],           // tutar eksik
+    ['orderNumber' => '123', 'shipmentPackageType' => 'Gönderi Kargo Bedeli', 'parcelUniqueId' => 100, 'amount' => 99.99], // mükerrer (aynı parcel+tür)
+];
+$cargoItems = order_accounting_cargo($cargoRows, '123');
+check(count($cargoItems) === 3, 'Aynı gönderi+tür iki kez sayılmaz (mükerrer atlanır)');
+check($cargoItems[1]['amount'] === 0.0, 'Gerçek sıfır tutar korunur');
+check($cargoItems[2]['amount'] === null, 'Eksik tutar Bilinmiyor kalır, sıfıra çevrilmez');
+check($cargoItems[2]['parcel'] === '300', 'Kimliksiz gönderi hata vermez, kimlik korunur');
+check(order_accounting_cargo($cargoRows, '999') === [], 'Siparişe ait kalem içermeyen fatura boş döner');
+
 $bad = new TrendyolClient('123', 'fixture', 'fixture', false,
     static fn() => ['http' => 200, 'body' => ['content' => [], 'totalPages' => 1, 'totalElements' => 1]], true);
 check(!$bad->getOrderClaims('123')['ok'], 'Eksik sayfada başarılı sonuç yok');
