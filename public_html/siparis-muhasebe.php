@@ -81,10 +81,7 @@ require __DIR__ . '/../includes/header.php';
       <?php foreach ($packages as $package): ?>
         <p><?= h($package['package_number']) ?> · <?= h($package['status']) ?> · <?= tl((float)$package['total_price']) ?></p>
         <ul><?php foreach (json_decode($package['lines'], true) ?: [] as $line): ?>
-          <?php $discounts = $line['discounts'] ?? []; ?>
-          <li><?= h((string)($line['barcode'] ?? '')) ?> ·
-            Satır indirimi <?= ($amount = order_accounting_amount($discounts['lineSellerDiscount'] ?? $discounts['discount'] ?? null)) === null ? 'Bilinmiyor' : tl($amount) ?> ·
-            Trendyol indirimi <?= ($amount = order_accounting_amount($discounts['lineTyDiscount'] ?? $discounts['tyDiscount'] ?? null)) === null ? 'Bilinmiyor' : tl($amount) ?></li>
+          <li><?= h((string)($line['barcode'] ?? '')) ?> · <?= order_accounting_discount_text(is_array($line) ? $line : []) ?></li>
         <?php endforeach; ?></ul>
       <?php endforeach; ?>
     </section>

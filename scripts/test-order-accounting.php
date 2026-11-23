@@ -58,6 +58,17 @@ $ledger = order_accounting_ledger([
 check(array_column($ledger['rows'], 'commission') === [null, 0.0], 'Bilinmeyen komisyon sıfırdan ayrılır');
 check($ledger['invoices'] === ['TEST-1'], 'Ödeme emrindeki kargo faturası adayı bulunur');
 
+check(order_accounting_discounts(['discounts' => ['lineTotalDiscount' => 10.00, 'quantity' => 2]]) === ['seller' => null, 'trendyol' => null, 'api' => 10.0], 'API indirimi ayrı gösterilir; birim türetilmez');
+check(order_accounting_discounts(['discounts' => ['lineSellerDiscount' => 3, 'lineTyDiscount' => 0]]) === ['seller' => 3.0, 'trendyol' => 0.0, 'api' => null], 'Satıcı ve sıfır Trendyol indirimi ayrı korunur');
+check(order_accounting_discounts(['discounts' => ['lineSellerDiscount' => null, 'lineTyDiscount' => 'abc', 'lineTotalDiscount' => '']]) === ['seller' => null, 'trendyol' => null, 'api' => null], 'Eksik/geçersiz indirim bilinmiyor kalır');
+check(order_accounting_discounts([]) === ['seller' => null, 'trendyol' => null, 'api' => null], 'discounts alanı yokken hata verilmez');
+check(order_accounting_discounts(['discounts' => ['discount' => 2.5, 'tyDiscount' => 1.5]]) === ['seller' => 2.5, 'trendyol' => 1.5, 'api' => null], 'Eski alan adları (discount/tyDiscount) çalışır');
+
+check(order_accounting_discount_text(['discounts' => ['lineTotalDiscount' => 10.00, 'quantity' => 2]]) === 'Satıcı indirimi Bilinmiyor · Trendyol indirimi Bilinmiyor · Birim toplam indirim ₺10,00', 'HTML: yalnız lineTotalDiscount=10 → birim 10,00, paylar bilinmiyor');
+check(order_accounting_discount_text(['discounts' => ['lineTotalDiscount' => 0]]) === 'Satıcı indirimi Bilinmiyor · Trendyol indirimi Bilinmiyor · Birim toplam indirim ₺0,00', 'HTML: sıfır birim indirim 0,00 olarak görünür');
+check(order_accounting_discount_text([]) === 'Satıcı indirimi Bilinmiyor · Trendyol indirimi Bilinmiyor · Birim toplam indirim Bilinmiyor', 'HTML: discounts yok → birim indirim bilinmiyor');
+check(order_accounting_discount_text(['discounts' => ['lineSellerDiscount' => 3, 'lineTyDiscount' => 0, 'lineTotalDiscount' => 3]]) === 'Satıcı indirimi ₺3,00 · Trendyol indirimi ₺0,00 · Birim toplam indirim ₺3,00', 'HTML: satıcı/Trendyol payları ayrı ve sıfır korunur');
+
 trendyol_rate_slot('shop-1', 0, microtime(true) + 60);
 $blocked = false;
 try {

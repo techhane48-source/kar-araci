@@ -70,6 +70,37 @@ function order_accounting_amount(mixed $value): ?float
     return is_numeric($value) && is_finite((float)$value) && abs((float)$value) <= 1e12 ? (float)$value : null;
 }
 
+/**
+ * Ekranın gösterdiği indirim değerlerini bir satırın `discounts` alanından çıkarır.
+ * Eksik/null/geçersiz alanlar null ("Bilinmiyor") döner; geçerli 0 tutar olarak korunur.
+ * `lineTotalDiscount` resmî akış belgesinde "Birim toplam indirim
+ * (lineSellerDiscount + lineTyDiscount)" olarak tanımlıdır; birim değerdir.
+ */
+function order_accounting_discounts(array $line): array
+{
+    $d = is_array($line['discounts'] ?? null) ? $line['discounts'] : [];
+    return [
+        'seller' => order_accounting_amount($d['lineSellerDiscount'] ?? $d['discount'] ?? null),
+        'trendyol' => order_accounting_amount($d['lineTyDiscount'] ?? $d['tyDiscount'] ?? null),
+        'api' => order_accounting_amount($d['lineTotalDiscount'] ?? null),
+    ];
+}
+
+/**
+ * Ekranın satır başına gösterdiği indirim metnini (HTML) üretir.
+ * "Birim toplam indirim" her zaman gösterilir; değer sağlayıcıdan geldiği
+ * gibi (birim) basılır, adetle çarpılmaz/bölünmez, satıcı/Trendyol paylarından
+ * yeniden hesaplanmaz.
+ */
+function order_accounting_discount_text(array $line): string
+{
+    $d = order_accounting_discounts($line);
+    $fmt = static fn(?float $v): string => $v === null ? 'Bilinmiyor' : tl($v);
+    return 'Satıcı indirimi ' . $fmt($d['seller'])
+        . ' · Trendyol indirimi ' . $fmt($d['trendyol'])
+        . ' · Birim toplam indirim ' . $fmt($d['api']);
+}
+
 function order_accounting_cargo(array $rows, string $orderNumber): array
 {
     $items = [];
