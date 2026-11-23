@@ -205,6 +205,7 @@ function sync_platform_service_fees(int $userId,string $marketplace,int $days=30
     return sync_job($userId,$marketplace,'service_fees',static function($int,$client,$token,$started) use($userId,$marketplace,$days):array {
         if (!method_exists($client,'getPlatformServiceFees')) throw new SyncFailure('Bu pazaryerinde platform hizmet bedeli senkronu desteklenmiyor.');
         if ($days<1 || $days>365) throw new SyncFailure('Hizmet bedeli aralığı 1–365 gün olmalı.');
+        $sellerId=(string)($int['seller_id']??'');$stage=(int)($int['stage']??0);
         $from=$started-$days*86400;$rows=[];
         for ($s=$from;$s<$started;$s+=14*86400) {
             $e=min($s+14*86400,$started);
@@ -227,11 +228,11 @@ function sync_platform_service_fees(int $userId,string $marketplace,int $days=30
                 ];
             }
         }
-        return sync_commit($int,$token,static function($pdo) use($rows,$userId,$marketplace,$started):array {
-            $insert=$pdo->prepare('INSERT INTO platform_service_fees(user_id,marketplace,provider_id,transaction_date,receipt_id,invoice_serial,description,debt,credit,order_number,shipment_package_id,barcode,payment_order_id)
-                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(user_id,marketplace,provider_id) DO UPDATE SET transaction_date=excluded.transaction_date,receipt_id=excluded.receipt_id,invoice_serial=excluded.invoice_serial,description=excluded.description,debt=excluded.debt,credit=excluded.credit,order_number=excluded.order_number,shipment_package_id=excluded.shipment_package_id,barcode=excluded.barcode,payment_order_id=excluded.payment_order_id');
+        return sync_commit($int,$token,static function($pdo) use($rows,$userId,$marketplace,$started,$sellerId,$stage):array {
+            $insert=$pdo->prepare('INSERT INTO platform_service_fees(user_id,marketplace,seller_id,stage,provider_id,transaction_date,receipt_id,invoice_serial,description,debt,credit,order_number,shipment_package_id,barcode,payment_order_id)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(user_id,marketplace,seller_id,stage,provider_id) DO UPDATE SET transaction_date=excluded.transaction_date,receipt_id=excluded.receipt_id,invoice_serial=excluded.invoice_serial,description=excluded.description,debt=excluded.debt,credit=excluded.credit,order_number=excluded.order_number,shipment_package_id=excluded.shipment_package_id,barcode=excluded.barcode,payment_order_id=excluded.payment_order_id');
             foreach ($rows as $r) {
-                $insert->execute([$userId,$marketplace,$r['id'],$r['transactionDate'],$r['receiptId'],$r['invoiceSerial'],$r['description'],$r['debt'],$r['credit'],$r['orderNumber'],$r['shipmentPackageId'],$r['barcode'],$r['paymentOrderId']]);
+                $insert->execute([$userId,$marketplace,$sellerId,$stage,$r['id'],$r['transactionDate'],$r['receiptId'],$r['invoiceSerial'],$r['description'],$r['debt'],$r['credit'],$r['orderNumber'],$r['shipmentPackageId'],$r['barcode'],$r['paymentOrderId']]);
             }
             $pdo->prepare('UPDATE integrations SET last_service_fees_sync=? WHERE user_id=? AND marketplace=?')->execute([$started,$userId,$marketplace]);
             return ['ok'=>true,'records'=>count($rows)];

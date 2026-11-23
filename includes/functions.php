@@ -134,7 +134,7 @@ function save_integration(int $userId, string $marketplace, string $sellerId, st
                      api_secret = excluded.api_secret,
                      stage = excluded.stage,
                      revision = integrations.revision + 1,
-                     last_sync = NULL, last_orders_sync = NULL, last_settlements_sync = NULL, orders_coverage_from = NULL,
+                     last_sync = NULL, last_orders_sync = NULL, last_settlements_sync = NULL, last_service_fees_sync = NULL, orders_coverage_from = NULL,
                      last_sync_error = NULL")
         ->execute([$userId, $marketplace, trim($sellerId), $encKey, $encSecret, $stage ? 1 : 0]);
 }

@@ -115,4 +115,15 @@ $last=integration()['last_service_fees_sync'];$client->failure='service_fees';
 check(!sync_platform_service_fees(1,'trendyol',30,$client)['ok'] && integration()['last_service_fees_sync']===$last,'Hizmet bedeli sorgusu başarısızsa başarı zamanı ilerlemez');
 $client->failure=null;$client->serviceFees[0]['id']='';
 check(!sync_platform_service_fees(1,'trendyol',30,$client)['ok'] && integration()['last_service_fees_sync']===$last,'Kimliksiz hizmet bedeli reddedilir; başarı zamanı korunur');
+// Mağaza/ortam kapsamı: seller1 → seller2 geçişi, aynı işlem ID ezilmez
+$client->serviceFees=[['id'=>'SWITCH-1','transactionType'=>'DeductionInvoices','transactionDate'=>$timestamp,'debt'=>1,'credit'=>0]];
+check(sync_platform_service_fees(1,'trendyol',30,$client)['ok'],'Mağaza A hizmet bedeli kaydedilir');
+check((int)scalar("SELECT COUNT(*) FROM platform_service_fees WHERE provider_id='SWITCH-1' AND seller_id='seller1' AND stage=0")===1,'Kayıt seller1 kapsamında saklanır');
+save_integration(1,'trendyol','seller2','k2','s2');
+check(integration()['last_service_fees_sync']===null,'Yeniden bağlanınca son hizmet bedeli zamanı sıfırlanır');
+$client->serviceFees=[['id'=>'SWITCH-1','transactionType'=>'DeductionInvoices','transactionDate'=>$timestamp,'debt'=>9,'credit'=>0]];
+check(sync_platform_service_fees(1,'trendyol',30,$client)['ok'],'Mağaza B hizmet bedeli kaydedilir');
+check((int)scalar("SELECT COUNT(*) FROM platform_service_fees WHERE provider_id='SWITCH-1'")===2,'Aynı işlem ID farklı mağazada ezilmez (2 kayıt)');
+check((float)scalar("SELECT debt FROM platform_service_fees WHERE provider_id='SWITCH-1' AND seller_id='seller1'")===1.0 && (float)scalar("SELECT debt FROM platform_service_fees WHERE provider_id='SWITCH-1' AND seller_id='seller2'")===9.0,'Mağaza kapsamı borçları ayrı korur');
+save_integration(1,'trendyol','seller1','k1','s1');
 echo $failed?"$failed test başarısız\n":"TÜM TESTLER GEÇTİ\n";exit($failed?1:0);

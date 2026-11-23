@@ -133,8 +133,8 @@ $updates->execute([$u['id'],$mp]);$priceUpdates=$updates->fetchAll();
 
 $serviceFees = [];
 if ($supported && $hasConnection) {
-    $sfq = db()->prepare("SELECT * FROM platform_service_fees WHERE user_id = ? AND marketplace = ? ORDER BY transaction_date DESC, provider_id DESC LIMIT 200");
-    $sfq->execute([(int)$u['id'], $mp]);
+    $sfq = db()->prepare("SELECT * FROM platform_service_fees WHERE user_id = ? AND marketplace = ? AND seller_id = ? AND stage = ? ORDER BY transaction_date DESC, provider_id DESC LIMIT 200");
+    $sfq->execute([(int)$u['id'], $mp, (string)$int['seller_id'], (int)$int['stage']]);
     $serviceFees = $sfq->fetchAll();
 }
 
@@ -202,7 +202,11 @@ require __DIR__ . '/../includes/header.php';
     <div class="card" style="margin-top:16px">
       <h2>Platform Hizmet Bedeli (Trendyol)</h2>
       <div class="detail-row"><span>Son başarılı çekim</span><strong><?= $int['last_service_fees_sync'] ? date('d.m.Y H:i', (int)$int['last_service_fees_sync']) : 'Henüz çekilmedi' ?></strong></div>
-      <p class="hint">Trendyol Other Financials → <em>DeductionInvoices / PlatformServiceFee</em> ile bildirilen gerçek hizmet bedeli hareketleri (TL). Bu tutar kâr hesabındaki tahminin yerine kullanılmaz ve siparişlere dağıtılmaz; yalnızca dönem düzeyinde referanstır. Borç ve alacak ayrı gösterilir.</p>
+      <p class="hint">Trendyol Other Financials → <em>DeductionInvoices / PlatformServiceFee</em> ile bildirilen gerçek hizmet bedeli hareketleri. Bu tutar kâr hesabındaki tahminin yerine kullanılmaz ve siparişlere dağıtılmaz; yalnızca dönem düzeyinde referanstır. Borç ve alacak ayrı gösterilir.</p>
+      <?php if (($int['last_sync_error_scope'] ?? '') === 'service_fees'): ?>
+        <p class="flash flash-error">Son hizmet bedeli çekimi başarısız oldu; aşağıdaki kayıtlar önceki başarılı çekime ait.</p>
+      <?php endif; ?>
+      <p class="hint">Tutarların para birimi sağlayıcı tarafından açıkça belirtilmiyor (belgede para birimi alanı yok); bu yüzden tutarlara ₺ etiketi konmaz ve doğrulanmış bir dönem toplamı üretilmez.</p>
       <form method="post" style="display:inline">
         <input type="hidden" name="csrf" value="<?= csrf_token() ?>">
         <input type="hidden" name="action" value="service_fees">
@@ -222,14 +226,12 @@ require __DIR__ . '/../includes/header.php';
               <td style="font-size:12px"><?= h($f['provider_id']) ?></td>
               <td><?= $f['receipt_id'] !== null ? h((string)$f['receipt_id']) : '—' ?></td>
               <td style="font-size:12px"><?= $f['invoice_serial'] !== '' ? h($f['invoice_serial']) : '—' ?></td>
-              <td><?= tl((float)$f['debt']) ?></td>
-              <td><?= tl((float)$f['credit']) ?></td>
+              <td><?= number_format((float)$f['debt'], 2, ',', '.') ?></td>
+              <td><?= number_format((float)$f['credit'], 2, ',', '.') ?></td>
               <td><?= $f['order_number'] !== '' ? h($f['order_number']) : '—' ?></td>
               <td><?= $f['shipment_package_id'] !== '' ? h($f['shipment_package_id']) : '—' ?></td>
             </tr>
             <?php endforeach; ?>
-            <?php $debtTotal = 0.0; $creditTotal = 0.0; foreach ($serviceFees as $f) { $debtTotal += (float)$f['debt']; $creditTotal += (float)$f['credit']; } ?>
-            <tr><td colspan="4"><strong>Toplam (dönem)</strong></td><td><strong><?= tl($debtTotal) ?></strong></td><td><strong><?= tl($creditTotal) ?></strong></td><td colspan="2"></td></tr>
           </table>
         </div>
       <?php endif; ?>

@@ -83,6 +83,8 @@ $psfBad=new TrendyolClient('seller','x','x',false,static fn()=>response([['id'=>
 check(!$psfBad->getPlatformServiceFees()['ok'],'Geçersiz hizmet bedeli tutarı reddedilir');
 $psfEmpty=new TrendyolClient('seller','x','x',false,static fn()=>response([],0,0));
 check($psfEmpty->getPlatformServiceFees()['ok'] && count($psfEmpty->getPlatformServiceFees()['rows'])===0,'Gerçek boş hizmet bedeli sonucu kabul edilir');
+$psfBadPage2=new TrendyolClient('seller','x','x',false,static fn($m,$p,$q)=>($q['page']??'0')==='0'?response([['id'=>'P0','debt'=>1,'credit'=>0]],2,2):['http'=>500]);
+check(!$psfBadPage2->getPlatformServiceFees()['ok'],'Hizmet bedeli ikinci sayfası başarısızsa eksik başarı sayılmaz');
 $batch=new TrendyolClient('seller','x','x',false,static function($m,$p,$q,$body):array {
     if($m==='POST'){check(!isset(json_decode($body,true)['items'][0]['quantity']),'Fiyat isteği stok içermek zorunda değildir');return ['http'=>200,'body'=>['batchRequestId'=>'BATCH']];}
     return ['http'=>200,'body'=>['batchRequestId'=>'BATCH','items'=>[['requestItem'=>['barcode'=>'A'],'status'=>'SUCCESS','failureReasons'=>[]]]]];

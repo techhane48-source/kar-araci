@@ -58,12 +58,26 @@ kârının kesinleştiği anlamına gelmez.
 `otherfinancials` ucunu `transactionType=DeductionInvoices` +
 `transactionSubType=PlatformServiceFee` filtreleriyle ve 14 günlük (belgedeki ≤15 gün
 sınırı) tarih pencereleriyle sorgular; `page`/`size` sayfalama 500'lük sayfalar
-kullanır. Kayıtlar `platform_service_fees` tablosuna `provider_id` (`id` işlem
-kimliği) ile tekil yazılır; `debt`/`credit` borç/alacak olarak ayrı, `receiptId`
-(Dekont No) ve `commissionInvoiceSerialNumber` (fatura seri no) referans olarak
-saklanır. Para birimi alanı yoktur (tümü TL). Sonuç `magaza.php` sayfasında dönem
-düzeyinde gösterilir; borç ve alacak ayrı toplanır, tahminle değiştirilmez ve
-sipariş kârına girmez. Cron (`scripts/sync.php`) bu sorguyu ayrı bir görev olarak
+kullanır. Kayıtlar `platform_service_fees` tablosuna **bağlantı kapsamı**
+(`user_id + marketplace + seller_id + stage`) + `provider_id` (`id` işlem kimliği)
+tekil anahtarıyla yazılır; aynı kullanıcı mağaza/test-c canlı ortam değiştirdiğinde
+eski kayıtlar yeni bağlantı altında görünmez ve çakışan `id`'ler birbirini ezmez.
+`debt`/`credit` borç/alacak olarak ayrı, `receiptId` (Dekont No) ve
+`commissionInvoiceSerialNumber` (fatura seri no) referans olarak saklanır.
+
+**Para birimi:** belgede `FinancialTransaction` şemasında para birimi alanı yoktur ve
+tutarların daima TRY olduğuna dair açık bir kural yoktur (yalnızca `country` alanı
+\"Ülke\" verir). Bu yüzden tutarlara ₺ etiketi konmaz, ekranda \"para birimi sağlayıcı
+tarafından açıkça belirtilmiyor\" notu gösterilir ve doğrulanmış bir dönem toplamı
+üretilmez. `debt`/`credit` şemada zorunludur (null değil): eksik/null veya sayısal
+olmayan tutar bozuk yanıt sayılır ve senkron tamamen reddedilir (önceki başarılı dönem
+korunur); geçerli `0` gerçek sıfır olarak gösterilir. Sipariş/paket/fatura referansı
+gibi nullable alanlar eksikse \"bilinmiyor\" (—) kalır, sıfıra dönüştürülmez.
+
+Sonuç `magaza.php` sayfasında dönem düzeyinde gösterilir; borç ve alacak ayrı
+gösterilir, tahminle değiştirilmez ve sipariş kârına girmez. Başarısız çekimde son
+başarı zamanı ilerlemez ve ekran, gösterilen kayıtların önceki başarılı çekime ait
+olduğunu belirtir. Cron (`scripts/sync.php`) bu sorguyu ayrı bir görev olarak
 çalıştırır; başarısızlığı cari hesap işinin sonucunu etkilemez.
 
 ## Sıklık ve doğrulama

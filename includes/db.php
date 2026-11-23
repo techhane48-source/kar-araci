@@ -264,10 +264,18 @@ function migrate(): void
     if (!in_array('provider_id', $scols, true)) $pdo->exec('ALTER TABLE settlements ADD COLUMN provider_id TEXT DEFAULT NULL');
     $pdo->exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_settlements_provider ON settlements(user_id, marketplace, provider_id)");
     $pdo->exec("CREATE INDEX IF NOT EXISTS idx_settlements_barcode ON settlements(user_id, marketplace, barcode, transaction_type, transaction_date DESC)");
+    // Eski platform_service_fees şeması (Tur 7, seller_id/stage yok) → kaynak mağaza/ortam
+    // belirlenemediği için taşınmaz; tablo satıcı+ortam kapsamlı olarak yeniden kurulur.
+    $psfcols = array_column($pdo->query('PRAGMA table_info(platform_service_fees)')->fetchAll(PDO::FETCH_ASSOC), 'name');
+    if (count($psfcols) > 0 && !in_array('seller_id', $psfcols, true)) {
+        $pdo->exec('DROP TABLE platform_service_fees');
+    }
     $pdo->exec("CREATE TABLE IF NOT EXISTS platform_service_fees (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         user_id INTEGER NOT NULL,
         marketplace TEXT NOT NULL DEFAULT 'trendyol',
+        seller_id TEXT NOT NULL DEFAULT '',
+        stage INTEGER NOT NULL DEFAULT 0,
         provider_id TEXT NOT NULL,
         transaction_date INTEGER DEFAULT NULL,
         receipt_id INTEGER DEFAULT NULL,
@@ -280,9 +288,9 @@ function migrate(): void
         barcode TEXT NOT NULL DEFAULT '',
         payment_order_id INTEGER DEFAULT NULL,
         created_at TEXT NOT NULL DEFAULT (datetime('now')),
-        UNIQUE(user_id, marketplace, provider_id)
+        UNIQUE(user_id, marketplace, seller_id, stage, provider_id)
     )");
-    $pdo->exec("CREATE INDEX IF NOT EXISTS idx_psf_user_date ON platform_service_fees(user_id, marketplace, transaction_date)");
+    $pdo->exec("CREATE INDEX IF NOT EXISTS idx_psf_user_date ON platform_service_fees(user_id, marketplace, seller_id, stage, transaction_date)");
     $pdo->exec("CREATE INDEX IF NOT EXISTS idx_products_market_barcode ON products(user_id, marketplace, barcode)");
     $pdo->exec("CREATE TABLE IF NOT EXISTS settlement_legacy_archive (
         source_id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL, marketplace TEXT NOT NULL,

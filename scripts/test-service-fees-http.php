@@ -14,13 +14,21 @@ file_put_contents($transportFile, <<<'PHP'
 <?php
 return static function (string $method, string $path, array $query, ?string $body): array {
     if (str_ends_with($path, '/otherfinancials')) {
+        if (is_file(__DIR__ . '/fail')) {
+            // Eksik sayfa: content boş ama totalElements>0 → financeRows eksik sayar, senkron başarısız olur
+            return ['http' => 200, 'body' => ['content' => [], 'totalPages' => 1, 'totalElements' => 1]];
+        }
+        if (is_file(__DIR__ . '/empty')) {
+            // Eksiksiz boş sonuç
+            return ['http' => 200, 'body' => ['content' => [], 'totalPages' => 0, 'totalElements' => 0]];
+        }
         if (($query['transactionType'] ?? '') === 'DeductionInvoices' && ($query['transactionSubType'] ?? '') === 'PlatformServiceFee') {
             $rows = [
                 ['id' => 'PSF-1001', 'transactionType' => 'DeductionInvoices', 'transactionDate' => 1700000000000,
                  'receiptId' => 9001, 'commissionInvoiceSerialNumber' => 'KOM-2024-001', 'description' => 'Platform hizmet bedeli',
                  'debt' => 13.19, 'credit' => 0, 'orderNumber' => 'ORDER-1', 'shipmentPackageId' => 77001, 'barcode' => 'BC-1'],
                 ['id' => 'PSF-1002', 'transactionType' => 'DeductionInvoices', 'transactionDate' => 1700000000000,
-                 'debt' => 0, 'credit' => 5.0],
+                 'debt' => 0, 'credit' => 0],
             ];
             return ['http' => 200, 'body' => ['content' => $rows, 'totalPages' => 1, 'totalElements' => 2]];
         }
@@ -93,8 +101,10 @@ try {
     $r = req($ch, $base, 'magaza.php?mp=trendyol');
     check(str_contains($r['body'], 'PSF-1001') && str_contains($r['body'], 'KOM-2024-001'), 'HTML: işlem ID ve fatura seri no görünür');
     check(str_contains($r['body'], 'ORDER-1') && str_contains($r['body'], '77001'), 'HTML: sipariş/paket numarası referans olarak görünür');
-    check(str_contains($r['body'], '₺13,19') && str_contains($r['body'], '₺5,00'), 'HTML: borç ve alacak ayrı gösterilir');
-    check(str_contains($r['body'], 'Toplam (dönem)'), 'HTML: dönem toplamı ayrı gösterilir');
+    check(str_contains($r['body'], 'para birimi sağlayıcı tarafından açıkça belirtilmiyor'), 'HTML: para birimi belirtilmiyor notu görünür');
+    check(str_contains($r['body'], '13,19') && !str_contains($r['body'], '₺13,19'), 'HTML: borç ₺ etiketi olmadan gösterilir');
+    check(str_contains($r['body'], '0,00'), 'HTML: geçerli sıfır tutar gösterilir');
+    check(!str_contains($r['body'], 'Toplam (dönem)'), 'HTML: doğrulanmamış para birimiyle dönem toplamı üretilmez');
     check(str_contains($r['body'], 'kâr hesabındaki tahminin yerine kullanılmaz'), 'HTML: tahmin değiştirilmez notu görünür');
 
     // Kâr/tahmin değişmedi (senkron sonrası service_fee aynı)
@@ -106,6 +116,39 @@ try {
     $r = req($ch, $base, 'magaza.php?mp=trendyol', ['csrf' => csrf($r['body']), 'action' => 'service_fees']);
     $count = (int)db()->query('SELECT COUNT(*) FROM platform_service_fees')->fetchColumn();
     check($count === 2, 'HTML ötesi: aynı dönem tekrar çekilince kayıt çoğalmaz');
+
+    // Başarısız ikinci çekim: önceki kayıtlar + son başarı zamanı korunur, ekran hatayı + önceki çekimi belirtir
+    $lastSync = (int)db()->query("SELECT last_service_fees_sync FROM integrations WHERE user_id=$uid AND marketplace='trendyol'")->fetchColumn();
+    touch($dir . '/fail');
+    $r = req($ch, $base, 'magaza.php?mp=trendyol');
+    $r = req($ch, $base, 'magaza.php?mp=trendyol', ['csrf' => csrf($r['body']), 'action' => 'service_fees']);
+    check(str_contains($r['body'], 'Platform hizmet bedeli hatası'), 'HTML: başarısız çekim hata mesajı gösterir');
+    $r = req($ch, $base, 'magaza.php?mp=trendyol');
+    check(str_contains($r['body'], 'önceki başarılı çekime ait'), 'HTML: gösterilen kayıtların önceki çekime ait olduğu belirtilir');
+    check(str_contains($r['body'], 'PSF-1001'), 'HTML: önceki başarılı kayıtlar korunur');
+    check((int)db()->query("SELECT last_service_fees_sync FROM integrations WHERE user_id=$uid AND marketplace='trendyol'")->fetchColumn() === $lastSync, 'HTML ötesi: başarısız çekimde son başarı zamanı ilerlemez');
+    unlink($dir . '/fail');
+
+    // Eksiksiz boş dönem: ikinci kullanıcı boş sonuç çeker → "eksiksiz boş sonuç" (henüz çekilmedi DEĞİL)
+    db()->prepare("INSERT INTO users(email, password_hash, plan, plan_expires) VALUES(?, ?, 'pro', '2050-01-01')")
+        ->execute(['pro-empty@example.test', password_hash('Test-Password-2026!', PASSWORD_DEFAULT)]);
+    $uid2 = (int)db()->lastInsertId();
+    save_integration($uid2, 'trendyol', '43', 'fk', 'fs');
+    touch($dir . '/empty');
+    // İkinci kullanıcı olarak giriş + çekim (ayrı oturum)
+    $jar2 = tempnam(sys_get_temp_dir(), 'kf-psf-cookie2-');
+    $ch2 = curl_init();
+    curl_setopt_array($ch2, [CURLOPT_RETURNTRANSFER => true, CURLOPT_COOKIEFILE => $jar2, CURLOPT_COOKIEJAR => $jar2, CURLOPT_FOLLOWLOCATION => false, CURLOPT_TIMEOUT => 10]);
+    $r = req($ch2, $base, 'giris.php');
+    $r = req($ch2, $base, 'giris.php', ['csrf' => csrf($r['body']), 'email' => 'pro-empty@example.test', 'password' => 'Test-Password-2026!']);
+    $r = req($ch2, $base, 'magaza.php?mp=trendyol');
+    $r = req($ch2, $base, 'magaza.php?mp=trendyol', ['csrf' => csrf($r['body']), 'action' => 'service_fees']);
+    $r = req($ch2, $base, 'magaza.php?mp=trendyol');
+    check(str_contains($r['body'], 'Bu dönemde platform hizmet bedeli hareketi yok (eksiksiz boş sonuç)'), 'HTML: eksiksiz boş dönem açıkça gösterilir');
+    check(!str_contains($r['body'], 'Henüz platform hizmet bedeli çekilmedi'), 'HTML: boş dönem "henüz çekilmedi" ile karışmaz');
+    curl_close($ch2);
+    if (is_file($jar2)) unlink($jar2);
+    unlink($dir . '/empty');
 
     curl_close($ch);
     if (is_file($jar)) unlink($jar);
