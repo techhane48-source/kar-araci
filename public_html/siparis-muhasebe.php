@@ -121,7 +121,14 @@ require __DIR__ . '/../includes/header.php';
       <?php elseif (!$cargo): ?><p>Faturada bu siparişe ait kalem yok.</p>
       <?php else: ?>
       <p>Kargo gideri sipariş düzeyinde eşleşir; resmî sözleşmede paket bağı bulunmadığı için paket eşleşmesi belirsizdir.</p>
-      <ul><?php foreach ($cargo as $item): ?><li><?= h($item['type'] !== '' ? $item['type'] : 'Tür Bilinmiyor') ?> · Gönderi <?= h($item['parcel'] !== '' ? $item['parcel'] : 'Bilinmiyor') ?> · <?= $item['amount'] === null ? 'Bilinmiyor' : tl($item['amount']) ?></li><?php endforeach; ?></ul>
+      <ul><?php foreach ($cargo as $item): ?><li><?= h($item['type'] !== '' ? $item['type'] : 'Tür Bilinmiyor') ?> · Gönderi <?= h($item['parcel'] !== '' ? $item['parcel'] : 'Bilinmiyor') ?> · <?= $item['amount'] === null ? 'Bilinmiyor' : tl($item['amount']) ?><?= !empty($item['conflict']) ? ' · Çelişkili tutar (toplam dışı)' : '' ?></li><?php endforeach; ?></ul>
+      <?php
+        $cargoKnownTotal = 0.0; $cargoKnown = false; $cargoIncomplete = false;
+        foreach ($cargo as $item) {
+            if ($item['amount'] !== null && empty($item['conflict'])) { $cargoKnownTotal += $item['amount']; $cargoKnown = true; }
+            else { $cargoIncomplete = true; }
+        }
+        if ($cargoKnown): ?><p>Bilinen kalemler toplamı: <?= tl($cargoKnownTotal) ?><?= $cargoIncomplete ? ' (bazı kalemler bilinmiyor veya çelişkili)' : '' ?></p><?php endif; ?>
       <?php endif; ?>
     </section>
   <?php endif; ?>

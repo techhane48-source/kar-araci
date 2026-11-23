@@ -37,6 +37,13 @@ return static function (string $method, string $path, array $query, ?string $bod
             $rows = [['orderNumber' => '999', 'shipmentPackageType' => 'Gönderi Kargo Bedeli', 'parcelUniqueId' => 900, 'amount' => 12.5]];
             return ['http' => 200, 'body' => ['content' => $rows, 'totalPages' => 1, 'totalElements' => 1]];
         }
+        if (str_contains($path, '/INV-CONFLICT/')) {
+            $rows = [
+                ['orderNumber' => '456', 'shipmentPackageType' => 'Gönderi Kargo Bedeli', 'parcelUniqueId' => 100, 'amount' => 34.24],
+                ['orderNumber' => '456', 'shipmentPackageType' => 'Gönderi Kargo Bedeli', 'parcelUniqueId' => 100, 'amount' => 99.99],
+            ];
+            return ['http' => 200, 'body' => ['content' => $rows, 'totalPages' => 1, 'totalElements' => 2]];
+        }
         // INV-A: aynı siparişte gönderi + iade kargosu
         $rows = [
             ['orderNumber' => '456', 'shipmentPackageType' => 'Gönderi Kargo Bedeli', 'parcelUniqueId' => 100, 'amount' => 34.24],
@@ -127,6 +134,15 @@ try {
     // Senaryo D: fatura INV-NOMATCH — siparişe ait kalem yok
     $html = post($ch, $base, ['order' => '456', 'invoice' => 'INV-NOMATCH']);
     check(str_contains($html, 'Faturada bu siparişe ait kalem yok'), 'HTML: siparişe ait kalem içermeyen fatura ayırt edilir');
+
+    // Senaryo B2: fatura INV-CONFLICT — aynı gönderi+tür çelişkili tutar, toplam dışı
+    $html = post($ch, $base, ['order' => '456', 'invoice' => 'INV-CONFLICT']);
+    check(str_contains($html, 'Çelişkili tutar (toplam dışı)'), 'HTML: çelişkili tutar gösterilir');
+    check(!str_contains($html, 'Bilinen kalemler toplamı: ₺34,24'), 'HTML: çelişkili kalem bilinen toplamına katılmaz');
+
+    // Senaryo B3: INV-A toplamı — bilinen kalemler toplamı doğru
+    $html = post($ch, $base, ['order' => '456', 'invoice' => 'INV-A']);
+    check(str_contains($html, 'Bilinen kalemler toplamı: ₺68,48'), 'HTML: bilinen kalemler toplamı doğru (34,24×2)');
 
     // Senaryo E: sipariş 457 — eksiksiz boş iade → "iade yok" (hata DEĞİL)
     $html = post($ch, $base, ['order' => '457']);

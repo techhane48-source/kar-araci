@@ -113,6 +113,8 @@ $cargoRows = [
 ];
 $cargoItems = order_accounting_cargo($cargoRows, '123');
 check(count($cargoItems) === 3, 'Aynı gönderi+tür iki kez sayılmaz (mükerrer atlanır)');
+check($cargoItems[0]['conflict'] === true, 'Çelişkili tutar işaretlenir, sessizce biri seçilmez');
+check($cargoItems[0]['amount'] === 34.24, 'İlk tutar korunur ancak çelişki işaretli kalır');
 check($cargoItems[1]['amount'] === 0.0, 'Gerçek sıfır tutar korunur');
 check($cargoItems[2]['amount'] === null, 'Eksik tutar Bilinmiyor kalır, sıfıra çevrilmez');
 check($cargoItems[2]['parcel'] === '300', 'Kimliksiz gönderi hata vermez, kimlik korunur');

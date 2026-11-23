@@ -37,6 +37,23 @@ Bu yüzden kargo gideri sipariş düzeyinde gösterilir ve paket eşleşmesi ekr
 kargosu `shipmentPackageType` ile ayrı gösterilir. Eksik/geçersiz tutar sıfıra
 çevrilmez, "Bilinmiyor" kalır.
 
+## Platform hizmet bedeli
+
+Gerçek platform hizmet bedeli Other Financials (`getotherfinancials.md`) içinde
+`transactionType = "DeductionInvoices"` + `transactionSubType = "PlatformServiceFee"`
+ile bildirilir. Ortak `FinancialTransaction` şemasında `orderNumber` ve
+`shipmentPackageId` **nullable**'dır ve belgede bu bedelin bir siparişe/pakete
+bağlandığı örnek yoktur; dolayısıyla sipariş düzeyinde tekil bir eşleşme
+**belgelenmemiştir**. `OtherFinancialTransactionType` enum'ında bu kalem için
+iptal/ters kayıt tipi de yoktur.
+
+Kâr hesabında kullanılan 13,19₺ (`trendyol_service_fee()`) Melontik modelinden
+alınan bir **tahmindir**, gerçek bedel değildir. Bu tahmin, settlements `Sale`
+komisyonundan ayrı bir kalemdir ve kârda yalnızca bir kez düşülür. Gerçek bedel
+siparişe güvenle bağlanamadığı için tahmin korunur; gerçek bedel (senkronize
+edilirse) siparişe dağıtılmadan genel/dönem düzeyinde ayrıca gösterilmelidir.
+Bir bedelin doğrulanması sipariş kârının kesinleştiği anlamına gelmez.
+
 ## Sıklık ve doğrulama
 
 Web ve cron aynı veri dizinini kullanıyorsa istek aralığı satıcı, API ortamı ve

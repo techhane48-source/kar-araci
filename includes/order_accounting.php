@@ -199,12 +199,19 @@ function order_accounting_cargo(array $rows, string $orderNumber): array
         if ((string)$row['orderNumber'] !== $orderNumber) continue;
         $parcel = (string)($row['parcelUniqueId'] ?? '');
         $type = (string)($row['shipmentPackageType'] ?? '');
+        $amount = order_accounting_amount($row['amount'] ?? null);
         $key = $parcel . '|' . $type;
-        if (isset($items[$key])) continue; // mükerrer satır iki kez toplanmaz
+        if (isset($items[$key])) {
+            // Aynı gönderi+tür iki kez geldi: tutar aynıysa gerçek mükerrer (atlanır),
+            // farklıysa çelişkili — sessizce biri seçilmez, kalem toplam dışı bırakılır.
+            if ($items[$key]['amount'] !== $amount) $items[$key]['conflict'] = true;
+            continue;
+        }
         $items[$key] = [
             'parcel' => $parcel,
             'type' => $type,
-            'amount' => order_accounting_amount($row['amount'] ?? null),
+            'amount' => $amount,
+            'conflict' => false,
         ];
     }
     return array_values($items);

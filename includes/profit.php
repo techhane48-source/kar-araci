@@ -39,6 +39,13 @@ function auto_stopaj(float $price, float $kdvRate = 20.0, float $stopajRate = 1.
     return $price / (1+$kdvRate/100) * $stopajRate/100;
 }
 
+/**
+ * Trendyol platform hizmet bedeli TAHLİNİ (Melontik modelinden alınan sabit).
+ * Gerçek bedel `otherfinancials` → `DeductionInvoices` → `transactionSubType=PlatformServiceFee`
+ * kaydında bildirilir; resmî belgede sipariş/paket bağı (nullable orderNumber/shipmentPackageId,
+ * örnek yok) doğrulanmadığı için kâr hesabında tahmin korunur. Gerçek komisyondan (settlements
+ * `Sale`) ayrı bir kalemdir; iki kez düşülmez.
+ */
 function trendyol_service_fee(): float { return 13.19; }
 
 /** Sıfır değerler varsayılana dönüştürülmez. Eski kayıtların stopajı sabit TL'dir. */
