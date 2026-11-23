@@ -10,7 +10,7 @@ function integration(int $id=1):array {$q=db()->prepare("SELECT * FROM integrati
 final class FixtureClient {
     public array $products=[],$orders=[],$settlements=[],$serviceFees=[],$calls=[];
     public ?string $failure=null;
-    public $beforeProducts=null;
+    public $beforeProducts=null,$beforeServiceFees=null;
     public function getProducts(...$args):array {
         $this->calls[]=['products',$args];
         if($this->beforeProducts)($this->beforeProducts)();
@@ -23,6 +23,7 @@ final class FixtureClient {
     }
     public function getPlatformServiceFees(...$args):array {
         $this->calls[]=['service_fees',$args];
+        if($this->beforeServiceFees)($this->beforeServiceFees)();
         return $this->failure==='service_fees'?['ok'=>false,'error'=>'Fixture page unavailable']:['ok'=>true,'complete'=>true,'rows'=>$this->serviceFees];
     }
 }
@@ -126,4 +127,21 @@ check(sync_platform_service_fees(1,'trendyol',30,$client)['ok'],'Mağaza B hizme
 check((int)scalar("SELECT COUNT(*) FROM platform_service_fees WHERE provider_id='SWITCH-1'")===2,'Aynı işlem ID farklı mağazada ezilmez (2 kayıt)');
 check((float)scalar("SELECT debt FROM platform_service_fees WHERE provider_id='SWITCH-1' AND seller_id='seller1'")===1.0 && (float)scalar("SELECT debt FROM platform_service_fees WHERE provider_id='SWITCH-1' AND seller_id='seller2'")===9.0,'Mağaza kapsamı borçları ayrı korur');
 save_integration(1,'trendyol','seller1','k1','s1');
+// Test/canlı ortam: aynı seller_id + aynı provider_id, farklı ortam → farklı tutar, ezilmez
+$client->serviceFees=[['id'=>'ENV-X','transactionType'=>'DeductionInvoices','transactionDate'=>$timestamp,'debt'=>1,'credit'=>0]];
+check(sync_platform_service_fees(1,'trendyol',30,$client)['ok'],'Canlı ortam (stage 0) hizmet bedeli kaydedilir');
+save_integration(1,'trendyol','seller1','k1','s1',true);
+check(integration()['last_service_fees_sync']===null && integration()['last_sync_error']===null,'Ortam değişince son başarı çekim ve hata bilgisi yeni ortama taşınmaz');
+$client->serviceFees=[['id'=>'ENV-X','transactionType'=>'DeductionInvoices','transactionDate'=>$timestamp,'debt'=>9,'credit'=>0]];
+check(sync_platform_service_fees(1,'trendyol',30,$client)['ok'],'Test ortamı (stage 1) hizmet bedeli kaydedilir');
+check((int)scalar("SELECT COUNT(*) FROM platform_service_fees WHERE provider_id='ENV-X'")===2,'Test/canlı aynı provider_id birbirini ezmez');
+check((float)scalar("SELECT debt FROM platform_service_fees WHERE provider_id='ENV-X' AND stage=0")===1.0 && (float)scalar("SELECT debt FROM platform_service_fees WHERE provider_id='ENV-X' AND stage=1")===9.0,'Ortam kapsamı borçları ayrı korur');
+// Çekim sırasında bağlantı değişimi: eski isteğin sonucu yeni bağlantıya yazılmaz (revision kontrolü)
+$last=integration()['last_service_fees_sync'];
+$client->beforeServiceFees=static function():void {db()->exec('UPDATE integrations SET revision=revision+1 WHERE user_id=1');};
+$client->serviceFees=[['id'=>'MID-X','transactionType'=>'DeductionInvoices','transactionDate'=>$timestamp,'debt'=>5,'credit'=>0]];
+check(!sync_platform_service_fees(1,'trendyol',30,$client)['ok'],'Çekim sırasında bağlantı değişirse hizmet bedeli yazılmaz');
+check((int)scalar("SELECT COUNT(*) FROM platform_service_fees WHERE provider_id='MID-X'")===0,'Değişen bağlantının hizmet bedeli kaydı yazılmaz');
+check(integration()['last_service_fees_sync']===$last,'Bağlantı değişiminde son başarı zamanı ilerlemez');
+$client->beforeServiceFees=null;
 echo $failed?"$failed test başarısız\n":"TÜM TESTLER GEÇTİ\n";exit($failed?1:0);

@@ -265,10 +265,12 @@ function migrate(): void
     $pdo->exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_settlements_provider ON settlements(user_id, marketplace, provider_id)");
     $pdo->exec("CREATE INDEX IF NOT EXISTS idx_settlements_barcode ON settlements(user_id, marketplace, barcode, transaction_type, transaction_date DESC)");
     // Eski platform_service_fees şeması (Tur 7, seller_id/stage yok) → kaynak mağaza/ortam
-    // belirlenemediği için taşınmaz; tablo satıcı+ortam kapsamlı olarak yeniden kurulur.
+    // güvenle belirlenemediği için yeni kapsamlı sorguya dahil edilmez; ancak kayıtlar veri
+    // kaybı olmadan arşivlenir (platform_service_fees_legacy).
     $psfcols = array_column($pdo->query('PRAGMA table_info(platform_service_fees)')->fetchAll(PDO::FETCH_ASSOC), 'name');
     if (count($psfcols) > 0 && !in_array('seller_id', $psfcols, true)) {
-        $pdo->exec('DROP TABLE platform_service_fees');
+        $pdo->exec('DROP INDEX IF EXISTS idx_psf_user_date');
+        $pdo->exec('ALTER TABLE platform_service_fees RENAME TO platform_service_fees_legacy');
     }
     $pdo->exec("CREATE TABLE IF NOT EXISTS platform_service_fees (
         id INTEGER PRIMARY KEY AUTOINCREMENT,

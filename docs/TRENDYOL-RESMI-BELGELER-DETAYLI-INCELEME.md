@@ -63,7 +63,11 @@ kullanır. Kayıtlar `platform_service_fees` tablosuna **bağlantı kapsamı**
 tekil anahtarıyla yazılır; aynı kullanıcı mağaza/test-c canlı ortam değiştirdiğinde
 eski kayıtlar yeni bağlantı altında görünmez ve çakışan `id`'ler birbirini ezmez.
 `debt`/`credit` borç/alacak olarak ayrı, `receiptId` (Dekont No) ve
-`commissionInvoiceSerialNumber` (fatura seri no) referans olarak saklanır.
+`commissionInvoiceSerialNumber` (fatura seri no) referans olarak saklanır. Tur 7'nin
+(seller_id/stage içermeyen) eski kayıtlarının mağaza ve ortamı güvenle belirlenemediği
+için bunlar aktif bağlantıda gösterilmez; migrasyonda veri kaybı olmadan
+`platform_service_fees_legacy` tablosuna arşivlenir ve yeni sorgular yalnızca kapsamı
+doğrulanmış (`seller_id`+`stage`) kayıtları okur.
 
 **Para birimi:** belgede `FinancialTransaction` şemasında para birimi alanı yoktur ve
 tutarların daima TRY olduğuna dair açık bir kural yoktur (yalnızca `country` alanı
