@@ -252,6 +252,7 @@ function migrate(): void
     foreach ([
         'revision' => 'INTEGER NOT NULL DEFAULT 0',
         'last_settlements_sync' => 'INTEGER DEFAULT NULL',
+        'last_cargo_invoices_sync' => 'INTEGER DEFAULT NULL',
         'last_service_fees_sync' => 'INTEGER DEFAULT NULL',
         'orders_coverage_from' => 'INTEGER DEFAULT NULL',
         'last_sync_error' => 'TEXT DEFAULT NULL',

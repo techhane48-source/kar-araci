@@ -262,32 +262,57 @@ function sync_cargo_invoices(int $userId, string $marketplace, int $days = 30, ?
         $invoices = [];
         foreach ($ids as $id) {
             $rows = sync_response($client->getCargoInvoiceItems($id), 'rows');
-            $invoices[$id] = [];
-            foreach ($rows as $row) {
-                $order = trim((string)($row['orderNumber'] ?? ''));
-                if ($order === '') throw new SyncFailure('Kargo faturası kaleminin sipariş numarası eksik.');
-                $amount = $row['amount'] ?? null;
-                $amount = is_numeric($amount) && is_finite((float)$amount) && abs((float)$amount) <= 1e12
-                    ? (float)$amount : null;
-                $invoices[$id][] = [$order, (string)($row['parcelUniqueId'] ?? ''),
-                    (string)($row['shipmentPackageType'] ?? ''), $amount];
-            }
+            $invoices[$id] = cargo_invoice_storage_rows($rows);
         }
 
-        return sync_commit($int, $token, static function (PDO $pdo) use ($int, $invoices): array {
-            $scope = [$int['user_id'], $int['marketplace'], $int['seller_id'], (int)$int['stage']];
-            $delete = $pdo->prepare('DELETE FROM cargo_invoice_items
-                WHERE user_id=? AND marketplace=? AND seller_id=? AND stage=? AND invoice_id=?');
-            $insert = $pdo->prepare('INSERT INTO cargo_invoice_items
-                (user_id, marketplace, seller_id, stage, invoice_id, line_number, order_number, parcel_id, cargo_type, amount)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
-            foreach ($invoices as $id => $rows) {
-                $delete->execute([...$scope, (string)$id]);
-                foreach ($rows as $number => $row) {
-                    $insert->execute([...$scope, (string)$id, $number, ...$row]);
-                }
-            }
+        return sync_commit($int, $token, static function (PDO $pdo) use ($int, $invoices, $started): array {
+            store_cargo_invoice_items($pdo, $int, $invoices);
+            $pdo->prepare('UPDATE integrations SET last_cargo_invoices_sync=? WHERE id=?')
+                ->execute([$started, $int['id']]);
             return ['ok' => true, 'invoices' => count($invoices)];
         });
     }, $client);
+}
+
+function cargo_invoice_storage_rows(array $rows): array
+{
+    $items = [];
+    foreach ($rows as $row) {
+        $order = trim((string)($row['orderNumber'] ?? ''));
+        if ($order === '') throw new SyncFailure('Kargo faturası kaleminin sipariş numarası eksik.');
+        $amount = $row['amount'] ?? null;
+        $amount = is_numeric($amount) && is_finite((float)$amount) && abs((float)$amount) <= 1e12
+            ? (float)$amount : null;
+        $items[] = [$order, (string)($row['parcelUniqueId'] ?? ''),
+            (string)($row['shipmentPackageType'] ?? ''), $amount];
+    }
+    return $items;
+}
+
+function store_cargo_invoice_items(PDO $pdo, array $integration, array $invoices): void
+{
+    $scope = [$integration['user_id'], $integration['marketplace'], $integration['seller_id'], (int)$integration['stage']];
+    $delete = $pdo->prepare('DELETE FROM cargo_invoice_items
+        WHERE user_id=? AND marketplace=? AND seller_id=? AND stage=? AND invoice_id=?');
+    $insert = $pdo->prepare('INSERT INTO cargo_invoice_items
+        (user_id, marketplace, seller_id, stage, invoice_id, line_number, order_number, parcel_id, cargo_type, amount)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+    foreach ($invoices as $id => $rows) {
+        $delete->execute([...$scope, (string)$id]);
+        foreach ($rows as $number => $row) $insert->execute([...$scope, (string)$id, $number, ...$row]);
+    }
+}
+
+/** Save an explicitly requested invoice only if the provider returned the selected order. */
+function sync_cargo_invoice_for_order(int $userId, string $orderNumber, string $invoiceId): array
+{
+    return sync_job($userId, 'trendyol', 'cargo_invoices', static function ($integration, $client, $token) use ($orderNumber, $invoiceId): array {
+        $rows = sync_response($client->getCargoInvoiceItems($invoiceId), 'rows');
+        $items = cargo_invoice_storage_rows($rows);
+        if (!in_array($orderNumber, array_column($items, 0), true)) return ['ok' => true, 'rows' => $rows];
+        return sync_commit($integration, $token, static function (PDO $pdo) use ($integration, $invoiceId, $items, $rows): array {
+            store_cargo_invoice_items($pdo, $integration, [$invoiceId => $items]);
+            return ['ok' => true, 'rows' => $rows];
+        });
+    });
 }

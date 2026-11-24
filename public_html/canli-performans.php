@@ -45,7 +45,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'sync'
 }
 
 // --- Otomatik sipariş senkronu (müşteri butona basmadan; son senkron > 10 dk ise) ---
-$autoSyncSt = db()->prepare("SELECT user_id, marketplace, seller_id, stage, last_orders_sync FROM integrations WHERE user_id = ? AND marketplace = ?");
+$autoSyncSt = db()->prepare("SELECT user_id, marketplace, seller_id, stage, last_orders_sync, last_cargo_invoices_sync, last_sync_error_scope FROM integrations WHERE user_id = ? AND marketplace = ?");
 $autoSyncSt->execute([$u['id'], $mp]);
 $integration = $autoSyncSt->fetch();
 $lastOrdersSync = $integration['last_orders_sync'] ?? null;
@@ -110,6 +110,8 @@ foreach ($orders as $o) {
                 $cargo === [] || !$cargo['scope_matches'] => 'Siparişin mağaza veya ortamı doğrulanamadı',
                 $pr['cargo_source'] === 'invoice' => 'Fatura sipariş düzeyinde · Paket kargosu ayrıştırılamadı',
                 $pr['cargo_source'] === 'history' => 'Kargo tahmini var · Sipariş maliyet kaydı bekleniyor',
+                ($integration['last_sync_error_scope'] ?? null) === 'cargo_invoices' => 'Son kargo faturası çekimi başarısız',
+                !$integration['last_cargo_invoices_sync'] => 'Kargo faturaları henüz senkronize edilmedi',
                 default => 'Kargo faturası bekleniyor veya fatura kalemleri doğrulanamadı',
             };
             if ($cargo === [] && $o['source_seller_id'] !== null) $pr['before_cargo'] = null;
@@ -172,7 +174,11 @@ require __DIR__ . '/../includes/header.php';
   <?php if ($today['count'] > $today['profitCount']): ?>
     <?= $today['count'] - $today['profitCount'] ?> paket toplama alınmadı. Nedeni Son Siparişler bölümünde, kargo öncesi tutar varsa yanında gösterilir.
   <?php endif; ?>
-  <?php if ($useCargoEvidence): ?><a href="magaza.php?mp=trendyol">Finans kayıtlarını güncelle</a>.<?php endif; ?></p>
+  <?php if ($useCargoEvidence): ?>
+    Son başarılı kargo faturası çekimi: <?= $integration['last_cargo_invoices_sync']
+        ? date('d.m.Y H:i', (int)$integration['last_cargo_invoices_sync']) : 'Henüz doğrulanmadı' ?>.
+    <a href="magaza.php?mp=trendyol">Finans kayıtlarını güncelle</a>.
+  <?php endif; ?></p>
   <div class="kpi-row">
     <div class="kpi"><div class="k-label">Bugün Satış</div><div class="k-value"><?= tl($today['sale']) ?></div></div>
     <div class="kpi"><div class="k-label">Bugün Hesaplanan Kâr</div><div class="k-value <?= $today['profit'] < 0 ? 'neg' : '' ?>"><?= $today['profitCount'] > 0 ? tl($today['profit']) : '—' ?></div></div>

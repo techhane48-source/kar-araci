@@ -60,10 +60,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
             if ($invoice !== '') {
                 try {
-                    $result = $client->getCargoInvoiceItems($invoice);
+                    $result = sync_cargo_invoice_for_order((int)$user['id'], $order, $invoice);
                     if (!$result['ok']) throw new RuntimeException($result['error']);
                     $cargo_total = count($result['rows'] ?? []);
                     $cargo = order_accounting_cargo($result['rows'] ?? [], $order);
+                    $cachedCargo = order_cargo_records($integration, $order);
+                    $cargoProfit = order_cargo_profit_view($integration, $packages, $cachedCargo);
                 } catch (RuntimeException $e) {
                     $cargoFailed = true;
                     $errors[] = 'Kargo: ' . $e->getMessage();

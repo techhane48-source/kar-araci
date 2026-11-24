@@ -154,6 +154,13 @@ try {
     check(str_contains($html, 'İade sorgusu başarısız oldu'), 'HTML: eksik sayfalı iade sorgusu hata gösterir');
     check(!str_contains($html, 'Gösterilecek iade kalemi yok'), 'HTML: hata durumunda iade yok izlenimi verilmez');
 
+    check((int)db()->query("SELECT COUNT(*) FROM cargo_invoice_items WHERE invoice_id='INV-A'")->fetchColumn() === 2,
+        'Elle doğrulanan fatura Canlı Performans için saklanır');
+    check((int)db()->query("SELECT COUNT(*) FROM cargo_invoice_items WHERE invoice_id='INV-NOMATCH'")->fetchColumn() === 0,
+        'Seçilen siparişle ilgisiz fatura saklanmaz');
+    // Aynı kurgusal gönderi numarasını kullanan çelişki senaryosunu sonraki bağımsız senaryodan ayır.
+    db()->exec("DELETE FROM cargo_invoice_items WHERE invoice_id='INV-CONFLICT'");
+
     // Normal finans düğmesi faturanın kimliğini bulur; muhasebe ekranda elle girmez.
     db()->prepare("UPDATE orders SET source_seller_id='42', source_stage=0 WHERE user_id=? AND order_number='456'")
         ->execute([$uid]);
@@ -182,6 +189,8 @@ try {
         WHERE user_id=? AND order_number IN ('456','457')")->execute([time(), $inputs, $uid]);
     db()->prepare('UPDATE integrations SET last_orders_sync=? WHERE user_id=?')->execute([time(), $uid]);
     $live = req($ch, $base, 'canli-performans.php?mp=trendyol')['body'];
+    check(str_contains($live, 'Son başarılı kargo faturası çekimi:')
+        && !str_contains($live, 'Son başarılı kargo faturası çekimi: Henüz'), 'Canlı Performans fatura çekim zamanını gösterir');
     check(str_contains($live, 'Faturalı kargo') && str_contains($live, '₺68,48') && str_contains($live, '₺51,52'),
         'Canlı Performans faturalı kargo üzerinden paket kârını hesaplar');
     check(str_contains($live, 'Kargo faturası bekleniyor veya fatura kalemleri doğrulanamadı')
