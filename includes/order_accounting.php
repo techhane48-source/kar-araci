@@ -328,3 +328,19 @@ function order_cargo_profit_view(array $integration, array $packages, array $ite
     $result['calculation'] = $profit;
     return $result;
 }
+
+/** Recent delivered orders whose cargo invoice lines came from the same store. */
+function invoiced_orders_for_store(array $integration): array
+{
+    $query = db()->prepare("SELECT o.order_number, MAX(o.order_date) AS order_date
+        FROM orders o
+        WHERE o.user_id=? AND o.marketplace=? AND o.source_seller_id=? AND o.source_stage=?
+          AND o.order_number<>'' AND o.order_date>0 AND LOWER(o.status)='delivered'
+          AND EXISTS (SELECT 1 FROM cargo_invoice_items c
+              WHERE c.user_id=o.user_id AND c.marketplace=o.marketplace
+                AND c.seller_id=o.source_seller_id AND c.stage=o.source_stage AND c.order_number=o.order_number
+                AND c.amount IS NOT NULL AND c.parcel_id<>'')
+        GROUP BY o.order_number ORDER BY order_date DESC, o.order_number DESC LIMIT 20");
+    $query->execute([$integration['user_id'], $integration['marketplace'], $integration['seller_id'], (int)$integration['stage']]);
+    return $query->fetchAll();
+}

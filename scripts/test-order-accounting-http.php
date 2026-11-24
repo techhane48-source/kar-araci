@@ -188,6 +188,10 @@ try {
     db()->prepare("UPDATE orders SET order_date=?, profit_inputs=?, source_seller_id='42', source_stage=0
         WHERE user_id=? AND order_number IN ('456','457')")->execute([time(), $inputs, $uid]);
     db()->prepare('UPDATE integrations SET last_orders_sync=? WHERE user_id=?')->execute([time(), $uid]);
+    $list = req($ch, $base, 'siparis-muhasebe.php')['body'];
+    check(str_contains($list, 'Kargo faturası bulunan siparişler') && str_contains($list, 'name="order" value="456"'),
+        'Kargo faturası bulunan sipariş numara girmeden açılabilir');
+    check(!str_contains($list, 'name="order" value="457"'), 'Kargo faturası olmayan sipariş faturalar listesine girmez');
     $live = req($ch, $base, 'canli-performans.php?mp=trendyol')['body'];
     check(str_contains($live, 'Son başarılı kargo faturası çekimi:')
         && !str_contains($live, 'Son başarılı kargo faturası çekimi: Henüz'), 'Canlı Performans fatura çekim zamanını gösterir');

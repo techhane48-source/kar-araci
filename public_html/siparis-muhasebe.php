@@ -18,6 +18,24 @@ $cargoProfit = null;
 $claims_error = false;
 $errors = [];
 $searched = false;
+$integration = get_integration((int)$user['id'], 'trendyol');
+$invoicedOrders = $integration ? invoiced_orders_for_store($integration) : [];
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? null) === 'sync_invoiced_orders') {
+    $token = $_POST['csrf'] ?? null;
+    if (!is_string($token) || !csrf_verify($token)) {
+        flash_set('error', 'Oturum süresi doldu.');
+    } elseif (!$integration) {
+        flash_set('error', 'Önce Trendyol mağazanı bağla.');
+    } else {
+        $pastOrders = sync_orders((int)$user['id'], 'trendyol', 30);
+        $pastInvoices = sync_cargo_invoices((int)$user['id'], 'trendyol', 30);
+        $message = $pastOrders['ok'] ? "{$pastOrders['count']} paket çekildi." : 'Siparişler: ' . $pastOrders['error'];
+        $message .= $pastInvoices['ok'] ? " {$pastInvoices['invoices']} kargo faturası çekildi." : ' Kargo faturaları: ' . $pastInvoices['error'];
+        flash_set($pastOrders['ok'] && $pastInvoices['ok'] ? 'success' : 'error', $message);
+    }
+    e_redirect('siparis-muhasebe.php');
+}
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $order = is_string($_POST['order'] ?? null) ? trim($_POST['order']) : '';
@@ -30,7 +48,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $errors[] = 'Sipariş, ödeme emri veya fatura numarası geçersiz.';
     } else {
         $packages = order_accounting_packages((int)$user['id'], $order);
-        $integration = get_integration((int)$user['id'], 'trendyol');
         if (!$packages || !$integration) {
             $errors[] = 'Bu sipariş bağlı Trendyol mağazanızın yerel kayıtlarında bulunamadı.';
         } else {
@@ -81,6 +98,36 @@ require __DIR__ . '/../includes/header.php';
 <div class="wrap">
   <h1>Sipariş Muhasebesi</h1>
   <?php foreach ($errors as $error): ?><p class="flash flash-error"><?= h($error) ?></p><?php endforeach; ?>
+  <?php if ($flash = flash_get()): ?><div class="alert alert-<?= h($flash['type']) ?>"><?= h($flash['msg']) ?></div><?php endif; ?>
+  <?php if ($integration): ?>
+    <section class="card">
+      <div class="toolbar">
+        <h2>Kargo faturası bulunan siparişler</h2>
+        <form method="post">
+          <input type="hidden" name="csrf" value="<?= h(csrf_token()) ?>">
+          <button class="btn-ghost" name="action" value="sync_invoiced_orders">Son 30 günü çek</button>
+        </form>
+      </div>
+      <?php if (!$invoicedOrders): ?>
+        <p class="hint">Yerel sipariş geçmişinde kargo faturasıyla eşleşen teslim edilmiş sipariş bulunamadı.</p>
+      <?php else: ?>
+        <table>
+          <thead><tr><th>Sipariş</th><th>Tarih</th><th></th></tr></thead>
+          <tbody>
+          <?php foreach ($invoicedOrders as $entry): ?>
+            <tr><td><?= h($entry['order_number']) ?></td><td><?= date('d.m.Y', (int)$entry['order_date']) ?></td><td>
+              <form method="post">
+                <input type="hidden" name="csrf" value="<?= h(csrf_token()) ?>">
+                <input type="hidden" name="order" value="<?= h($entry['order_number']) ?>">
+                <button class="btn-ghost" type="submit">Aç</button>
+              </form>
+            </td></tr>
+          <?php endforeach; ?>
+          </tbody>
+        </table>
+      <?php endif; ?>
+    </section>
+  <?php endif; ?>
   <form class="card" method="post">
     <input type="hidden" name="csrf" value="<?= h(csrf_token()) ?>">
     <label for="order">Sipariş numarası</label>
