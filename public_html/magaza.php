@@ -5,6 +5,7 @@ require_once __DIR__ . '/../includes/functions.php';
 $u = require_login();
 $error = '';
 $ok = '';
+$serviceFeesFailed = false;
 
 // Hangi pazaryeriyle çalışılıyor
 $mp = $_GET['mp'] ?? 'trendyol';
@@ -56,6 +57,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $supported) {
             }
         } elseif ($action === 'settlements') {
             $settlements = sync_settlements((int)$u['id'], $mp);
+            $cargoInvoices = sync_cargo_invoices((int)$u['id'], $mp);
             $serviceFeesResult = sync_platform_service_fees((int)$u['id'], $mp);
             $messages = [];
             $errors = [];
@@ -67,7 +69,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $supported) {
             if ($serviceFeesResult['ok']) {
                 $messages[] = "Platform hizmet bedeli çekildi: {$serviceFeesResult['records']} hareket.";
             } else {
+                $serviceFeesFailed = true;
                 $errors[] = 'Platform hizmet bedeli hatası: ' . ($serviceFeesResult['error'] ?? 'Bilinmeyen hata');
+            }
+            if ($cargoInvoices['ok']) {
+                $messages[] = "Kargo faturaları çekildi: {$cargoInvoices['invoices']} fatura.";
+            } else {
+                $errors[] = 'Kargo faturası hatası: ' . ($cargoInvoices['error'] ?? 'Bilinmeyen hata');
             }
             $ok = implode(' ', $messages);
             $error = implode(' ', $errors);
@@ -198,14 +206,14 @@ require __DIR__ . '/../includes/header.php';
           <button type="submit" class="btn-danger">Bağlantıyı Kaldır</button>
         </form>
       </div>
-      <p class="hint" style="margin-top:14px">Ürünler çekildikten sonra <a href="urunler.php">Ürünlerim</a> sayfasında görünür. Maliyet alanını her ürün için siz girersiniz (API'den maliyet gelmez). <strong>Finans Kayıtlarını Çek</strong> ile cari hesap ekstresi ve hizmet bedeli hareketleri alınır; ürünlerin komisyon oranları en güncel satış kaydından güncellenir. Kargo ve hakediş mutabakatı ayrıca değerlendirilmelidir.</p>
+      <p class="hint" style="margin-top:14px">Ürünler çekildikten sonra <a href="urunler.php">Ürünlerim</a> sayfasında görünür. Maliyet alanını her ürün için siz girersiniz (API'den maliyet gelmez). <strong>Finans Kayıtlarını Çek</strong> ile cari hesap ekstresi, hizmet bedeli hareketleri ve kargo faturaları alınır; ürünlerin komisyon oranları en güncel satış kaydından güncellenir. Kargo ve hakediş mutabakatı ayrıca değerlendirilmelidir.</p>
     </div>
 
     <div class="card" style="margin-top:16px">
       <h2>Platform Hizmet Bedeli (Trendyol)</h2>
       <div class="detail-row"><span>Son başarılı çekim</span><strong><?= $int['last_service_fees_sync'] ? date('d.m.Y H:i', (int)$int['last_service_fees_sync']) : 'Henüz çekilmedi' ?></strong></div>
       <p class="hint">Trendyol Other Financials → <em>DeductionInvoices / PlatformServiceFee</em> ile bildirilen gerçek hizmet bedeli hareketleri. Bu tutar kâr hesabındaki tahminin yerine kullanılmaz ve siparişlere dağıtılmaz; yalnızca dönem düzeyinde referanstır. Borç ve alacak ayrı gösterilir.</p>
-      <?php if (($int['last_sync_error_scope'] ?? '') === 'service_fees'): ?>
+      <?php if (($serviceFeesFailed || ($int['last_sync_error_scope'] ?? '') === 'service_fees') && $int['last_service_fees_sync']): ?>
         <p class="flash flash-error">Son hizmet bedeli çekimi başarısız oldu; aşağıdaki kayıtlar önceki başarılı çekime ait.</p>
       <?php endif; ?>
       <p class="hint">Tutarların para birimi sağlayıcı tarafından açıkça belirtilmiyor (belgede para birimi alanı yok); bu yüzden tutarlara ₺ etiketi konmaz ve doğrulanmış bir dönem toplamı üretilmez.</p>

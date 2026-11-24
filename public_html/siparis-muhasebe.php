@@ -6,11 +6,15 @@ require_once __DIR__ . '/../includes/order_accounting.php';
 $user = require_login();
 if (!is_pro($user)) e_redirect('odeme.php');
 
-$order = '';
+$prefill = $_GET['order'] ?? '';
+$order = is_string($prefill) && preg_match('/^[0-9]{1,32}$/D', $prefill) ? $prefill : '';
 $payment = '';
 $invoice = '';
 $settlements = $packages = $claims = $ledger = $cargo = [];
 $cargo_total = 0;
+$cargoFailed = false;
+$cachedCargo = [];
+$cargoProfit = null;
 $claims_error = false;
 $errors = [];
 $searched = false;
@@ -31,6 +35,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $errors[] = 'Bu sipariş bağlı Trendyol mağazanızın yerel kayıtlarında bulunamadı.';
         } else {
             $searched = true;
+            $cachedCargo = order_cargo_records($integration, $order);
+            $cargoProfit = order_cargo_profit_view($integration, $packages, $cachedCargo);
             $settlements = order_accounting_settlements((int)$user['id'], $order);
             require_once __DIR__ . '/../includes/trendyol.php';
             $client = new TrendyolClient($integration['seller_id'], $integration['api_key'],
@@ -59,6 +65,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $cargo_total = count($result['rows'] ?? []);
                     $cargo = order_accounting_cargo($result['rows'] ?? [], $order);
                 } catch (RuntimeException $e) {
+                    $cargoFailed = true;
                     $errors[] = 'Kargo: ' . $e->getMessage();
                 }
             }
@@ -116,8 +123,22 @@ require __DIR__ . '/../includes/header.php';
       <?php if (!empty($ledger['invoices'])): ?><p>Ödeme emrindeki kargo faturası adayları: <?= h(implode(', ', $ledger['invoices'])) ?></p><?php endif; ?>
     </section>
     <section class="card"><h2>Kargo faturası kalemleri</h2>
-      <?php if ($invoice === ''): ?><p>Kargo fatura seri numarası girilmedi.</p>
-      <?php elseif ($cargo_total === 0): ?><p>Fatura boş (kalem içermiyor).</p>
+      <?php if ($cargoProfit !== null): ?>
+        <?php if ($cargoProfit['source'] === 'invoice'): ?>
+          <p>Faturada görülen sipariş kargosu: <?= tl($cargoProfit['amount']) ?></p>
+        <?php elseif ($cargoProfit['source'] === 'history'): ?>
+          <p>Kargo faturası bekleniyor · Benzer gönderiden alınan geçici kargo: <?= tl($cargoProfit['amount']) ?></p>
+        <?php else: ?>
+          <p>Kargo gideri bekleniyor veya mevcut kayıt doğrulanamadı.</p>
+        <?php endif; ?>
+        <?php if ($cargoProfit['profit'] !== null): ?>
+          <p><?= $cargoProfit['source'] === 'history' ? 'Geçici kâr' : 'Faturalı kargoyla hesaplanan kâr' ?>: <?= tl($cargoProfit['profit']) ?>. Diğer finans kalemleri ayrıca doğrulanır.</p>
+        <?php endif; ?>
+      <?php endif; ?>
+      <?php if ($invoice === '' && ($cargoProfit['scope_matches'] ?? false)): $cargo = $cachedCargo; endif; ?>
+      <?php if ($cargoFailed): ?><p>Fatura sorgulanamadı.</p>
+      <?php elseif ($invoice === '' && !$cargo): ?><p>Bu sipariş için senkronize kargo faturası kalemi yok.</p>
+      <?php elseif ($invoice !== '' && $cargo_total === 0): ?><p>Fatura boş (kalem içermiyor).</p>
       <?php elseif (!$cargo): ?><p>Faturada bu siparişe ait kalem yok.</p>
       <?php else: ?>
       <p>Kargo gideri sipariş düzeyinde eşleşir; resmî sözleşmede paket bağı bulunmadığı için paket eşleşmesi belirsizdir.</p>

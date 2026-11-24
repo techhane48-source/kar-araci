@@ -5,7 +5,8 @@ require_once __DIR__ . '/functions.php';
 
 function order_accounting_packages(int $userId, string $orderNumber): array
 {
-    $query = db()->prepare("SELECT package_number, status, total_price, lines FROM orders
+    $query = db()->prepare("SELECT package_number, order_number, order_date, status, total_price, lines, profit_inputs,
+            marketplace, source_seller_id, source_stage, cargo_company FROM orders
         WHERE user_id = ? AND marketplace = 'trendyol' AND order_number = ? ORDER BY package_number");
     $query->execute([$userId, $orderNumber]);
     return $query->fetchAll();
@@ -215,4 +216,114 @@ function order_accounting_cargo(array $rows, string $orderNumber): array
         ];
     }
     return array_values($items);
+}
+
+function order_cargo_records(array $integration, string $orderNumber): array
+{
+    $query = db()->prepare('SELECT order_number AS orderNumber, parcel_id AS parcelUniqueId,
+        cargo_type AS shipmentPackageType, amount, invoice_id FROM cargo_invoice_items
+        WHERE user_id=? AND marketplace=? AND seller_id=? AND stage=? AND order_number=?
+        ORDER BY invoice_id, line_number');
+    $query->execute([$integration['user_id'], $integration['marketplace'], $integration['seller_id'],
+        (int)$integration['stage'], $orderNumber]);
+    $rows = $query->fetchAll();
+    $invoiceByParcel = [];
+    $conflicts = [];
+    foreach ($rows as $row) {
+        $key = $row['parcelUniqueId'] . '|' . $row['shipmentPackageType'];
+        if (isset($invoiceByParcel[$key]) && $invoiceByParcel[$key] !== $row['invoice_id']) {
+            $conflicts[$key] = true;
+        }
+        $invoiceByParcel[$key] = $row['invoice_id'];
+    }
+    $items = order_accounting_cargo($rows, $orderNumber);
+    foreach ($items as &$item) {
+        if (isset($conflicts[$item['parcel'] . '|' . $item['type']])) $item['conflict'] = true;
+    }
+    unset($item);
+    return $items;
+}
+
+/** Null keeps an absent or contradictory expense distinct from a billed zero. */
+function order_cargo_recorded_amount(array $items): ?float
+{
+    if (!$items) return null;
+    $amount = 0.0;
+    foreach ($items as $item) {
+        if ($item['parcel'] === '' || $item['type'] === '' || $item['amount'] === null
+            || $item['amount'] < 0 || $item['conflict']) return null;
+        $amount += $item['amount'];
+    }
+    return $amount <= PROFIT_MAX_AMOUNT ? $amount : null;
+}
+
+function order_cargo_composition(string $json): ?array
+{
+    $lines = json_decode($json, true);
+    if (!is_array($lines) || !$lines) return null;
+    $composition = [];
+    foreach ($lines as $line) {
+        $barcode = $line['barcode'] ?? '';
+        $quantity = filter_var($line['quantity'] ?? null, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
+        if (!is_string($barcode) || $barcode === '' || !$quantity) return null;
+        $composition[$barcode] = ($composition[$barcode] ?? 0) + $quantity;
+    }
+    ksort($composition, SORT_STRING);
+    return $composition;
+}
+
+function order_cargo_reference(array $integration, array $package): ?float
+{
+    $carrier = $package['cargo_company'];
+    $composition = order_cargo_composition($package['lines']);
+    if ($carrier === '' || $composition === null) return null;
+    $query = db()->prepare("SELECT o.order_number, o.lines FROM orders o
+        WHERE o.user_id=? AND o.marketplace=? AND o.source_seller_id=? AND o.source_stage=?
+        AND o.order_number<>'' AND o.order_number<>? AND o.cargo_company=? AND o.order_date<? AND o.order_date>=?
+        AND LOWER(o.status)='delivered'
+        AND EXISTS (SELECT 1 FROM cargo_invoice_items c WHERE c.user_id=o.user_id AND c.marketplace=o.marketplace
+            AND c.seller_id=o.source_seller_id AND c.stage=o.source_stage AND c.order_number=o.order_number)
+        AND NOT EXISTS (SELECT 1 FROM orders other WHERE other.user_id=o.user_id AND other.marketplace=o.marketplace
+            AND other.order_number=o.order_number AND other.id<>o.id
+            AND (other.source_seller_id IS NULL OR (other.source_seller_id=o.source_seller_id AND other.source_stage=o.source_stage)))
+        ORDER BY o.order_date DESC, o.id DESC LIMIT 100");
+    $query->execute([$integration['user_id'], $integration['marketplace'], $integration['seller_id'], (int)$integration['stage'],
+        $package['order_number'], $carrier, $package['order_date'], (int)$package['order_date'] - 90 * 86400]);
+    foreach ($query->fetchAll() as $reference) {
+        if (order_cargo_composition($reference['lines']) !== $composition) continue;
+        $items = order_cargo_records($integration, $reference['order_number']);
+        if (count($items) !== 1 || $items[0]['type'] !== 'Gönderi Kargo Bedeli') continue;
+        $amount = order_cargo_recorded_amount($items);
+        if ($amount !== null) return $amount;
+    }
+    return null;
+}
+
+function order_cargo_profit_view(array $integration, array $packages, array $items): array
+{
+    $result = ['source' => 'pending', 'amount' => null, 'profit' => null, 'scope_matches' => false];
+    foreach ($packages as $package) {
+        if ($package['source_seller_id'] !== $integration['seller_id'] || $package['source_stage'] === null
+            || (int)$package['source_stage'] !== (int)$integration['stage']) return $result;
+    }
+    if (!$packages) return $result;
+    $result['scope_matches'] = true;
+
+    $amount = order_cargo_recorded_amount($items);
+    if ($amount !== null) {
+        $source = 'invoice';
+    } elseif (!$items && count($packages) === 1) {
+        $amount = order_cargo_reference($integration, $packages[0]);
+        $source = 'history';
+    }
+    if ($amount === null) return $result;
+    $result = ['source' => $source, 'amount' => $amount, 'profit' => null, 'scope_matches' => true];
+
+    // Package allocation would imply a link the invoice API does not provide.
+    if (count($packages) !== 1 || $packages[0]['profit_inputs'] === null) return $result;
+    $package = $packages[0];
+    $package['lines'] = json_decode($package['lines'], true) ?: [];
+    $profit = calc_order_profit($package, [], $amount);
+    $result['profit'] = $profit['ok'] ? $profit['profit'] : null;
+    return $result;
 }

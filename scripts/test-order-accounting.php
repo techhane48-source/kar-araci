@@ -165,3 +165,63 @@ try {
 }
 trendyol_rate_slot('shop-2', 0);
 check($blocked, 'Kota beklemesi mağazaya göre ayrılır');
+
+db()->exec("INSERT INTO users(email,password_hash) VALUES ('cargo-fixture@example.test','unused')");
+$uid = (int)db()->lastInsertId();
+save_integration($uid, 'trendyol', '642', 'fixture', 'fixture');
+$integration = get_integration($uid, 'trendyol');
+$now = time();
+$lines = [['barcode' => 'A', 'quantity' => 2, 'price' => 500]];
+$inputs = json_encode(capture_order_profit_inputs($lines, ['A' => [
+    'cost' => 330, 'rate' => 20, 'kdv' => 0, 'cargo' => 25, 'service_fee' => 0,
+]], $now));
+$insertOrder = db()->prepare("INSERT INTO orders (user_id, marketplace, order_number, package_number, status,
+    total_price, order_date, lines, profit_inputs, source_seller_id, source_stage, cargo_company)
+    VALUES (?, 'trendyol', ?, ?, 'Delivered', 1000, ?, ?, ?, '642', 0, 'Carrier A')");
+$insertOrder->execute([$uid, '1001', 'old-cargo', $now - 86400, json_encode($lines), $inputs]);
+$insertOrder->execute([$uid, '1002', 'new-cargo', $now, json_encode($lines), $inputs]);
+
+$includeNew = false;
+$broken = false;
+$calls = [];
+$client = new TrendyolClient('642', 'fixture', 'fixture', false,
+    static function ($method, $path, $query) use (&$includeNew, &$broken, &$calls): array {
+        $calls[] = [$method, $path, $query];
+        $rows = match (true) {
+            str_ends_with($path, '/otherfinancials') => [
+                ['id' => 'CARGO-1', 'transactionType' => 'Kargo Faturası'],
+                ['id' => 'IGNORE-ME', 'transactionType' => 'Platform Hizmet Bedeli'],
+            ],
+            str_ends_with($path, '/cargo-invoice/CARGO-1/items') => [
+                ['orderNumber' => '1001', 'parcelUniqueId' => 1, 'shipmentPackageType' => 'Gönderi Kargo Bedeli', 'amount' => 120],
+                ...($includeNew ? [['orderNumber' => '1002', 'parcelUniqueId' => 2, 'shipmentPackageType' => 'Gönderi Kargo Bedeli', 'amount' => 90]] : []),
+            ],
+            default => throw new RuntimeException('Unexpected cargo API route.'),
+        };
+        if ($broken && str_contains($path, '/cargo-invoice/')) return ['http' => 503];
+        return ['http' => 200, 'body' => ['content' => $rows, 'totalPages' => 1, 'totalElements' => count($rows)]];
+    }, true);
+
+$result = sync_cargo_invoices($uid, 'trendyol', 3, $client);
+check($result['ok'] && $result['invoices'] === 1 && count($calls) === 2
+    && $calls[0][2]['transactionType'] === 'DeductionInvoices', 'Finans senkronu yalnız kargo faturası kimliğini takip eder');
+$packages = order_accounting_packages($uid, '1002');
+$view = order_cargo_profit_view($integration, $packages, order_cargo_records($integration, '1002'));
+check($view['source'] === 'history' && $view['amount'] === 120.0 && abs($view['profit'] - 20) < .001,
+    'Aynı adet ve taşıyıcıdan geçici kargo ürün adediyle tekrar çarpılmaz');
+check(order_cargo_profit_view($integration, [array_replace($packages[0], ['cargo_company' => 'Carrier B'])], [])['amount'] === null,
+    'Farklı taşıyıcıdan kargo tahmini yapılmaz');
+
+$includeNew = true;
+check(sync_cargo_invoices($uid, 'trendyol', 3, $client)['ok'], 'Fatura tekrar çekilebilir');
+$items = order_cargo_records($integration, '1002');
+$view = order_cargo_profit_view($integration, $packages, $items);
+check(count($items) === 1 && $view['source'] === 'invoice' && $view['amount'] === 90.0 && abs($view['profit'] - 50) < .001,
+    'Faturalanan tutar geçmiş tahminin yerini alır ve çift sayılmaz');
+check(order_cargo_profit_view($integration, [$packages[0], $packages[0]], $items)['profit'] === null,
+    'Çok paketli siparişte fatura tutarı paketlere dağıtılmaz');
+check(order_cargo_records(array_replace($integration, ['stage' => 1]), '1002') === [],
+    'Kargo faturası test/canlı ortam arasında karışmaz');
+$broken = true;
+check(!sync_cargo_invoices($uid, 'trendyol', 3, $client)['ok']
+    && order_cargo_records($integration, '1002') === $items, 'Eksik fatura yanıtı önceki kayıtları silmez');

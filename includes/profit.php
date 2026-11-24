@@ -130,7 +130,7 @@ function merge_order_profit_inputs(?string $old,array $new): array
 }
 
 /** Paket tutarı satırların satış ağırlığıyla dağıtılır; her satır kendi KDV/giderleriyle hesaplanır. */
-function calc_order_profit(array $order,array $byBarcode): array
+function calc_order_profit(array $order,array $byBarcode, ?float $packageCargo = null): array
 {
     $sale=(float)($order['total_price']??0);
     $lines=$order['lines']??[];
@@ -183,6 +183,9 @@ function calc_order_profit(array $order,array $byBarcode): array
         if (isset($feeWeights[$i])) {
             $share = $feeWeight > 0 ? $feeWeights[$i] / $feeWeight : 1 / $feeCount;
             $p['service_fee'] = $defaultFee * $share / $qty;
+        }
+        if ($p && $packageCargo !== null) {
+            $p['cargo'] = $packageCargo * $weights[$i] / $weight / $qty;
         }
         $r=$p ? calc_product_profit($p,max(0.0,$lineSale/$qty)) : ['ok'=>false];
         $part=['barcode'=>(string)($line['barcode']??''),'name'=>(string)($p['name']??$line['productName']??''),

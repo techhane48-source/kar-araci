@@ -95,3 +95,18 @@ kota ve kesintiden sonra cursor'la devam etme henüz tamamlanmadı.
 Yerel testler örnek API yanıtlarını kullanır. Canlı kabul için satıcı izniyle
 çok paketli ve kısmi iadeli sipariş, komisyon, kargo faturası ve platform hizmet
 bedeli örnekleri doğrulanmalı. Banka tahsilatı için ayrıca banka kaydı gerekir.
+
+### Kargo faturası senkronu
+
+Mağaza ekranındaki **Finans Kayıtlarını Çek** ve zamanlanmış senkron,
+`DeductionInvoices` tarih aralıklarından kargo faturası ID'lerini bulur.
+Tam okunmuş fatura kalemleri satıcı ve ortam kapsamında kaydedilir.
+Sipariş Muhasebesi bu kalemleri sipariş numarasıyla gösterir.
+
+Tek paket kayıtlıysa ve siparişin maliyet girdileri tam ise kargo gideri
+bir kez uygulanarak ayrı bir sipariş hesabı gösterilir. Fatura henüz
+yoksa son 90 günde aynı mağazada, aynı ürün/adet içeriği ve taşıyıcı ile
+teslim edilmiş, tek gönderi faturalı sipariş örnek alınabilir. Bu tutar
+geçicidir. Birden çok paket, tanımsız gider veya çelişkili fatura varsa
+uygulama paketlere gider dağıtmaz. Kaynağı kaydedilmemiş eski siparişler
+yeni senkronla sağlayıcı kapsamına alınana kadar otomatik bağlanmaz.

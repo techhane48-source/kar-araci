@@ -126,21 +126,24 @@ function sync_orders(int $userId,string $marketplace,int $days=7,?object $client
         $from=$started-$days*86400;
         if ($marketplace==='trendyol') $from=max($from,(new DateTimeImmutable(date('c',$started)))->modify('-3 months')->getTimestamp());
         $rows=sync_response($client->getOrders('',date('c',$from),date('c',$started)),'orders');
-        return sync_commit($int,$token,static function($pdo) use($rows,$userId,$marketplace,$started,$from):array {
+        return sync_commit($int,$token,static function($pdo) use($rows,$userId,$marketplace,$started,$from,$int):array {
             $products=[];$productQuery=$pdo->prepare('SELECT * FROM products WHERE user_id=? AND marketplace=? AND barcode=? LIMIT 2');
             foreach($rows as $row)foreach($row['lines']??[] as $line){$barcode=$line['barcode']??'';if(!is_string($barcode)||$barcode===''||array_key_exists($barcode,$products))continue;$productQuery->execute([$userId,$marketplace,$barcode]);$matches=$productQuery->fetchAll();$products[$barcode]=count($matches)===1?$matches[0]:null;}
-            $previous=$pdo->prepare('SELECT profit_inputs FROM orders WHERE user_id=? AND marketplace=? AND package_number=?');
-            $insert=$pdo->prepare('INSERT INTO orders(user_id,marketplace,order_number,package_number,status,customer_name,total_price,order_date,lines,profit_inputs) VALUES (?,?,?,?,?,?,?,?,?,?)
-                ON CONFLICT(user_id,marketplace,package_number) DO UPDATE SET order_number=excluded.order_number,status=excluded.status,customer_name=excluded.customer_name,total_price=excluded.total_price,order_date=excluded.order_date,lines=excluded.lines,profit_inputs=excluded.profit_inputs');
+            $previous=$pdo->prepare('SELECT profit_inputs,source_seller_id,source_stage FROM orders WHERE user_id=? AND marketplace=? AND package_number=?');
+            $insert=$pdo->prepare('INSERT INTO orders(user_id,marketplace,order_number,package_number,status,customer_name,total_price,order_date,lines,profit_inputs,source_seller_id,source_stage,cargo_company) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
+                ON CONFLICT(user_id,marketplace,package_number) DO UPDATE SET order_number=excluded.order_number,status=excluded.status,customer_name=excluded.customer_name,total_price=excluded.total_price,order_date=excluded.order_date,lines=excluded.lines,profit_inputs=excluded.profit_inputs,source_seller_id=excluded.source_seller_id,source_stage=excluded.source_stage,cargo_company=excluded.cargo_company');
             foreach ($rows as $row) {
                 $package=trim((string)($row['packageNumber']??''));
                 if ($package==='') throw new SyncFailure('Sipariş paket kimliği eksik.');
                 $date=sync_timestamp($row['orderDate']??null,true);
                 if (!isset($row['totalPrice']) || !is_array($row['lines']??null)) throw new SyncFailure('Sipariş tutarı veya satırları eksik.');
                 profit_validate([$row['totalPrice']]);
-                $previous->execute([$userId,$marketplace,$package]);$saved=$previous->fetchColumn();
-                $inputs=merge_order_profit_inputs($saved===false?null:$saved,capture_order_profit_inputs($row['lines'],$products,$started));
-                $insert->execute([$userId,$marketplace,(string)($row['orderNumber']??''),$package,(string)($row['status']??''),(string)($row['customerName']??''),(float)$row['totalPrice'],$date,json_encode($row['lines'],JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR),json_encode($inputs,JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR)]);
+                $previous->execute([$userId,$marketplace,$package]);$previousOrder = $previous->fetch();
+                $saved = $previousOrder && ($previousOrder['source_seller_id'] === null ||
+                    ($previousOrder['source_seller_id'] === $int['seller_id'] && (int)$previousOrder['source_stage'] === (int)$int['stage']))
+                    ? $previousOrder['profit_inputs'] : null;
+                $inputs=merge_order_profit_inputs($saved,capture_order_profit_inputs($row['lines'],$products,$started));
+                $insert->execute([$userId,$marketplace,(string)($row['orderNumber']??''),$package,(string)($row['status']??''),(string)($row['customerName']??''),(float)$row['totalPrice'],$date,json_encode($row['lines'],JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR),json_encode($inputs,JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR),(string)$int['seller_id'],(int)$int['stage'],(string)($row['cargoCompany']??'')]);
             }
             $pdo->prepare('UPDATE integrations SET last_orders_sync=?,orders_coverage_from=? WHERE user_id=? AND marketplace=?')->execute([$started,$from,$userId,$marketplace]);
             return ['ok'=>true,'count'=>count($rows)];
@@ -238,4 +241,53 @@ function sync_platform_service_fees(int $userId,string $marketplace,int $days=30
             return ['ok'=>true,'records'=>count($rows)];
         });
     },$client);
+}
+
+/** Finance window follows invoice dates, independent of the date of the order. */
+function sync_cargo_invoices(int $userId, string $marketplace, int $days = 30, ?object $client = null): array
+{
+    return sync_job($userId, $marketplace, 'cargo_invoices', static function ($int, $client, $token, $started) use ($days): array {
+        if (!method_exists($client, 'getCargoInvoiceIds') || $days < 1 || $days > 365) {
+            throw new SyncFailure('Kargo faturası senkronu desteklenmiyor veya tarih aralığı geçersiz.');
+        }
+
+        $ids = [];
+        for ($from = $started - $days * 86400; $from <= $started; $from = $to + 1) {
+            $to = min($from + 14 * 86400 - 1, $started);
+            foreach (sync_response($client->getCargoInvoiceIds($from, $to), 'ids') as $id) {
+                $ids[(string)$id] = (string)$id;
+            }
+        }
+
+        $invoices = [];
+        foreach ($ids as $id) {
+            $rows = sync_response($client->getCargoInvoiceItems($id), 'rows');
+            $invoices[$id] = [];
+            foreach ($rows as $row) {
+                $order = trim((string)($row['orderNumber'] ?? ''));
+                if ($order === '') throw new SyncFailure('Kargo faturası kaleminin sipariş numarası eksik.');
+                $amount = $row['amount'] ?? null;
+                $amount = is_numeric($amount) && is_finite((float)$amount) && abs((float)$amount) <= 1e12
+                    ? (float)$amount : null;
+                $invoices[$id][] = [$order, (string)($row['parcelUniqueId'] ?? ''),
+                    (string)($row['shipmentPackageType'] ?? ''), $amount];
+            }
+        }
+
+        return sync_commit($int, $token, static function (PDO $pdo) use ($int, $invoices): array {
+            $scope = [$int['user_id'], $int['marketplace'], $int['seller_id'], (int)$int['stage']];
+            $delete = $pdo->prepare('DELETE FROM cargo_invoice_items
+                WHERE user_id=? AND marketplace=? AND seller_id=? AND stage=? AND invoice_id=?');
+            $insert = $pdo->prepare('INSERT INTO cargo_invoice_items
+                (user_id, marketplace, seller_id, stage, invoice_id, line_number, order_number, parcel_id, cargo_type, amount)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+            foreach ($invoices as $id => $rows) {
+                $delete->execute([...$scope, (string)$id]);
+                foreach ($rows as $number => $row) {
+                    $insert->execute([...$scope, (string)$id, $number, ...$row]);
+                }
+            }
+            return ['ok' => true, 'invoices' => count($invoices)];
+        });
+    }, $client);
 }

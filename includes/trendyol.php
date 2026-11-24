@@ -365,6 +365,23 @@ final class TrendyolClient
             ['orderNumber' => $orderNumber, 'size' => '200'], $maxPages, 'İadeler');
     }
 
+    public function getCargoInvoiceIds(int $from, int $to): array
+    {
+        $result = $this->financeRows('otherfinancials', [
+            'transactionType' => 'DeductionInvoices',
+            'startDate' => $from * 1000,
+            'endDate' => $to * 1000,
+        ], 100, 500);
+        if (!$result['ok']) return $result;
+        $ids = [];
+        foreach ($result['rows'] as $row) {
+            if (in_array($row['transactionType'] ?? null, ['Kargo Faturası', 'Kargo Fatura'], true)) {
+                $ids[] = (string)$row['id'];
+            }
+        }
+        return ['ok' => true, 'complete' => true, 'ids' => $ids];
+    }
+
     public function getCargoInvoiceItems(string $invoiceId, int $maxPages = 50): array
     {
         if ($invoiceId === '') return $this->incomplete('Kargo fatura kimliği eksik.');

@@ -241,7 +241,13 @@ require __DIR__ . '/../includes/header.php';
       <tr><th>Sipariş No</th><th>Tarih</th><th>Satış</th><th>Tahmini Kâr</th><th>Durum</th></tr>
       <?php foreach (array_slice($orders, 0, 25) as $o): $pr = calc_order_profit($o, $byBarcode); ?>
         <tr>
-          <td style="font-size:12px"><?= h($o['order_number'] ?: $o['package_number'] ?: '—') ?></td>
+          <td style="font-size:12px">
+            <?php if ($mp === 'trendyol' && $o['order_number'] !== ''): ?>
+              <a href="siparis-muhasebe.php?order=<?= rawurlencode($o['order_number']) ?>"><?= h($o['order_number']) ?></a>
+            <?php else: ?>
+              <?= h($o['order_number'] ?: $o['package_number'] ?: '—') ?>
+            <?php endif; ?>
+          </td>
           <td style="font-size:12px"><?= date('d.m H:i', (int)$o['order_date']) ?></td>
           <td><?= tl((float)$o['total_price']) ?></td>
           <td>

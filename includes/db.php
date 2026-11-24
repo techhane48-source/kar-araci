@@ -292,6 +292,14 @@ function migrate(): void
         created_at TEXT NOT NULL DEFAULT (datetime('now')),
         UNIQUE(user_id, marketplace, seller_id, stage, provider_id)
     )");
+    $pdo->exec("CREATE TABLE IF NOT EXISTS cargo_invoice_items (
+        user_id INTEGER NOT NULL, marketplace TEXT NOT NULL, seller_id TEXT NOT NULL, stage INTEGER NOT NULL,
+        invoice_id TEXT NOT NULL, line_number INTEGER NOT NULL, order_number TEXT NOT NULL,
+        parcel_id TEXT NOT NULL, cargo_type TEXT NOT NULL, amount REAL,
+        PRIMARY KEY(user_id, marketplace, seller_id, stage, invoice_id, line_number)
+    )");
+    $pdo->exec("CREATE INDEX IF NOT EXISTS idx_cargo_invoice_order
+        ON cargo_invoice_items(user_id, marketplace, seller_id, stage, order_number)");
     $pdo->exec("CREATE INDEX IF NOT EXISTS idx_psf_user_date ON platform_service_fees(user_id, marketplace, seller_id, stage, transaction_date)");
     $pdo->exec("CREATE INDEX IF NOT EXISTS idx_products_market_barcode ON products(user_id, marketplace, barcode)");
     $pdo->exec("CREATE TABLE IF NOT EXISTS settlement_legacy_archive (
@@ -321,6 +329,9 @@ function migrate(): void
     $pdo->exec("CREATE TABLE IF NOT EXISTS checkout_events (id INTEGER PRIMARY KEY AUTOINCREMENT, token TEXT NOT NULL REFERENCES checkout_sessions(token), code TEXT NOT NULL, created_at INTEGER NOT NULL)");
     $pdo->exec('CREATE INDEX IF NOT EXISTS idx_checkout_events_token ON checkout_events(token,created_at)');
     $orderColumns=array_column($pdo->query('PRAGMA table_info(orders)')->fetchAll(),'name');
+    foreach (['source_seller_id' => 'TEXT', 'source_stage' => 'INTEGER', 'cargo_company' => "TEXT NOT NULL DEFAULT ''"] as $column => $type) {
+        if (!in_array($column, $orderColumns, true)) $pdo->exec("ALTER TABLE orders ADD COLUMN $column $type");
+    }
     if(!in_array('profit_inputs',$orderColumns,true))$pdo->exec('ALTER TABLE orders ADD COLUMN profit_inputs TEXT DEFAULT NULL');
 
     // Eski sürümün bilinen kurulum şifresiyle kalan hesabını devre dışı bırak.

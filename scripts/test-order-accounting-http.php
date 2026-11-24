@@ -154,6 +154,26 @@ try {
     check(str_contains($html, 'İade sorgusu başarısız oldu'), 'HTML: eksik sayfalı iade sorgusu hata gösterir');
     check(!str_contains($html, 'Gösterilecek iade kalemi yok'), 'HTML: hata durumunda iade yok izlenimi verilmez');
 
+    // Normal finans düğmesi faturanın kimliğini bulur; muhasebe ekranda elle girmez.
+    db()->prepare("UPDATE orders SET source_seller_id='42', source_stage=0 WHERE user_id=? AND order_number='456'")
+        ->execute([$uid]);
+    $fixture = file_get_contents($transportFile);
+    file_put_contents($transportFile, str_replace(
+        "    if (str_contains(\$path, '/cargo-invoice/')) {",
+        "    if (str_ends_with(\$path, '/otherfinancials') && !isset(\$query['transactionSubType'])) {
+"
+            . "        return ['http'=>200,'body'=>['content'=>[['id'=>'INV-A','transactionType'=>'Kargo Faturası']], 'totalPages'=>1, 'totalElements'=>1]];
+"
+            . "    }
+    if (str_contains(\$path, '/cargo-invoice/')) {",
+        $fixture
+    ));
+    $store = req($ch, $base, 'magaza.php?mp=trendyol');
+    $store = req($ch, $base, 'magaza.php?mp=trendyol', ['action' => 'settlements', 'csrf' => csrf($store['body'])]);
+    check(str_contains($store['body'], 'Kargo faturaları çekildi: 1 fatura'), 'HTML: finans düğmesi kargo faturasını bulur');
+    $html = post($ch, $base, ['order' => '456']);
+    check(str_contains($html, 'Faturada görülen sipariş kargosu: ₺68,48'), 'HTML: sipariş kargosu fatura ID girilmeden görünür');
+
     curl_close($ch);
     if (is_file($jar)) unlink($jar);
 } finally {
