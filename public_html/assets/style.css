@@ -357,3 +357,12 @@ tbody tr:hover{background:var(--bg-softer)}
 .tar{text-align:right}
 .btn-group{display:inline-flex;gap:4px;align-items:center;flex-wrap:wrap}
 .btn-active{background:var(--accent);color:#fff;border-color:var(--accent)}
+
+.product-cost-form {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+.product-cost-form input[name="cost"] {
+    width: 7em;
+}

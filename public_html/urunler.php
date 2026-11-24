@@ -167,6 +167,34 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'impor
     e_redirect('urunler.php');
 }
 
+// Tek ürünün KDV dahil birim alış maliyetini güncelle.
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'update_cost') {
+    $redirect = 'urunler.php?' . http_build_query([
+        'q' => is_string($_GET['q'] ?? null) ? $_GET['q'] : '',
+        'page' => filter_var($_GET['page'] ?? 1, FILTER_VALIDATE_INT) ?: 1,
+    ]);
+    $csrf = $_POST['csrf'] ?? null;
+    $pid = filter_var($_POST['pid'] ?? null, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
+    $raw = is_string($_POST['cost'] ?? null) ? trim($_POST['cost']) : '';
+    $cost = (float) str_replace(',', '.', $raw);
+
+    if (!is_string($csrf) || !csrf_verify($csrf)) {
+        flash_set('error', 'Oturum süresi doldu.');
+    } elseif (!$pid || !preg_match('/^[0-9]+(?:[.,][0-9]{1,2})?$/D', $raw)
+        || $cost <= 0 || $cost > PROFIT_MAX_AMOUNT) {
+        flash_set('error', 'Sıfırdan büyük, en fazla iki ondalık basamaklı geçerli bir maliyet girin.');
+    } else {
+        $update = db()->prepare('UPDATE products SET cost = ? WHERE id = ? AND user_id = ?');
+        $update->execute([$cost, $pid, $u['id']]);
+        if ($update->rowCount() === 1) {
+            flash_set('success', 'Ürün maliyeti güncellendi.');
+        } else {
+            flash_set('error', 'Ürün bulunamadı.');
+        }
+    }
+    e_redirect($redirect);
+}
+
 // Ürün silme
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'delete') {
     if (!csrf_verify($_POST['csrf'] ?? null)) {
@@ -339,7 +367,7 @@ require __DIR__ . '/../includes/header.php';
   <?php else: ?>
   <div class="card table-card">
     <table>
-      <tr><th>Ürün</th><th>Barkod</th><th>Pazaryeri</th><th>Kategori</th><th>Satış</th><th>Net Kâr</th><th>Kâr Oranı</th><th>Kâr Marjı</th><th></th></tr>
+      <tr><th>Ürün</th><th>Barkod</th><th>Pazaryeri</th><th>Kategori</th><th>Satış</th><th>Maliyet (KDV dahil)</th><th>Net Kâr</th><th>Kâr Oranı</th><th>Kâr Marjı</th><th></th></tr>
       <?php foreach ($products as $p): ?>
       <tr>
         <td><?= h($p['name']) ?><?= !$p['_has_cost'] ? ' <span class="hint" style="font-size:11px;color:var(--muted)">(maliyet veya hesaplama girdisi eksik)</span>' : '' ?></td>
@@ -347,6 +375,17 @@ require __DIR__ . '/../includes/header.php';
         <td><?= h(marketplace_label($p['marketplace'])) ?></td>
         <td style="font-size:12px"><?= h($p['category']) ?></td>
         <td><?= tl((float)$p['price']) ?></td>
+        <td>
+          <form method="post" class="product-cost-form">
+            <input type="hidden" name="csrf" value="<?= h(csrf_token()) ?>">
+            <input type="hidden" name="action" value="update_cost">
+            <input type="hidden" name="pid" value="<?= (int)$p['id'] ?>">
+            <input type="text" inputmode="decimal" name="cost" required placeholder="0,00"
+                   aria-label="<?= h($p['name'] . ' — KDV dahil birim alış maliyeti') ?>"
+                   value="<?= (float)$p['cost'] > 0 ? number_format((float)$p['cost'], 2, ',', '') : '' ?>">
+            <button type="submit" class="btn-ghost">Kaydet</button>
+          </form>
+        </td>
         <td class="<?= $p['_profit'] < 0 ? 'neg' : 'pos' ?>"><?= $p['_has_cost'] ? tl($p['_profit']) : '—' ?></td>
         <td class="<?= $p['_ratio'] < 0 ? 'neg' : 'pos' ?>"><?= $p['_has_cost'] ? '%' . number_format($p['_ratio'], 1, ',', '.') : '—' ?></td>
         <td class="<?= $p['_margin'] < 0 ? 'neg' : 'pos' ?>"><?= $p['_has_cost'] ? '%' . number_format($p['_margin'], 1, ',', '.') : '—' ?></td>

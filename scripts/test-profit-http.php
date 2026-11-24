@@ -117,6 +117,28 @@ check((float)$campaign[0][2]===10.0,'Kupon iptali kampanya giderinden düşülü
 $ads=csv_rows(req('raporlar.php?r=ads&export=1')['body']);
 check(isset($ads[0]) && $ads[0][6]==='','Reklam atfı olmadan kâr üretilmez');
 check(str_contains(req('raporlar.php?r=order')['body'],'<td class="tar">%'),'Rapor yüzdeleri para birimiyle gösterilmez');
+// Tekil maliyet formu mevcut ürünü günceller ve ürün sahibine özeldir.
+$productId = (int)db()->query("SELECT id FROM products WHERE user_id=$id AND barcode='A'")->fetchColumn();
+db()->prepare('INSERT INTO users (email, password_hash) VALUES (?, ?)')->execute(['other-cost@example.test', 'fixture']);
+$otherUserId = (int)db()->lastInsertId();
+db()->prepare("INSERT INTO products (user_id, marketplace, category, rate, barcode, name, cost) VALUES (?, 'trendyol', 'Giyim', 20, 'A', 'Other cost fixture', 75)")->execute([$otherUserId]);
+$otherProductId = (int)db()->lastInsertId();
+$readCost = db()->prepare('SELECT cost FROM products WHERE id = ?');
+$costOf = static function (int $pid) use ($readCost): float {
+    $readCost->execute([$pid]);
+    return (float)$readCost->fetchColumn();
+};
+$costPage = 'urunler.php?q=Profit+Fixture+A';
+$csrf = csrf(req($costPage)['body']);
+$form = ['action' => 'update_cost', 'csrf' => $csrf, 'pid' => $productId, 'cost' => '215,50'];
+check(req($costPage, $form)['status'] === 302 && $costOf($productId) === 215.5, 'Virgüllü birim maliyet tek ürüne kaydedilir');
+check(str_contains(req($costPage)['body'], 'value="215,50"'), 'Aranan ürün yeni maliyeti gösterir');
+$expected = calc_product_profit(array_replace($products[0], ['cost' => 215.5]));
+check(str_contains(row_for(req('kar-marji.php')['body'], 'Profit Fixture A'), tl($expected['profit'])), 'Kâr marjı güncel maliyetle hesaplanır');
+req($costPage, array_replace($form, ['cost' => '-5']));
+req($costPage, array_replace($form, ['cost' => '100', 'csrf' => 'invalid']));
+req($costPage, array_replace($form, ['pid' => $otherProductId]));
+check($costOf($productId) === 215.5 && $costOf($otherProductId) === 75.0, 'Geçersiz maliyet, CSRF ve başka kullanıcı kaydı değiştirmez');
 curl_close($ch);unlink($jar);
 echo $failed?"$failed test başarısız\n":"TÜM TESTLER GEÇTİ\n";
 exit($failed?1:0);
