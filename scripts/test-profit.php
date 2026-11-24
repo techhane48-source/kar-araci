@@ -37,6 +37,20 @@ $discounted=array_replace($order,['total_price'=>990]);
 $d=calc_order_profit($discounted,$by);
 check(near(array_sum(array_column($d['lines'],'sale')),990),'Paket indirimi dağıtılır; satır ciroları paketle eşleşir');
 check(near($d['profit'],calc_product_profit($p,360)['profit']*2+calc_product_profit($q,270)['profit']),'Paket indirimi sonrası her satır kendi KDV’siyle hesaplanır');
+$trendyolOrder = $order + ['marketplace' => 'trendyol'];
+$defaultFee = trendyol_service_fee();
+$defaultA = array_replace($p, ['service_fee' => $defaultFee]);
+$defaultB = array_replace($q, ['service_fee' => $defaultFee]);
+$estimate = calc_order_profit($trendyolOrder, ['A' => $defaultA, 'B' => $defaultB]);
+check($estimate['ok'] && near($estimate['service_fee'], $defaultFee), 'Trendyol varsayılan hizmet bedeli paket başına bir kez düşülür');
+check(near(array_sum(array_column($estimate['lines'], 'service_fee')), $defaultFee)
+    && near(array_sum(array_column($estimate['lines'], 'profit')), $estimate['profit']), 'Hizmet bedeli ve kâr satırlara toplamı koruyarak dağıtılır');
+$custom = calc_order_profit($trendyolOrder, ['A' => $defaultA, 'B' => $q]);
+check(near($custom['service_fee'], $defaultFee + $q['service_fee']), 'Özel hizmet bedeli varsayılan paket tahminine dönüştürülmez');
+$saved = $trendyolOrder + ['profit_inputs' => json_encode(capture_order_profit_inputs(
+    $trendyolOrder['lines'], ['A' => $defaultA, 'B' => $defaultB], 1
+))];
+check(near(calc_order_profit($saved, [])['service_fee'], $defaultFee), 'Eski sipariş maliyet kaydı paket hizmet bedeliyle okunur');
 foreach (['Cancelled','Canceled','Returned','UnDelivered'] as $status) check(!calc_order_profit(array_replace($order,['status'=>$status]),$by)['ok'],"$status satış kârına alınmaz");
 check(!calc_order_profit($order,['A'=>$p])['ok'],'Eksik satır maliyeti siparişin kârını belirsiz yapar');
 $rows=aggregate_profit_rows([$order,$discounted],$by,'product');

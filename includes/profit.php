@@ -151,6 +151,20 @@ function calc_order_profit(array $order,array $byBarcode): array
     }
     $weight=array_sum($weights);
     if ($weight<=0) return $unknown;
+    // The default Trendyol estimate is charged once per calculated package.
+    // Stored custom service fees remain unit inputs.
+    $defaultFee = trendyol_service_fee();
+    $feeWeights = [];
+    if (($order['marketplace'] ?? '') === 'trendyol') {
+        foreach ($lines as $i => $line) {
+            $product = $byBarcode[$line['barcode'] ?? ''] ?? [];
+            if (is_numeric($product['service_fee'] ?? null) && (float)$product['service_fee'] === $defaultFee) {
+                $feeWeights[$i] = $weights[$i];
+            }
+        }
+    }
+    $feeWeight = array_sum($feeWeights);
+    $feeCount = count($feeWeights);
     $totals=array_fill_keys(['sale','cost','cargo','profit','commission','service_fee','stopaj','net_kdv','extra_fee','return_loss','totalCuts'],0.0);
     $parts=[]; $remaining=$sale; $complete=true;
     foreach ($lines as $i=>$line) {
@@ -158,6 +172,10 @@ function calc_order_profit(array $order,array $byBarcode): array
         $lineSale=$i===count($lines)-1 ? $remaining : $sale*$weights[$i]/$weight;
         $remaining-=$lineSale;
         $p=$byBarcode[$line['barcode']??'']??null;
+        if (isset($feeWeights[$i])) {
+            $share = $feeWeight > 0 ? $feeWeights[$i] / $feeWeight : 1 / $feeCount;
+            $p['service_fee'] = $defaultFee * $share / $qty;
+        }
         $r=$p ? calc_product_profit($p,max(0.0,$lineSale/$qty)) : ['ok'=>false];
         $part=['barcode'=>(string)($line['barcode']??''),'name'=>(string)($p['name']??$line['productName']??''),
             'category'=>(string)($p['category']??'Bilinmeyen'),'quantity'=>$qty,'sale'=>$lineSale];
