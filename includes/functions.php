@@ -11,6 +11,31 @@ function write_csv($stream, array $fields, string $separator = ','): int|false
     return fputcsv($stream, $fields, $separator, '"', '\\');
 }
 
+function save_product_cost(int $userId, mixed $productId, mixed $input, ?string $marketplace = null): void
+{
+    $id = filter_var($productId, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
+    $raw = is_string($input) ? trim($input) : '';
+    $cost = (float)str_replace(',', '.', $raw);
+    if (!$id || !preg_match('/^[0-9]+(?:[.,][0-9]{1,2})?$/D', $raw) || $cost <= 0 || $cost > PROFIT_MAX_AMOUNT) {
+        flash_set('error', 'Sıfırdan büyük, en fazla iki ondalık basamaklı geçerli bir maliyet girin.');
+        return;
+    }
+
+    $sql = 'UPDATE products SET cost = ? WHERE id = ? AND user_id = ?';
+    $params = [$cost, $id, $userId];
+    if ($marketplace !== null) {
+        $sql .= ' AND marketplace = ?';
+        $params[] = $marketplace;
+    }
+    $update = db()->prepare($sql);
+    $update->execute($params);
+    if ($update->rowCount() === 1) {
+        flash_set('success', 'Ürün maliyeti güncellendi.');
+    } else {
+        flash_set('error', 'Ürün bulunamadı.');
+    }
+}
+
 // ---- İş mantığı: komisyon oranları + kâr hesabı ----
 
 /**

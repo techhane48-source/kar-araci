@@ -20,16 +20,11 @@ if (!in_array($mp, $mps, true)) $mp = $mps[0];
 
 // --- Maliyet kaydet (inline; Bugün Sipariş Alan Ürünler) ---
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'save_cost') {
-    if (!csrf_verify($_POST['csrf'] ?? '')) {
+    $csrf = $_POST['csrf'] ?? null;
+    if (!is_string($csrf) || !csrf_verify($csrf)) {
         flash_set('error', 'Oturum süresi doldu.');
     } else {
-        $pid = (int)($_POST['pid'] ?? 0);
-        $cost = (float)str_replace(',', '.', (string)($_POST['cost'] ?? '0'));
-        if ($pid > 0) {
-            db()->prepare("UPDATE products SET cost = ? WHERE id = ? AND user_id = ?")
-               ->execute([$cost, $pid, $u['id']]);
-            flash_set('success', 'Maliyet güncellendi.');
-        }
+        save_product_cost((int)$u['id'], $_POST['pid'] ?? null, $_POST['cost'] ?? null, $mp);
     }
     e_redirect('canli-performans.php?mp=' . urlencode($mp));
 }
@@ -140,12 +135,12 @@ require __DIR__ . '/../includes/header.php';
 
   <?php $flash = flash_get(); if ($flash): ?><div class="alert alert-<?= $flash['type'] ?>"><?= h($flash['msg']) ?></div><?php endif; ?>
 
-  <p class="hint">Tahmini kâr ürün kartındaki adet başı giderlerle hesaplanır; reklam, ceza ve diğer finans giderleri dahil değildir.
-  <?= $today['count'] - $today['profitCount'] ?> bugünkü siparişte maliyet/girdi eksik; bu siparişler kâr toplamına alınmaz.</p>
+  <p class="hint">Tahmini kâr kayıtlı ürün maliyeti ve giderlerle hesaplanır. Trendyol satırında komisyon ve KDV oranı varsa siparişten alınır. Gerçekleşen finans kesintileri bu tahmine dahil edilmez.
+  <?= $today['count'] - $today['profitCount'] ?> bugünkü pakette maliyet/girdi eksik; bu paketler kâr toplamına alınmaz.</p>
   <div class="kpi-row">
     <div class="kpi"><div class="k-label">Bugün Satış</div><div class="k-value"><?= tl($today['sale']) ?></div></div>
     <div class="kpi"><div class="k-label">Bugün Tahmini Kâr</div><div class="k-value <?= $today['profit'] < 0 ? 'neg' : '' ?>"><?= $today['profitCount'] > 0 ? tl($today['profit']) : '—' ?></div></div>
-    <div class="kpi"><div class="k-label">Sipariş</div><div class="k-value"><?= $today['count'] ?></div></div>
+    <div class="kpi"><div class="k-label">Paket</div><div class="k-value"><?= $today['count'] ?></div></div>
     <div class="kpi"><div class="k-label">Ort. Kâr Marjı</div><div class="k-value"><?= $today['profitCount'] > 0 ? '%' . number_format($avgMargin, 1, ',', '.') : '—' ?></div></div>
   </div>
 
@@ -172,7 +167,7 @@ require __DIR__ . '/../includes/header.php';
     </div>
     <p class="hint" style="margin-bottom:10px">Mavi: satış, yeşil: kâr (satış ölçeğinde). Saat etiketleri her 3 saatte bir.</p>
     <table>
-      <tr><th>Saat</th><th>Satış</th><th>Tahmini Kâr</th><th>Sipariş</th></tr>
+      <tr><th>Saat</th><th>Satış</th><th>Tahmini Kâr</th><th>Paket</th></tr>
       <?php foreach ($hourly as $h => $d): if ($d['count'] === 0) continue; ?>
         <tr>
           <td><?= str_pad((string)$h, 2, '0', STR_PAD_LEFT) ?>:00</td>
@@ -188,7 +183,7 @@ require __DIR__ . '/../includes/header.php';
   <div class="card table-card" style="margin:16px 0">
     <h2>Son 7 Gün</h2>
     <table>
-      <tr><th>Gün</th><th>Satış</th><th>Tahmini Kâr</th><th>Sipariş</th></tr>
+      <tr><th>Gün</th><th>Satış</th><th>Tahmini Kâr</th><th>Paket</th></tr>
       <?php foreach ($week as $day => $d): ?>
         <tr>
           <td><?= h($day) ?></td>
@@ -250,7 +245,20 @@ require __DIR__ . '/../includes/header.php';
           <td style="font-size:12px"><?= date('d.m H:i', (int)$o['order_date']) ?></td>
           <td><?= tl((float)$o['total_price']) ?></td>
           <td>
-            <?php if ($pr['ok']): ?><span class="<?= $pr['profit'] < 0 ? 'neg' : 'pos' ?>"><?= tl($pr['profit']) ?></span>
+            <?php if ($pr['ok']): ?>
+              <details>
+                <summary class="<?= $pr['profit'] < 0 ? 'neg' : 'pos' ?>"><?= tl($pr['profit']) ?></summary>
+                <dl>
+                  <?php foreach ([
+                      'cost' => 'Birim maliyetlerin toplamı', 'commission' => 'Komisyon',
+                      'cargo' => 'Hesapta kullanılan kargo', 'service_fee' => 'Hizmet bedeli tahmini',
+                      'stopaj' => 'Stopaj', 'net_kdv' => 'Net KDV tahmini',
+                      'extra_fee' => 'Ek gider', 'return_loss' => 'İade payı tahmini',
+                  ] as $field => $label): ?>
+                    <dt><?= h($label) ?></dt><dd><?= tl($pr[$field]) ?></dd>
+                  <?php endforeach; ?>
+                </dl>
+              </details>
             <?php else: ?><span class="hint">maliyet eksik</span><?php endif; ?>
           </td>
           <td style="font-size:12px"><?= h($o['status'] ?: '—') ?></td>

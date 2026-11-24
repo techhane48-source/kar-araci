@@ -71,7 +71,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'impor
 
     $rows = [];
     $header = [];
-    $updated = 0; $notFound = 0;
+    $updated = 0; $notFound = 0; $invalid = 0;
     if ($isXlsx) {
         try {
             $parsed = xlsx_read($tmpName);
@@ -98,8 +98,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'impor
         return preg_replace('/[^a-z0-9]/', '', $x);
     };
 
-    if ($header === false) {
+    if (!$header) {
         flash_set('error', 'Dosya boş veya okunamadı.');
+        e_redirect('urunler.php');
     } else {
         $normHeader = array_map($norm, $header);
         $idx = static function (array $names) use ($normHeader): ?int {
@@ -113,6 +114,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'impor
         $cIdx  = $idx(['urunmaliyetikdvdahil', 'maliyet', 'cost', 'alis', 'alisfiyati']);
         if ($bIdx === null || $cIdx === null) {
             flash_set('error', 'Başlıklarda "Barkod" ve "Ürün Maliyeti (KDV Dahil)" kolonları bulunmalı.');
+            e_redirect('urunler.php');
         } else {
             $kIdx  = $idx(['maliyetkdvorani', 'kdvorani', 'kdv']);
             $dIdx  = $idx(['desi']);
@@ -136,9 +138,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'impor
                 $barcode = trim((string)($row[$bIdx] ?? ''));
                 $costVal = $num($row[$cIdx] ?? null);
                 if ($barcode === '' || $costVal === null) continue;
+                if (!is_finite($costVal) || $costVal < 0 || $costVal > PROFIT_MAX_AMOUNT) {
+                    $invalid++;
+                    continue;
+                }
 
                 $sets = ['cost = ?'];
-                $params = [max(0.0, $costVal)];
+                $params = [$costVal];
                 $add = function (string $col, $val) use (&$sets, &$params) {
                     $sets[] = "$col = ?";
                     $params[] = $val;
@@ -156,14 +162,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'impor
 
                 $params[] = $u['id'];
                 $params[] = $barcode;
-                $upd = db()->prepare("UPDATE products SET " . implode(', ', $sets) . " WHERE user_id = ? AND barcode = ?");
+                $upd = db()->prepare("UPDATE products SET " . implode(', ', $sets) .
+                    " WHERE id = (SELECT id FROM products WHERE user_id = ? AND barcode = ? GROUP BY barcode HAVING COUNT(*) = 1)");
                 $upd->execute($params);
                 if ($upd->rowCount() > 0) $updated++; else $notFound++;
             }
         }
     }
-    flash_set($updated > 0 ? 'success' : 'error',
-        $updated > 0 ? "$updated ürünün maliyeti güncellendi" . ($notFound ? ", $notFound barkod eşleşmedi" : '') . '.' : 'Hiçbir ürün güncellenemedi. Barkodları kontrol edin.');
+    $message = $updated > 0 ? "$updated ürünün maliyeti güncellendi." : 'Hiçbir ürün güncellenmedi.';
+    if ($notFound > 0) $message .= " $notFound satırda barkod bulunamadı veya birden fazla ürünle eşleşti.";
+    if ($invalid > 0) $message .= " $invalid satırda maliyet geçersiz.";
+    flash_set($updated > 0 ? 'success' : 'error', $message);
     e_redirect('urunler.php');
 }
 
@@ -174,23 +183,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'updat
         'page' => filter_var($_GET['page'] ?? 1, FILTER_VALIDATE_INT) ?: 1,
     ]);
     $csrf = $_POST['csrf'] ?? null;
-    $pid = filter_var($_POST['pid'] ?? null, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
-    $raw = is_string($_POST['cost'] ?? null) ? trim($_POST['cost']) : '';
-    $cost = (float) str_replace(',', '.', $raw);
-
     if (!is_string($csrf) || !csrf_verify($csrf)) {
         flash_set('error', 'Oturum süresi doldu.');
-    } elseif (!$pid || !preg_match('/^[0-9]+(?:[.,][0-9]{1,2})?$/D', $raw)
-        || $cost <= 0 || $cost > PROFIT_MAX_AMOUNT) {
-        flash_set('error', 'Sıfırdan büyük, en fazla iki ondalık basamaklı geçerli bir maliyet girin.');
     } else {
-        $update = db()->prepare('UPDATE products SET cost = ? WHERE id = ? AND user_id = ?');
-        $update->execute([$cost, $pid, $u['id']]);
-        if ($update->rowCount() === 1) {
-            flash_set('success', 'Ürün maliyeti güncellendi.');
-        } else {
-            flash_set('error', 'Ürün bulunamadı.');
-        }
+        save_product_cost((int)$u['id'], $_POST['pid'] ?? null, $_POST['cost'] ?? null);
     }
     e_redirect($redirect);
 }

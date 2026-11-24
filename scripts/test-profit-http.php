@@ -139,6 +139,31 @@ req($costPage, array_replace($form, ['cost' => '-5']));
 req($costPage, array_replace($form, ['cost' => '100', 'csrf' => 'invalid']));
 req($costPage, array_replace($form, ['pid' => $otherProductId]));
 check($costOf($productId) === 215.5 && $costOf($otherProductId) === 75.0, 'Geçersiz maliyet, CSRF ve başka kullanıcı kaydı değiştirmez');
+$livePage = 'canli-performans.php?mp=trendyol';
+$live = req($livePage);
+check(str_contains($live['body'], 'Hesapta kullanılan kargo') && str_contains($live['body'], 'Hizmet bedeli tahmini'),
+    'Canlı Performans sipariş kârının kullanılan gider dökümünü gösterir');
+req($livePage, array_replace($form, ['action' => 'save_cost', 'cost' => 'yanlis']));
+check($costOf($productId) === 215.5, 'Canlı Performans geçersiz girdiyle maliyeti sıfırlamaz');
+
+db()->prepare("INSERT INTO products (user_id, marketplace, category, rate, barcode, name, cost)
+    VALUES (?, 'hepsiburada', 'Giyim', 20, 'A', 'Ambiguous cost fixture', 98)")->execute([$id]);
+$duplicateId = (int)db()->lastInsertId();
+$tmp = tempnam(sys_get_temp_dir(), 'kf-bulk-cost-');
+file_put_contents($tmp, "Barkod;Maliyet\nA;777\nB;155,25\n");
+try {
+    curl_setopt($ch, CURLOPT_URL, $base . '/urunler.php');
+    curl_setopt($ch, CURLOPT_POST, true);
+    curl_setopt($ch, CURLOPT_HTTPHEADER, []);
+    curl_setopt($ch, CURLOPT_POSTFIELDS, [
+        'csrf' => $csrf, 'action' => 'import_maliyet', 'csv' => new CURLFile($tmp, 'text/csv', 'maliyet.csv'),
+    ]);
+    curl_exec($ch);
+    check($costOf($productId) === 215.5 && $costOf($duplicateId) === 98.0,
+        'Toplu maliyet birden çok ürünle eşleşen barkodu değiştirmez');
+    check((float)db()->query("SELECT cost FROM products WHERE user_id=$id AND barcode='B'")->fetchColumn() === 155.25,
+        'Toplu maliyet tekil barkodun virgüllü maliyetini günceller');
+} finally { unlink($tmp); }
 curl_close($ch);unlink($jar);
 echo $failed?"$failed test başarısız\n":"TÜM TESTLER GEÇTİ\n";
 exit($failed?1:0);

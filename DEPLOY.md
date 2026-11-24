@@ -1,6 +1,6 @@
 # Kâr&Fiyat — Kurulum
 
-Pazaryeri net kâr hesaplama ve fiyat optimizasyonu SaaS'ı. PHP 8+ ile `pdo_sqlite`, `mbstring`, `curl`, `openssl`, `zip` ve `SimpleXML` eklentileri gerekir. Rakip tarama servisi ayrıca Node.js ve Chrome gerektirir.
+Pazaryeri net kâr hesaplama ve fiyat optimizasyonu SaaS'ı. PHP 8+ ile `pdo_sqlite`, `mbstring`, `curl`, `openssl`, `zip`, `SimpleXML`, `dom`, `xmlreader` ve `xmlwriter` eklentileri gerekir. Rakip tarama servisi ayrıca Node.js ve Chrome gerektirir.
 
 ## Klasör yerleşimi (ÖNEMLİ)
 

@@ -51,6 +51,14 @@ $saved = $trendyolOrder + ['profit_inputs' => json_encode(capture_order_profit_i
     $trendyolOrder['lines'], ['A' => $defaultA, 'B' => $defaultB], 1
 ))];
 check(near(calc_order_profit($saved, [])['service_fee'], $defaultFee), 'Eski sipariş maliyet kaydı paket hizmet bedeliyle okunur');
+$reported = $trendyolOrder;
+$reported['lines'][0]['commissionRate'] = 0;
+$reported['lines'][0]['vatRate'] = 0;
+$reported['lines'][1]['commissionRate'] = 'invalid';
+$rates = calc_order_profit($reported, $by);
+check($rates['ok'] && near($rates['lines'][0]['commission'], 0) && near($rates['lines'][0]['net_kdv'], 0),
+    'Trendyol sipariş satırındaki gerçek sıfır komisyon ve KDV oranı korunur');
+check(near($rates['lines'][1]['commission'], 30), 'Geçersiz sipariş oranı kayıtlı ürün oranına düşer');
 foreach (['Cancelled','Canceled','Returned','UnDelivered'] as $status) check(!calc_order_profit(array_replace($order,['status'=>$status]),$by)['ok'],"$status satış kârına alınmaz");
 check(!calc_order_profit($order,['A'=>$p])['ok'],'Eksik satır maliyeti siparişin kârını belirsiz yapar');
 $rows=aggregate_profit_rows([$order,$discounted],$by,'product');

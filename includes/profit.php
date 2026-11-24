@@ -172,6 +172,14 @@ function calc_order_profit(array $order,array $byBarcode): array
         $lineSale=$i===count($lines)-1 ? $remaining : $sale*$weights[$i]/$weight;
         $remaining-=$lineSale;
         $p=$byBarcode[$line['barcode']??'']??null;
+        if ($p && ($order['marketplace'] ?? '') === 'trendyol') {
+            foreach (['commissionRate' => 'rate', 'vatRate' => 'kdv'] as $field => $input) {
+                $rate = $line[$field] ?? null;
+                if (is_numeric($rate) && (float)$rate >= 0 && (float)$rate <= 100) {
+                    $p[$input] = (float)$rate;
+                }
+            }
+        }
         if (isset($feeWeights[$i])) {
             $share = $feeWeight > 0 ? $feeWeights[$i] / $feeWeight : 1 / $feeCount;
             $p['service_fee'] = $defaultFee * $share / $qty;

@@ -6,7 +6,7 @@ register_shutdown_function(static function()use($dir){$it=new RecursiveIteratorI
 $failed=0;function check(bool $ok,string $label):void{global $failed;echo($ok?'PASS ':'FAIL ').$label."\n";if(!$ok)$failed++;}
 function rejects(callable $f):bool{try{$f();return false;}catch(Throwable $e){return true;}}
 function value(string $sql):mixed{return db()->query($sql)->fetchColumn();}
-$cipher=encrypt_string('synthetic-secret');check(str_starts_with($cipher,'v2:')&&decrypt_string($cipher)==='synthetic-secret','Authenticated encryption round-trip');$raw=base64_decode(substr($cipher,3));$raw[strlen($raw)-1]=chr(ord($raw[strlen($raw)-1])^1);check(decrypt_string('v2:'.base64_encode($raw))==='','Modified ciphertext rejected');check((fileperms($dir.'/.enc-key')&0777)===0600,'Encryption key is private');
+$cipher=encrypt_string('synthetic-secret');check(str_starts_with($cipher,'v2:')&&decrypt_string($cipher)==='synthetic-secret','Authenticated encryption round-trip');$raw=base64_decode(substr($cipher,3));$raw[strlen($raw)-1]=chr(ord($raw[strlen($raw)-1])^1);check(decrypt_string('v2:'.base64_encode($raw))==='','Modified ciphertext rejected');if (PHP_OS_FAMILY !== 'Windows') check((fileperms($dir.'/.enc-key')&0777)===0600,'Encryption key is private on POSIX');
 $iv=random_bytes(16);$legacy=base64_encode($iv.openssl_encrypt('legacy-secret','aes-256-cbc',hex2bin(enc_key()),OPENSSL_RAW_DATA,$iv));check(decrypt_string($legacy)==='legacy-secret','Legacy CBC records remain readable');
 foreach(['http://example.test','https://user:pass@example.test','https://example.test/?redirect=x'] as $url)check(rejects(fn()=>application_base_url($url)),'Unsafe callback base URL rejected');check(application_base_url('https://example.test/app/')==='https://example.test/app','Canonical callback supports a fixed application path');
 db()->exec("INSERT INTO users(email,password_hash) VALUES('release@example.test','unused')");$uid=(int)db()->lastInsertId();
@@ -30,8 +30,30 @@ $requests=[];$client=new TrendyolClient('42','key','secret',false,static functio
 check($client->getBuyboxInformation(['A','B'])['missing']===['B'],'Missing Buybox results stay explicitly unknown');check(!$client->getBuyboxInformation(array_fill(0,11,'A'))['ok'],'Buybox maximum batch and duplicates enforced');$before=count($requests);$r=$client->updatePriceAndInventory([['barcode'=>'A','salePrice'=>100,'listPrice'=>100]]);check(!$r['ok']&&count($requests)===$before,'Read-only client blocks price writes before transport');
 check($client->getPaymentOrders()['rows'][0]['id']===321,'Paid payment-order list uses the official paginated endpoint');$ledger=$client->getPaymentOrderLedger('321');check($ledger['ok']&&count($ledger['rows'])===2&&$ledger['rows'][0]['source']!==$ledger['rows'][1]['source'],'Separate financial services retain separate transaction identities');$last=array_slice($requests,-2);check(isset($last[0][2]['paymentOrderId'],$last[1][2]['transactionTypes'])&&!isset($last[0][2]['startDate']),'Payout records are filtered by paymentOrderId, not order date');
 $bad=new TrendyolClient('42','key','secret',false,static fn()=>$book([['id'=>'x','paymentOrderId'=>999,'debt'=>0,'credit'=>1]]));check(!$bad->getPaymentOrderLedger('321')['ok'],'Foreign payment-order records rejected');$bad=new TrendyolClient('42','key','secret',false,static fn()=>['http'=>200,'body'=>['content'=>[],'totalPages'=>3,'totalElements'=>20,'page'=>0]]);check(!$bad->getPaymentOrders()['ok'],'Incomplete payout pagination cannot look successful');
-$command=[PHP_BINARY,'-n','-d','extension_dir='.ini_get('extension_dir'),'-d','extension=pdo','-d','extension=pdo_sqlite','-d','extension=mbstring',__DIR__.'/backup.php','--output-dir='.$dir.'/backups'];$process=proc_open($command,[1=>['pipe','w'],2=>['pipe','w']],$pipes);$backup=trim(stream_get_contents($pipes[1]));$error=stream_get_contents($pipes[2]);fclose($pipes[1]);fclose($pipes[2]);$status=proc_close($process);check($status===0&&is_file($backup.'/manifest.json'),'Consistent database backup completes with an active WAL database');
-if($status===0){$copy=new PDO('sqlite:'.$backup.'/app.sqlite');check((int)$copy->query('SELECT COUNT(*) FROM checkout_events')->fetchColumn()>=5,'Backup includes committed WAL data');$stored=$copy->query("SELECT api_secret FROM integrations WHERE marketplace='trendyol'")->fetchColumn();$data=base64_decode(substr($stored,3));$key=hex2bin(file_get_contents($backup.'/.enc-key'));$plain=openssl_decrypt(substr($data,28),'aes-256-gcm',$key,OPENSSL_RAW_DATA,substr($data,0,12),substr($data,12,16),'karfiyat-v2');check($plain==='api-secret','Restored database and backed-up key decrypt together');}
+$command = [PHP_BINARY];
+if (!php_ini_loaded_file() && !php_ini_scanned_files()) {
+    // CLI dependencies may have been enabled only for this invocation.
+    $command[] = '-d';
+    $command[] = 'extension_dir=' . ini_get('extension_dir');
+    foreach (['pdo', 'pdo_sqlite', 'mbstring'] as $extension) {
+        $file = PHP_OS_FAMILY === 'Windows' ? "php_$extension.dll" : "$extension.so";
+        if (is_file(ini_get('extension_dir') . DIRECTORY_SEPARATOR . $file)) {
+            $command[] = '-d';
+            $command[] = "extension=$extension";
+        }
+    }
+}
+$command = [...$command, __DIR__.'/backup.php', '--output-dir='.$dir.'/backups'];
+$process = proc_open($command, [1=>['pipe','w'], 2=>['pipe','w']], $pipes);
+if (!is_resource($process)) throw new RuntimeException('Backup subprocess could not start.');
+$backup = trim(stream_get_contents($pipes[1]));
+$error = stream_get_contents($pipes[2]);
+fclose($pipes[1]); fclose($pipes[2]);
+$status = proc_close($process);
+$backupReady = $status === 0 && is_file($backup.'/manifest.json');
+check($backupReady, 'Consistent database backup completes with an active WAL database');
+if (!$backupReady && $error !== '') fwrite(STDERR, $error);
+if($backupReady){$copy=new PDO('sqlite:'.$backup.'/app.sqlite');check((int)$copy->query('SELECT COUNT(*) FROM checkout_events')->fetchColumn()>=5,'Backup includes committed WAL data');$stored=$copy->query("SELECT api_secret FROM integrations WHERE marketplace='trendyol'")->fetchColumn();$data=base64_decode(substr($stored,3));$key=hex2bin(file_get_contents($backup.'/.enc-key'));$plain=openssl_decrypt(substr($data,28),'aes-256-gcm',$key,OPENSSL_RAW_DATA,substr($data,0,12),substr($data,12,16),'karfiyat-v2');check($plain==='api-secret','Restored database and backed-up key decrypt together');}
 // The free-plan cap applies atomically to synchronization as well as manual insertion.
 db()->prepare("INSERT INTO users(email,password_hash) VALUES('free-limit@example.test','unused')")->execute();$free=(int)db()->lastInsertId();save_integration($free,'trendyol','43','key','secret');
 $fixture=new class {public function getProducts(...$args):array{$rows=[];for($i=0;$i<6;$i++)$rows[]=['barcode'=>'LIMIT-'.$i,'salePrice'=>100,'quantity'=>1];return ['ok'=>true,'complete'=>true,'products'=>$rows];}};
