@@ -112,7 +112,7 @@ foreach ($orders as $o) {
                 $pr['cargo_source'] === 'history' => 'Kargo tahmini var · Sipariş maliyet kaydı bekleniyor',
                 ($integration['last_sync_error_scope'] ?? null) === 'cargo_invoices' => 'Son kargo faturası çekimi başarısız',
                 !$integration['last_cargo_invoices_sync'] => 'Kargo faturaları henüz senkronize edilmedi',
-                default => 'Kargo faturası bekleniyor veya fatura kalemleri doğrulanamadı',
+                default => 'Kargo tutarı aktarılmadı',
             };
             if ($cargo === [] && $o['source_seller_id'] !== null) $pr['before_cargo'] = null;
         }
@@ -170,7 +170,7 @@ require __DIR__ . '/../includes/header.php';
 
   <?php $flash = flash_get(); if ($flash): ?><div class="alert alert-<?= $flash['type'] ?>"><?= h($flash['msg']) ?></div><?php endif; ?>
 
-  <p class="hint">Trendyol kârı, faturadaki kargo veya karşılaştırılabilir geçmiş gönderiyle hesaplanır. Diğer giderler ayrıca doğrulanır.
+  <p class="hint">Trendyol kârı fatura, panelden girilen kargo veya benzer geçmiş gönderi kullanılarak hesaplanır. Diğer giderler ayrıca doğrulanır.
   <?php if ($today['count'] > $today['profitCount']): ?>
     <?= $today['count'] - $today['profitCount'] ?> paket toplama alınmadı. Nedeni Son Siparişler bölümünde, kargo öncesi tutar varsa yanında gösterilir.
   <?php endif; ?>
@@ -297,7 +297,11 @@ require __DIR__ . '/../includes/header.php';
               <details>
                 <summary class="<?= $pr['profit'] < 0 ? 'neg' : 'pos' ?>"><?= tl($pr['profit']) ?></summary>
                 <?php if (isset($pr['cargo_source'])): ?>
-                  <p class="hint"><?= $pr['cargo_source'] === 'invoice' ? 'Faturalı kargo' : 'Geçici kargo · Kargo faturası bekleniyor' ?></p>
+                  <p class="hint"><?= match ($pr['cargo_source']) {
+                      'invoice' => 'Faturalı kargo',
+                      'panel' => 'Trendyol panelinden girilen kargo',
+                      default => 'Geçici kargo · Kargo faturası bekleniyor',
+                  } ?></p>
                 <?php endif; ?>
                 <dl>
                   <?php foreach ([

@@ -206,11 +206,26 @@ try {
         && !str_contains($live, 'Son başarılı kargo faturası çekimi: Henüz'), 'Canlı Performans fatura çekim zamanını gösterir');
     check(str_contains($live, 'Faturalı kargo') && str_contains($live, '₺68,48') && str_contains($live, '₺51,52'),
         'Canlı Performans faturalı kargo üzerinden paket kârını hesaplar');
-    check(str_contains($live, 'Kargo faturası bekleniyor veya fatura kalemleri doğrulanamadı')
+    check(str_contains($live, 'Kargo tutarı aktarılmadı')
         && str_contains($live, 'Kargo öncesi: ₺160,00'), 'Canlı Performans kargo öncesi tutarı ayrı etiketler');
     check((bool)preg_match('/Bugün Hesaplanan Kâr<.*?₺51,52/s', $live),
         'Günlük toplam yalnız hesaplanabilen kârı içerir');
 
+    $before = req($ch, $base, 'siparis-muhasebe.php?order=457');
+    $saved = req($ch, $base, 'siparis-muhasebe.php?order=457', [
+        'action' => 'save_panel_shipping', 'order' => '457', 'shipping' => '159,08', 'csrf' => csrf($before['body']),
+    ]);
+    $after = req($ch, $base, 'siparis-muhasebe.php?order=457')['body'];
+    check($saved['status'] === 302 && str_contains($after, 'Trendyol panelinden girildi') && str_contains($after, '₺159,08'),
+        'Panel kargosu fatura olmadan kaydedilir ve kaynağı görünür');
+    $live = req($ch, $base, 'canli-performans.php?mp=trendyol')['body'];
+    check(str_contains($live, 'Trendyol panelinden girilen kargo') && str_contains($live, '₺159,08'),
+        'Canlı Performans panel kargosunu kullanır');
+    db()->prepare("INSERT INTO cargo_invoice_items VALUES (?, 'trendyol', '42', 0,
+        'INV-LATER', 0, '457', '300', 'Gönderi Kargo Bedeli', 120)")->execute([$uid]);
+    $invoiceOrder = req($ch, $base, 'siparis-muhasebe.php?order=457')['body'];
+    check(str_contains($invoiceOrder, 'Trendyol faturasındaki kalemler') && str_contains($invoiceOrder, '₺120,00')
+        && !str_contains($invoiceOrder, '₺159,08'), 'Sonradan gelen fatura panel tutarının yerine kullanılır');
     curl_close($ch);
     if (is_file($jar)) unlink($jar);
 } finally {

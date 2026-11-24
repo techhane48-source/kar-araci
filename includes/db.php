@@ -293,6 +293,11 @@ function migrate(): void
         created_at TEXT NOT NULL DEFAULT (datetime('now')),
         UNIQUE(user_id, marketplace, seller_id, stage, provider_id)
     )");
+    $pdo->exec("CREATE TABLE IF NOT EXISTS order_panel_shipping (
+        user_id INTEGER NOT NULL, marketplace TEXT NOT NULL, seller_id TEXT NOT NULL, stage INTEGER NOT NULL,
+        order_number TEXT NOT NULL, amount_cents INTEGER NOT NULL CHECK (amount_cents >= 0),
+        PRIMARY KEY (user_id, marketplace, seller_id, stage, order_number)
+    )");
     $pdo->exec("CREATE TABLE IF NOT EXISTS cargo_invoice_items (
         user_id INTEGER NOT NULL, marketplace TEXT NOT NULL, seller_id TEXT NOT NULL, stage INTEGER NOT NULL,
         invoice_id TEXT NOT NULL, line_number INTEGER NOT NULL, order_number TEXT NOT NULL,

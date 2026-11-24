@@ -21,6 +21,19 @@ $searched = false;
 $integration = get_integration((int)$user['id'], 'trendyol');
 $detailsRequested = $_SERVER['REQUEST_METHOD'] === 'POST';
 
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? null) === 'save_panel_shipping') {
+    $order = is_string($_POST['order'] ?? null) ? $_POST['order'] : '';
+    $token = $_POST['csrf'] ?? null;
+    if (!preg_match('/^[0-9]{1,32}$/D', $order) || !is_string($token) || !csrf_verify($token)) {
+        flash_set('error', 'Sipariş veya oturum doğrulanamadı.');
+    } elseif (!$integration || !save_order_panel_shipping($integration, $order, $_POST['shipping'] ?? null)) {
+        flash_set('error', 'Kargo kaydedilemedi. Siparişin bağlı mağazaya ait olduğunu ve tutarı kontrol et.');
+    } else {
+        flash_set('success', 'Paneldeki kargo tutarı kaydedildi.');
+    }
+    e_redirect('siparis-muhasebe.php?order=' . rawurlencode($order));
+}
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? null) === 'sync_invoiced_orders') {
     $token = $_POST['csrf'] ?? null;
     if (!is_string($token) || !csrf_verify($token)) {
@@ -111,9 +124,10 @@ require __DIR__ . '/../includes/header.php';
       <div class="order-accounting-values">
         <div><span>Satış tutarı</span><strong><?= tl(array_sum(array_column($packages, 'total_price'))) ?></strong></div>
         <div><span>Kargo gideri</span>
-          <strong><?= $cargoProfit['amount'] !== null ? tl($cargoProfit['amount']) : 'Bekleniyor' ?></strong>
+          <strong><?= $cargoProfit['amount'] !== null ? tl($cargoProfit['amount']) : 'Aktarılmadı' ?></strong>
           <small><?= match ($cargoProfit['source']) {
              'invoice' => 'Trendyol faturasındaki kalemler',
+             'panel' => 'Trendyol panelinden girildi',
              'history' => 'Benzer gönderi · Fatura bekleniyor',
              default => 'Bu sipariş için doğrulanmış tutar yok',
           } ?></small>
@@ -124,6 +138,16 @@ require __DIR__ . '/../includes/header.php';
               : (count($packages) > 1 ? 'Birden fazla paket var; kargo sipariş genelinde' : 'Maliyet veya doğrulanmış kargo bilgisi eksik') ?></small>
         </div>
       </div>
+      <?php if ($cargoProfit['scope_matches'] && $cargoProfit['source'] !== 'invoice'): ?>
+        <form class="order-accounting-search" method="post">
+          <input type="hidden" name="csrf" value="<?= h(csrf_token()) ?>">
+          <input type="hidden" name="order" value="<?= h($order) ?>">
+          <label for="shipping">Trendyol panelindeki toplam kargo gideri (₺)</label>
+          <input id="shipping" name="shipping" inputmode="decimal" placeholder="159,08" required
+                 value="<?= $cargoProfit['source'] === 'panel' ? h(number_format($cargoProfit['amount'], 2, ',', '')) : '' ?>">
+          <button class="btn-primary" name="action" value="save_panel_shipping">Kargoyu kaydet</button>
+        </form>
+      <?php endif; ?>
     </section>
   <?php elseif ($integration): ?>
     <section class="card">
@@ -205,13 +229,15 @@ require __DIR__ . '/../includes/header.php';
       <?php if ($cargoProfit !== null): ?>
         <?php if ($cargoProfit['source'] === 'invoice'): ?>
           <p>Faturada görülen sipariş kargosu: <?= tl($cargoProfit['amount']) ?></p>
+        <?php elseif ($cargoProfit['source'] === 'panel'): ?>
+          <p>Trendyol panelinden girilen toplam kargo: <?= tl($cargoProfit['amount']) ?></p>
         <?php elseif ($cargoProfit['source'] === 'history'): ?>
           <p>Kargo faturası bekleniyor · Benzer gönderiden alınan geçici kargo: <?= tl($cargoProfit['amount']) ?></p>
         <?php else: ?>
           <p>Kargo gideri bekleniyor veya mevcut kayıt doğrulanamadı.</p>
         <?php endif; ?>
         <?php if ($cargoProfit['profit'] !== null): ?>
-          <p><?= $cargoProfit['source'] === 'history' ? 'Geçici kâr' : 'Faturalı kargoyla hesaplanan kâr' ?>: <?= tl($cargoProfit['profit']) ?>. Diğer finans kalemleri ayrıca doğrulanır.</p>
+          <p><?= $cargoProfit['source'] === 'history' ? 'Geçici kâr' : 'Kargo dahil hesaplanan kâr' ?>: <?= tl($cargoProfit['profit']) ?>. Diğer finans kalemleri ayrıca doğrulanır.</p>
         <?php endif; ?>
       <?php endif; ?>
       <?php if ($invoice === '' && ($cargoProfit['scope_matches'] ?? false)): $cargo = $cachedCargo; endif; ?>

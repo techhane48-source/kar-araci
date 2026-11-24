@@ -299,6 +299,38 @@ function order_cargo_reference(array $integration, array $package): ?float
     return null;
 }
 
+function order_panel_shipping(array $integration, string $order): ?float
+{
+    $query = db()->prepare('SELECT amount_cents FROM order_panel_shipping
+        WHERE user_id=? AND marketplace=? AND seller_id=? AND stage=? AND order_number=?');
+    $query->execute([$integration['user_id'], $integration['marketplace'], $integration['seller_id'],
+        (int)$integration['stage'], $order]);
+    $value = $query->fetchColumn();
+    return $value === false ? null : (float)$value / 100;
+}
+
+function save_order_panel_shipping(array $integration, string $order, mixed $value): bool
+{
+    $raw = is_string($value) ? trim($value) : '';
+    if (!preg_match('/^[0-9]{1,10}(?:[.,][0-9]{1,2})?$/D', $raw)) return false;
+    $amount = (float)str_replace(',', '.', $raw);
+    if ($amount > PROFIT_MAX_AMOUNT) return false;
+
+    $query = db()->prepare('INSERT INTO order_panel_shipping
+        (user_id, marketplace, seller_id, stage, order_number, amount_cents)
+        SELECT i.user_id, i.marketplace, i.seller_id, i.stage, ?, ? FROM integrations i
+        WHERE i.id=? AND i.revision=? AND i.user_id=?
+        AND EXISTS (SELECT 1 FROM orders o WHERE o.user_id=i.user_id AND o.marketplace=i.marketplace
+            AND o.order_number=? AND o.source_seller_id=i.seller_id AND o.source_stage=i.stage)
+        AND NOT EXISTS (SELECT 1 FROM orders o WHERE o.user_id=i.user_id AND o.marketplace=i.marketplace
+            AND o.order_number=? AND (o.source_seller_id IS NOT i.seller_id OR o.source_stage IS NOT i.stage))
+        ON CONFLICT(user_id, marketplace, seller_id, stage, order_number)
+        DO UPDATE SET amount_cents=excluded.amount_cents');
+    $query->execute([$order, (int)round($amount * 100), $integration['id'], $integration['revision'],
+        $integration['user_id'], $order, $order]);
+    return $query->rowCount() === 1;
+}
+
 function order_cargo_profit_view(array $integration, array $packages, array $items): array
 {
     $result = ['source' => 'pending', 'amount' => null, 'profit' => null, 'scope_matches' => false];
@@ -312,6 +344,8 @@ function order_cargo_profit_view(array $integration, array $packages, array $ite
     $amount = order_cargo_recorded_amount($items);
     if ($amount !== null) {
         $source = 'invoice';
+    } elseif (($amount = order_panel_shipping($integration, $packages[0]['order_number'])) !== null) {
+        $source = 'panel';
     } elseif (!$items && count($packages) === 1) {
         $amount = order_cargo_reference($integration, $packages[0]);
         $source = 'history';
