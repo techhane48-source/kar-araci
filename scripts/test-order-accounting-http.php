@@ -184,8 +184,8 @@ try {
     $live = req($ch, $base, 'canli-performans.php?mp=trendyol')['body'];
     check(str_contains($live, 'Faturalı kargo') && str_contains($live, '₺68,48') && str_contains($live, '₺51,52'),
         'Canlı Performans faturalı kargo üzerinden paket kârını hesaplar');
-    check(str_contains($live, 'Kargo gideri bekleniyor veya doğrulanamadı')
-        && !str_contains($live, '₺120,00'), 'Canlı Performans kargosuz eski kârı göstermez');
+    check(str_contains($live, 'Kargo faturası bekleniyor veya fatura kalemleri doğrulanamadı')
+        && str_contains($live, 'Kargo öncesi: ₺160,00'), 'Canlı Performans kargo öncesi tutarı ayrı etiketler');
     check((bool)preg_match('/Bugün Hesaplanan Kâr<.*?₺51,52/s', $live),
         'Günlük toplam yalnız hesaplanabilen kârı içerir');
 
