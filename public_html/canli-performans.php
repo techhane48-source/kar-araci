@@ -1,6 +1,6 @@
 <?php
 declare(strict_types=1);
-require_once __DIR__ . '/../includes/functions.php';
+require_once __DIR__ . '/../includes/order_accounting.php';
 
 $u = require_login();
 $pro = is_pro($u);
@@ -45,9 +45,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'sync'
 }
 
 // --- Otomatik sipariş senkronu (müşteri butona basmadan; son senkron > 10 dk ise) ---
-$autoSyncSt = db()->prepare("SELECT last_orders_sync FROM integrations WHERE user_id = ? AND marketplace = ?");
+$autoSyncSt = db()->prepare("SELECT user_id, marketplace, seller_id, stage, last_orders_sync FROM integrations WHERE user_id = ? AND marketplace = ?");
 $autoSyncSt->execute([$u['id'], $mp]);
-$lastOrdersSync = $autoSyncSt->fetchColumn();
+$integration = $autoSyncSt->fetch();
+$lastOrdersSync = $integration['last_orders_sync'] ?? null;
+$useCargoEvidence = $mp === 'trendyol' && $integration !== false;
 if (!$lastOrdersSync || (int)$lastOrdersSync < time() - 600) {
     sync_orders($u['id'], $mp, 7); // hata olsa bile sayfa mevcut (eski) veriyle açılır
 }
@@ -75,6 +77,8 @@ $now = time();
 $today = ['sale' => 0.0, 'profit' => 0.0, 'knownSale' => 0.0, 'count' => 0, 'profitCount' => 0];
 $yesterday = ['sale' => 0.0, 'profit' => 0.0, 'count' => 0];
 $hourly = array_fill(0, 24, ['sale' => 0.0, 'profit' => 0.0, 'count' => 0, 'knownCount' => 0, 'missing' => false]);
+$cargoByOrder = [];
+$profitByPackage = [];
 $week = []; // dayKey (Y-m-d) => [sale, profit, count]
 
 foreach ($orders as $o) {
@@ -82,7 +86,22 @@ foreach ($orders as $o) {
     $dayKey = date('Y-m-d', (int)$o['order_date']);
     if (!isset($week[$dayKey])) $week[$dayKey] = ['sale' => 0.0, 'profit' => 0.0, 'count' => 0, 'knownCount' => 0, 'missing' => false];
 
-    $pr = calc_order_profit($o, $byBarcode);
+    if (!$useCargoEvidence) {
+        $pr = calc_order_profit($o, $byBarcode);
+    } else {
+        $orderNumber = $o['order_number'];
+        if ($orderNumber !== '' && $o['source_seller_id'] === $integration['seller_id']
+            && $o['source_stage'] !== null && (int)$o['source_stage'] === (int)$integration['stage']) {
+            $cargoByOrder[$orderNumber] ??= order_cargo_profit_view(
+                $integration,
+                order_accounting_packages((int)$u['id'], $orderNumber),
+                order_cargo_records($integration, $orderNumber)
+            );
+        }
+        $cargo = $cargoByOrder[$orderNumber] ?? [];
+        $pr = ($cargo['calculation'] ?? ['ok' => false]) + ['cargo_source' => $cargo['source'] ?? 'pending'];
+    }
+    $profitByPackage[$o['id']] = $pr;
     $profit = $pr['ok'] ? (float)$pr['profit'] : 0.0;
     $sale = (float)$o['total_price'];
 
@@ -135,11 +154,11 @@ require __DIR__ . '/../includes/header.php';
 
   <?php $flash = flash_get(); if ($flash): ?><div class="alert alert-<?= $flash['type'] ?>"><?= h($flash['msg']) ?></div><?php endif; ?>
 
-  <p class="hint">Tahmini kâr kayıtlı ürün maliyeti ve giderlerle hesaplanır. Trendyol satırında komisyon ve KDV oranı varsa siparişten alınır. Gerçekleşen finans kesintileri bu tahmine dahil edilmez.
-  <?= $today['count'] - $today['profitCount'] ?> bugünkü pakette maliyet/girdi eksik; bu paketler kâr toplamına alınmaz.</p>
+  <p class="hint">Trendyol kârı, faturadaki kargo veya karşılaştırılabilir geçmiş gönderiyle hesaplanır. Diğer giderler ayrıca doğrulanır.
+  <?= $today['count'] - $today['profitCount'] ?> bugünkü paket için kâr hesaplanamadı. Bu paketler kâr toplamına dahil edilmez.</p>
   <div class="kpi-row">
     <div class="kpi"><div class="k-label">Bugün Satış</div><div class="k-value"><?= tl($today['sale']) ?></div></div>
-    <div class="kpi"><div class="k-label">Bugün Tahmini Kâr</div><div class="k-value <?= $today['profit'] < 0 ? 'neg' : '' ?>"><?= $today['profitCount'] > 0 ? tl($today['profit']) : '—' ?></div></div>
+    <div class="kpi"><div class="k-label">Bugün Hesaplanan Kâr</div><div class="k-value <?= $today['profit'] < 0 ? 'neg' : '' ?>"><?= $today['profitCount'] > 0 ? tl($today['profit']) : '—' ?></div></div>
     <div class="kpi"><div class="k-label">Paket</div><div class="k-value"><?= $today['count'] ?></div></div>
     <div class="kpi"><div class="k-label">Ort. Kâr Marjı</div><div class="k-value"><?= $today['profitCount'] > 0 ? '%' . number_format($avgMargin, 1, ',', '.') : '—' ?></div></div>
   </div>
@@ -157,7 +176,7 @@ require __DIR__ . '/../includes/header.php';
     ?>
     <div style="display:flex;gap:8px;align-items:flex-end;height:120px;margin:10px 0 6px;padding:0 4px">
       <?php for ($h = 0; $h < 24; $h++): $d = $hourly[$h]; $sh = $d['sale'] / $maxSaleH * 100; $ph = $d['profit'] / $maxSaleH * 100; ?>
-        <div style="flex:1;display:flex;flex-direction:column;justify-content:flex-end;align-items:center;gap:2px" title="<?= str_pad((string)$h,2,'0',STR_PAD_LEFT) ?>:00 — Satış <?= tl($d['sale']) ?> / Kâr <?= $d['knownCount'] > 0 ? tl($d['profit']) : '—' ?><?= $d['missing'] ? ' (eksik maliyet)' : '' ?>">
+        <div style="flex:1;display:flex;flex-direction:column;justify-content:flex-end;align-items:center;gap:2px" title="<?= str_pad((string)$h,2,'0',STR_PAD_LEFT) ?>:00 — Satış <?= tl($d['sale']) ?> / Kâr <?= $d['knownCount'] > 0 ? tl($d['profit']) : '—' ?><?= $d['missing'] ? ' (eksik kayıt)' : '' ?>">
           <div style="width:100%;background:var(--accent-soft);border-radius:3px 3px 0 0;height:<?= max(2, $sh) ?>%;position:relative">
             <?php if ($d['profit'] > 0): ?><div style="position:absolute;bottom:0;left:0;right:0;background:var(--green);height:<?= max(1, $ph) ?>%;border-radius:3px 3px 0 0"></div><?php endif; ?>
           </div>
@@ -167,12 +186,12 @@ require __DIR__ . '/../includes/header.php';
     </div>
     <p class="hint" style="margin-bottom:10px">Mavi: satış, yeşil: kâr (satış ölçeğinde). Saat etiketleri her 3 saatte bir.</p>
     <table>
-      <tr><th>Saat</th><th>Satış</th><th>Tahmini Kâr</th><th>Paket</th></tr>
+      <tr><th>Saat</th><th>Satış</th><th>Hesaplanan Kâr</th><th>Paket</th></tr>
       <?php foreach ($hourly as $h => $d): if ($d['count'] === 0) continue; ?>
         <tr>
           <td><?= str_pad((string)$h, 2, '0', STR_PAD_LEFT) ?>:00</td>
           <td><?= tl($d['sale']) ?></td>
-          <td class="<?= $d['profit'] < 0 ? 'neg' : 'pos' ?>"><?= $d['knownCount'] > 0 ? tl($d['profit']) : '—' ?><?= $d['missing'] ? ' (eksik maliyet)' : '' ?></td>
+          <td class="<?= $d['profit'] < 0 ? 'neg' : 'pos' ?>"><?= $d['knownCount'] > 0 ? tl($d['profit']) : '—' ?><?= $d['missing'] ? ' (eksik kayıt)' : '' ?></td>
           <td><?= $d['count'] ?></td>
         </tr>
       <?php endforeach; ?>
@@ -183,12 +202,12 @@ require __DIR__ . '/../includes/header.php';
   <div class="card table-card" style="margin:16px 0">
     <h2>Son 7 Gün</h2>
     <table>
-      <tr><th>Gün</th><th>Satış</th><th>Tahmini Kâr</th><th>Paket</th></tr>
+      <tr><th>Gün</th><th>Satış</th><th>Hesaplanan Kâr</th><th>Paket</th></tr>
       <?php foreach ($week as $day => $d): ?>
         <tr>
           <td><?= h($day) ?></td>
           <td><?= tl($d['sale']) ?></td>
-          <td class="<?= $d['profit'] < 0 ? 'neg' : 'pos' ?>"><?= $d['knownCount'] > 0 ? tl($d['profit']) : '—' ?><?= $d['missing'] ? ' (eksik maliyet)' : '' ?></td>
+          <td class="<?= $d['profit'] < 0 ? 'neg' : 'pos' ?>"><?= $d['knownCount'] > 0 ? tl($d['profit']) : '—' ?><?= $d['missing'] ? ' (eksik kayıt)' : '' ?></td>
           <td><?= $d['count'] ?></td>
         </tr>
       <?php endforeach; ?>
@@ -238,8 +257,8 @@ require __DIR__ . '/../includes/header.php';
   <div class="card table-card" style="margin:16px 0">
     <h2>Son Siparişler</h2>
     <table>
-      <tr><th>Sipariş No</th><th>Tarih</th><th>Satış</th><th>Tahmini Kâr</th><th>Durum</th></tr>
-      <?php foreach (array_slice($orders, 0, 25) as $o): $pr = calc_order_profit($o, $byBarcode); ?>
+      <tr><th>Sipariş No</th><th>Tarih</th><th>Satış</th><th>Hesaplanan Kâr</th><th>Durum</th></tr>
+      <?php foreach (array_slice($orders, 0, 25) as $o): $pr = $profitByPackage[$o['id']]; ?>
         <tr>
           <td style="font-size:12px">
             <?php if ($mp === 'trendyol' && $o['order_number'] !== ''): ?>
@@ -254,6 +273,9 @@ require __DIR__ . '/../includes/header.php';
             <?php if ($pr['ok']): ?>
               <details>
                 <summary class="<?= $pr['profit'] < 0 ? 'neg' : 'pos' ?>"><?= tl($pr['profit']) ?></summary>
+                <?php if (isset($pr['cargo_source'])): ?>
+                  <p class="hint"><?= $pr['cargo_source'] === 'invoice' ? 'Faturalı kargo' : 'Geçici kargo · Kargo faturası bekleniyor' ?></p>
+                <?php endif; ?>
                 <dl>
                   <?php foreach ([
                       'cost' => 'Birim maliyetlerin toplamı', 'commission' => 'Komisyon',
@@ -265,7 +287,15 @@ require __DIR__ . '/../includes/header.php';
                   <?php endforeach; ?>
                 </dl>
               </details>
-            <?php else: ?><span class="hint">maliyet eksik</span><?php endif; ?>
+            <?php else: ?>
+              <span class="hint"><?php
+                  echo match ($pr['cargo_source'] ?? null) {
+                      'pending' => 'Kargo gideri bekleniyor veya doğrulanamadı',
+                      'invoice' => 'Kargo sipariş düzeyinde · Paket kârı hesaplanamadı',
+                      default => 'Maliyet veya hesap girdisi eksik',
+                  };
+              ?></span>
+            <?php endif; ?>
           </td>
           <td style="font-size:12px"><?= h($o['status'] ?: '—') ?></td>
         </tr>

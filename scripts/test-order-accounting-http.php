@@ -174,6 +174,21 @@ try {
     $html = post($ch, $base, ['order' => '456']);
     check(str_contains($html, 'Faturada görülen sipariş kargosu: ₺68,48'), 'HTML: sipariş kargosu fatura ID girilmeden görünür');
 
+    // Canlı Performans aynı faturalı kargoyu hem pakette hem saat/gün toplamlarında kullanır.
+    $inputs = json_encode(capture_order_profit_inputs(json_decode($lines, true), [
+        'BC-1' => ['cost' => 40, 'cargo' => 0, 'rate' => 0, 'kdv' => 0, 'service_fee' => 0],
+    ], time()));
+    db()->prepare("UPDATE orders SET order_date=?, profit_inputs=?, source_seller_id='42', source_stage=0
+        WHERE user_id=? AND order_number IN ('456','457')")->execute([time(), $inputs, $uid]);
+    db()->prepare('UPDATE integrations SET last_orders_sync=? WHERE user_id=?')->execute([time(), $uid]);
+    $live = req($ch, $base, 'canli-performans.php?mp=trendyol')['body'];
+    check(str_contains($live, 'Faturalı kargo') && str_contains($live, '₺68,48') && str_contains($live, '₺51,52'),
+        'Canlı Performans faturalı kargo üzerinden paket kârını hesaplar');
+    check(str_contains($live, 'Kargo gideri bekleniyor veya doğrulanamadı')
+        && !str_contains($live, '₺120,00'), 'Canlı Performans kargosuz eski kârı göstermez');
+    check((bool)preg_match('/Bugün Hesaplanan Kâr<.*?₺51,52/s', $live),
+        'Günlük toplam yalnız hesaplanabilen kârı içerir');
+
     curl_close($ch);
     if (is_file($jar)) unlink($jar);
 } finally {

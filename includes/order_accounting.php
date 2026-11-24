@@ -325,5 +325,6 @@ function order_cargo_profit_view(array $integration, array $packages, array $ite
     $package['lines'] = json_decode($package['lines'], true) ?: [];
     $profit = calc_order_profit($package, [], $amount);
     $result['profit'] = $profit['ok'] ? $profit['profit'] : null;
+    $result['calculation'] = $profit;
     return $result;
 }
