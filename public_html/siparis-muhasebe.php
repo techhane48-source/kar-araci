@@ -19,7 +19,7 @@ $claims_error = false;
 $errors = [];
 $searched = false;
 $integration = get_integration((int)$user['id'], 'trendyol');
-$invoicedOrders = $integration ? invoiced_orders_for_store($integration) : [];
+$detailsRequested = $_SERVER['REQUEST_METHOD'] === 'POST';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? null) === 'sync_invoiced_orders') {
     $token = $_POST['csrf'] ?? null;
@@ -46,15 +46,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     } elseif (!preg_match('/^[0-9]{1,32}$/D', $order) || ($payment !== '' && !preg_match('/^[1-9][0-9]{0,19}$/D', $payment)) ||
         ($invoice !== '' && !preg_match('/^[a-zA-Z0-9_-]{1,80}$/D', $invoice))) {
         $errors[] = 'Sipariş, ödeme emri veya fatura numarası geçersiz.';
+    }
+}
+
+if ($order !== '' && !$errors) {
+    $packages = order_accounting_packages((int)$user['id'], $order);
+    if (!$packages || !$integration) {
+        $errors[] = 'Bu sipariş bağlı Trendyol mağazanızın yerel kayıtlarında bulunamadı.';
     } else {
-        $packages = order_accounting_packages((int)$user['id'], $order);
-        if (!$packages || !$integration) {
-            $errors[] = 'Bu sipariş bağlı Trendyol mağazanızın yerel kayıtlarında bulunamadı.';
-        } else {
-            $searched = true;
-            $cachedCargo = order_cargo_records($integration, $order);
-            $cargoProfit = order_cargo_profit_view($integration, $packages, $cachedCargo);
-            $settlements = order_accounting_settlements((int)$user['id'], $order);
+        $searched = true;
+        $cachedCargo = order_cargo_records($integration, $order);
+        $cargoProfit = order_cargo_profit_view($integration, $packages, $cachedCargo);
+        $settlements = order_accounting_settlements((int)$user['id'], $order);
+        if ($detailsRequested) {
             require_once __DIR__ . '/../includes/trendyol.php';
             $client = new TrendyolClient($integration['seller_id'], $integration['api_key'],
                 $integration['api_secret'], (bool)$integration['stage'], order_accounting_transport(), true);
@@ -91,15 +95,37 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
     }
 }
+$invoicedOrders = !$searched && $integration ? invoiced_orders_for_store($integration) : [];
 
 $pageTitle = 'Sipariş Muhasebesi — ' . APP_NAME;
 require __DIR__ . '/../includes/header.php';
 ?>
-<div class="wrap">
+<div class="wrap order-accounting">
   <h1>Sipariş Muhasebesi</h1>
   <?php foreach ($errors as $error): ?><p class="flash flash-error"><?= h($error) ?></p><?php endforeach; ?>
   <?php if ($flash = flash_get()): ?><div class="alert alert-<?= h($flash['type']) ?>"><?= h($flash['msg']) ?></div><?php endif; ?>
-  <?php if ($integration): ?>
+  <?php if ($searched): ?>
+    <a href="siparis-muhasebe.php" class="btn-ghost">← Sipariş listesine dön</a>
+    <section class="card order-accounting-overview">
+      <h2>Sipariş <?= h($order) ?></h2>
+      <div class="order-accounting-values">
+        <div><span>Satış tutarı</span><strong><?= tl(array_sum(array_column($packages, 'total_price'))) ?></strong></div>
+        <div><span>Kargo gideri</span>
+          <strong><?= $cargoProfit['amount'] !== null ? tl($cargoProfit['amount']) : 'Bekleniyor' ?></strong>
+          <small><?= match ($cargoProfit['source']) {
+             'invoice' => 'Trendyol faturasındaki kalemler',
+             'history' => 'Benzer gönderi · Fatura bekleniyor',
+             default => 'Bu sipariş için doğrulanmış tutar yok',
+          } ?></small>
+        </div>
+        <div><span><?= $cargoProfit['source'] === 'history' ? 'Geçici kâr' : 'Hesaplanan kâr' ?></span>
+          <strong><?= $cargoProfit['profit'] !== null ? tl($cargoProfit['profit']) : 'Hesaplanamadı' ?></strong>
+          <small><?= $cargoProfit['profit'] !== null ? 'Diğer finans kesintileri ayrıca doğrulanır'
+              : (count($packages) > 1 ? 'Birden fazla paket var; kargo sipariş genelinde' : 'Maliyet veya doğrulanmış kargo bilgisi eksik') ?></small>
+        </div>
+      </div>
+    </section>
+  <?php elseif ($integration): ?>
     <section class="card">
       <div class="toolbar">
         <h2>Kargo faturası bulunan siparişler</h2>
@@ -109,18 +135,14 @@ require __DIR__ . '/../includes/header.php';
         </form>
       </div>
       <?php if (!$invoicedOrders): ?>
-        <p class="hint">Yerel sipariş geçmişinde kargo faturasıyla eşleşen teslim edilmiş sipariş bulunamadı.</p>
+        <p>Henüz eşleşen sipariş yok. Trendyol’dan teslim edilen siparişleri ve kargo faturalarını almak için <strong>Son 30 günü çek</strong> düğmesine bas.</p>
       <?php else: ?>
         <table>
           <thead><tr><th>Sipariş</th><th>Tarih</th><th></th></tr></thead>
           <tbody>
           <?php foreach ($invoicedOrders as $entry): ?>
             <tr><td><?= h($entry['order_number']) ?></td><td><?= date('d.m.Y', (int)$entry['order_date']) ?></td><td>
-              <form method="post">
-                <input type="hidden" name="csrf" value="<?= h(csrf_token()) ?>">
-                <input type="hidden" name="order" value="<?= h($entry['order_number']) ?>">
-                <button class="btn-ghost" type="submit">Aç</button>
-              </form>
+              <a class="btn-ghost" href="siparis-muhasebe.php?order=<?= rawurlencode($entry['order_number']) ?>">Siparişi aç</a>
             </td></tr>
           <?php endforeach; ?>
           </tbody>
@@ -128,18 +150,25 @@ require __DIR__ . '/../includes/header.php';
       <?php endif; ?>
     </section>
   <?php endif; ?>
-  <form class="card" method="post">
-    <input type="hidden" name="csrf" value="<?= h(csrf_token()) ?>">
-    <label for="order">Sipariş numarası</label>
-    <input id="order" name="order" required inputmode="numeric" value="<?= h($order) ?>">
-    <label for="payment">Ödeme emri ID (isteğe bağlı)</label>
-    <input id="payment" name="payment" inputmode="numeric" value="<?= h($payment) ?>">
-    <label for="invoice">Kargo faturası ID (isteğe bağlı)</label>
-    <input id="invoice" name="invoice" value="<?= h($invoice) ?>">
-    <button class="btn-primary" type="submit">Kayıtları getir</button>
-  </form>
+  <?php if (!$searched): ?>
+    <form class="card order-accounting-search" method="get">
+      <label for="order">Sipariş numarasıyla ara</label>
+      <input id="order" name="order" required inputmode="numeric" value="<?= h($order) ?>">
+      <button class="btn-primary" type="submit">Siparişi aç</button>
+    </form>
+  <?php endif; ?>
   <?php if ($searched): ?>
-    <p>Kesin net kâr ve banka mutabakatı: Bekleniyor. Aşağıdaki tutarlar yalnızca listelenen kaynak kayıtlarını kapsar.</p>
+    <details class="card order-accounting-details"<?= $detailsRequested ? ' open' : '' ?>>
+      <summary>İadeler, finans kayıtları ve fatura ayrıntıları</summary>
+      <form class="order-accounting-search" method="post">
+        <input type="hidden" name="csrf" value="<?= h(csrf_token()) ?>">
+        <input type="hidden" name="order" value="<?= h($order) ?>">
+        <label for="payment">Ödeme emri ID (isteğe bağlı)</label>
+        <input id="payment" name="payment" value="<?= h($payment) ?>">
+        <label for="invoice">Kargo faturası ID (isteğe bağlı)</label>
+        <input id="invoice" name="invoice" value="<?= h($invoice) ?>">
+        <button class="btn-ghost" type="submit">Ayrıntıları sorgula</button>
+      </form>
     <section class="card">
       <h2>Paketler ve indirimler</h2>
       <?php foreach ($packages as $package): ?>
@@ -151,7 +180,8 @@ require __DIR__ . '/../includes/header.php';
     </section>
     <section class="card"><h2>İade kalemleri</h2>
       <p>İade durumu talebi gösterir; finansal ters hareket ayrıca aşağıdaki cari/ödeme kayıtlarında aranır. Kabul edilen iade tek başına para hareketi kanıtı değildir.</p>
-      <?php if ($claims_error): ?><p>İade sorgusu başarısız oldu (yukarıdaki hataya bakın); iade durumu bilinmiyor.</p>
+      <?php if (!$detailsRequested): ?><p>Trendyol’daki iade durumunu görmek için ayrıntıları sorgula.</p>
+      <?php elseif ($claims_error): ?><p>İade sorgusu başarısız oldu (yukarıdaki hataya bakın); iade durumu bilinmiyor.</p>
       <?php elseif (!$claims): ?><p>Gösterilecek iade kalemi yok.</p><?php endif; ?>
       <ul><?php foreach ($claims as $claim): ?><li><?= h($claim['status']) ?> ·
         <?php if ($claim['match'] === 'matched'): ?>Paket <?= h($claim['package']) ?> · <?= h($claim['barcode']) ?>
@@ -201,6 +231,7 @@ require __DIR__ . '/../includes/header.php';
         if ($cargoKnown): ?><p>Bilinen kalemler toplamı: <?= tl($cargoKnownTotal) ?><?= $cargoIncomplete ? ' (bazı kalemler bilinmiyor veya çelişkili)' : '' ?></p><?php endif; ?>
       <?php endif; ?>
     </section>
+    </details>
   <?php endif; ?>
 </div>
 <?php require __DIR__ . '/../includes/footer.php'; ?>

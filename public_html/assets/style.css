@@ -366,3 +366,46 @@ tbody tr:hover{background:var(--bg-softer)}
 .product-cost-form input[name="cost"] {
     width: 7em;
 }
+
+.order-accounting > .card {
+  margin: 16px 0;
+}
+.order-accounting-values {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 180px), 1fr));
+  gap: 12px;
+  margin-top: 12px;
+}
+.order-accounting-values > div {
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+.order-accounting-values span,
+.order-accounting-values strong,
+.order-accounting-values small {
+  display: block;
+}
+.order-accounting-values strong {
+  font-size: 1.35rem;
+  margin: 4px 0;
+}
+.order-accounting-values small {
+  color: var(--muted);
+}
+.order-accounting-search {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 8px;
+}
+.order-accounting-search input {
+  width: min(100%, 220px);
+}
+.order-accounting-details summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+.order-accounting-details > :not(summary) {
+  margin-top: 14px;
+}

@@ -98,8 +98,11 @@ try {
 
     function req($ch, string $base, string $page, ?array $data = null): array {
         curl_setopt($ch, CURLOPT_URL, $base . '/' . $page);
-        curl_setopt($ch, CURLOPT_POST, $data !== null);
-        curl_setopt($ch, CURLOPT_POSTFIELDS, $data === null ? null : http_build_query($data));
+        if ($data === null) {
+            curl_setopt($ch, CURLOPT_HTTPGET, true);
+        } else {
+            curl_setopt($ch, CURLOPT_POSTFIELDS, http_build_query($data));
+        }
         $body = curl_exec($ch);
         return ['status' => curl_getinfo($ch, CURLINFO_RESPONSE_CODE), 'body' => $body === false ? '' : $body];
     }
@@ -189,9 +192,15 @@ try {
         WHERE user_id=? AND order_number IN ('456','457')")->execute([time(), $inputs, $uid]);
     db()->prepare('UPDATE integrations SET last_orders_sync=? WHERE user_id=?')->execute([time(), $uid]);
     $list = req($ch, $base, 'siparis-muhasebe.php')['body'];
-    check(str_contains($list, 'Kargo faturası bulunan siparişler') && str_contains($list, 'name="order" value="456"'),
+    check(str_contains($list, 'Kargo faturası bulunan siparişler') && str_contains($list, 'href="siparis-muhasebe.php?order=456"'),
         'Kargo faturası bulunan sipariş numara girmeden açılabilir');
-    check(!str_contains($list, 'name="order" value="457"'), 'Kargo faturası olmayan sipariş faturalar listesine girmez');
+    check(!str_contains($list, 'href="siparis-muhasebe.php?order=457"'), 'Kargo faturası olmayan sipariş faturalar listesine girmez');
+    $summary = req($ch, $base, 'siparis-muhasebe.php?order=456')['body'];
+    check(str_contains($summary, 'Sipariş 456') && str_contains($summary, 'Satış tutarı')
+        && str_contains($summary, '₺68,48') && str_contains($summary, '₺51,52'),
+        'Sipariş tek tıkla satış, kargo ve hesaplanan kârı gösterir');
+    check(str_contains($summary, '<details class="card order-accounting-details">')
+        && !str_contains($summary, 'Accepted'), 'Varsayılan özet teknik ayrıntıları kapalı tutar ve canlı iade sorgusu yapmaz');
     $live = req($ch, $base, 'canli-performans.php?mp=trendyol')['body'];
     check(str_contains($live, 'Son başarılı kargo faturası çekimi:')
         && !str_contains($live, 'Son başarılı kargo faturası çekimi: Henüz'), 'Canlı Performans fatura çekim zamanını gösterir');
