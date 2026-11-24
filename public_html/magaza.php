@@ -55,20 +55,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $supported) {
                 $error = 'Senkronizasyon hatası: ' . ($res['error'] ?? 'Bilinmeyen hata');
             }
         } elseif ($action === 'settlements') {
-            $res = sync_settlements((int)$u['id'], $mp);
-            if ($res['ok']) {
-                $ok = "Cari hesap ekstresi (resmi komisyon/kargo/hakediş) çekildi: {$res['records']} kayıt, {$res['rates_updated']} ürünün komisyon oranı resmi değerle güncellendi.";
-
+            $settlements = sync_settlements((int)$u['id'], $mp);
+            $serviceFeesResult = sync_platform_service_fees((int)$u['id'], $mp);
+            $messages = [];
+            $errors = [];
+            if ($settlements['ok']) {
+                $messages[] = "Cari hesap ekstresi çekildi: {$settlements['records']} kayıt, {$settlements['rates_updated']} komisyon oranı güncellendi.";
             } else {
-                $error = 'Cari hesap ekstresi hatası: ' . ($res['error'] ?? 'Bilinmeyen hata');
+                $errors[] = 'Cari hesap ekstresi hatası: ' . ($settlements['error'] ?? 'Bilinmeyen hata');
             }
-        } elseif ($action === 'service_fees') {
-            $res = sync_platform_service_fees((int)$u['id'], $mp);
-            if ($res['ok']) {
-                $ok = "Platform hizmet bedeli çekildi: {$res['records']} hareket.";
+            if ($serviceFeesResult['ok']) {
+                $messages[] = "Platform hizmet bedeli çekildi: {$serviceFeesResult['records']} hareket.";
             } else {
-                $error = 'Platform hizmet bedeli hatası: ' . ($res['error'] ?? 'Bilinmeyen hata');
+                $errors[] = 'Platform hizmet bedeli hatası: ' . ($serviceFeesResult['error'] ?? 'Bilinmeyen hata');
             }
+            $ok = implode(' ', $messages);
+            $error = implode(' ', $errors);
         } elseif ($action === 'disconnect') {
             delete_integration((int)$u['id'], $mp);
             $int = null;
@@ -188,7 +190,7 @@ require __DIR__ . '/../includes/header.php';
         <form method="post" style="display:inline">
           <input type="hidden" name="csrf" value="<?= csrf_token() ?>">
           <input type="hidden" name="action" value="settlements">
-          <button type="submit" class="btn-ghost">Komisyonları Çek (Cari Hesap Ekstresi)</button>
+          <button type="submit" class="btn-ghost">Finans Kayıtlarını Çek</button>
         </form>
         <form method="post" style="display:inline" onsubmit="return confirm('Bağlantıyı kaldırmak istediğinize emin misiniz?');">
           <input type="hidden" name="csrf" value="<?= csrf_token() ?>">
@@ -196,7 +198,7 @@ require __DIR__ . '/../includes/header.php';
           <button type="submit" class="btn-danger">Bağlantıyı Kaldır</button>
         </form>
       </div>
-      <p class="hint" style="margin-top:14px">Ürünler çekildikten sonra <a href="urunler.php">Ürünlerim</a> sayfasında görünür. Maliyet alanını her ürün için siz girersiniz (API'den maliyet gelmez). <strong>"Komisyonları Çek"</strong> ile Trendyol'un resmi cari hesap ekstresinden finans kayıtları alınır; ürünlerin komisyon oranları en güncel satış kaydından güncellenir. Kargo ve hakediş mutabakatı ayrıca değerlendirilmelidir.</p>
+      <p class="hint" style="margin-top:14px">Ürünler çekildikten sonra <a href="urunler.php">Ürünlerim</a> sayfasında görünür. Maliyet alanını her ürün için siz girersiniz (API'den maliyet gelmez). <strong>Finans Kayıtlarını Çek</strong> ile cari hesap ekstresi ve hizmet bedeli hareketleri alınır; ürünlerin komisyon oranları en güncel satış kaydından güncellenir. Kargo ve hakediş mutabakatı ayrıca değerlendirilmelidir.</p>
     </div>
 
     <div class="card" style="margin-top:16px">
@@ -207,11 +209,6 @@ require __DIR__ . '/../includes/header.php';
         <p class="flash flash-error">Son hizmet bedeli çekimi başarısız oldu; aşağıdaki kayıtlar önceki başarılı çekime ait.</p>
       <?php endif; ?>
       <p class="hint">Tutarların para birimi sağlayıcı tarafından açıkça belirtilmiyor (belgede para birimi alanı yok); bu yüzden tutarlara ₺ etiketi konmaz ve doğrulanmış bir dönem toplamı üretilmez.</p>
-      <form method="post" style="display:inline">
-        <input type="hidden" name="csrf" value="<?= csrf_token() ?>">
-        <input type="hidden" name="action" value="service_fees">
-        <button type="submit" class="btn-ghost">Hizmet Bedellerini Çek</button>
-      </form>
       <?php if (!$int['last_service_fees_sync']): ?>
         <p class="hint">Henüz platform hizmet bedeli çekilmedi.</p>
       <?php elseif (!$serviceFees): ?>

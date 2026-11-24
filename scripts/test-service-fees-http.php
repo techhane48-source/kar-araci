@@ -2,7 +2,7 @@
 declare(strict_types=1);
 
 // Uçtan uca HTTP testi: izole DB + geçici sunucu + örnek sağlayıcı yanıtları.
-// Normal senkron girişinden (magaza.php action=service_fees) gerçek HTML çıktısına kadar
+// Normal senkron girişinden (magaza.php action=settlements) gerçek HTML çıktısına kadar
 // platform hizmet bedeli akışını doğrular. Canlı mağaza/API çağrısı YAPMAZ.
 
 $dir = sys_get_temp_dir() . '/kf-psf-http-' . bin2hex(random_bytes(8));
@@ -92,9 +92,14 @@ try {
     check(str_contains($r['body'], 'Henüz platform hizmet bedeli çekilmedi'), 'HTML: senkron öncesi "henüz çekilmedi" görünür');
     check(str_contains($r['body'], 'Son başarılı çekim') && str_contains($r['body'], 'Henüz çekilmedi'), 'HTML: son başarılı çekim "Henüz çekilmedi"');
 
-    // Normal senkron girişi: action=service_fees
+    check(str_contains($r['body'], 'Finans Kayıtlarını Çek') && !str_contains($r['body'], 'Hizmet Bedellerini Çek'),
+        'HTML: hizmet bedeli için ayrı düğme yok');
+    // Normal senkron girişi: action=settlements
     $r = req($ch, $base, 'magaza.php?mp=trendyol');
-    $r = req($ch, $base, 'magaza.php?mp=trendyol', ['csrf' => csrf($r['body']), 'action' => 'service_fees']);
+    $r = req($ch, $base, 'magaza.php?mp=trendyol', ['csrf' => csrf($r['body']), 'action' => 'settlements']);
+    check(str_contains($r['body'], 'Cari hesap ekstresi çekildi: 0 kayıt')
+        && str_contains($r['body'], 'Platform hizmet bedeli çekildi: 2 hareket'),
+        'HTML: tek finans işlemi iki kaynağı da çeker');
     check(str_contains($r['body'], 'Platform hizmet bedeli çekildi: 2 hareket'), 'HTML: senkron 2 hareket çekti');
 
     // Senkron sonrası: hareketler görünür
@@ -113,7 +118,7 @@ try {
 
     // Aynı dönem tekrar çekilince kayıt çoğalmaz (idempotent)
     $r = req($ch, $base, 'magaza.php?mp=trendyol');
-    $r = req($ch, $base, 'magaza.php?mp=trendyol', ['csrf' => csrf($r['body']), 'action' => 'service_fees']);
+    $r = req($ch, $base, 'magaza.php?mp=trendyol', ['csrf' => csrf($r['body']), 'action' => 'settlements']);
     $count = (int)db()->query('SELECT COUNT(*) FROM platform_service_fees')->fetchColumn();
     check($count === 2, 'HTML ötesi: aynı dönem tekrar çekilince kayıt çoğalmaz');
 
@@ -121,7 +126,7 @@ try {
     $lastSync = (int)db()->query("SELECT last_service_fees_sync FROM integrations WHERE user_id=$uid AND marketplace='trendyol'")->fetchColumn();
     touch($dir . '/fail');
     $r = req($ch, $base, 'magaza.php?mp=trendyol');
-    $r = req($ch, $base, 'magaza.php?mp=trendyol', ['csrf' => csrf($r['body']), 'action' => 'service_fees']);
+    $r = req($ch, $base, 'magaza.php?mp=trendyol', ['csrf' => csrf($r['body']), 'action' => 'settlements']);
     check(str_contains($r['body'], 'Platform hizmet bedeli hatası'), 'HTML: başarısız çekim hata mesajı gösterir');
     $r = req($ch, $base, 'magaza.php?mp=trendyol');
     check(str_contains($r['body'], 'önceki başarılı çekime ait'), 'HTML: gösterilen kayıtların önceki çekime ait olduğu belirtilir');
@@ -142,7 +147,7 @@ try {
     $r = req($ch2, $base, 'giris.php');
     $r = req($ch2, $base, 'giris.php', ['csrf' => csrf($r['body']), 'email' => 'pro-empty@example.test', 'password' => 'Test-Password-2026!']);
     $r = req($ch2, $base, 'magaza.php?mp=trendyol');
-    $r = req($ch2, $base, 'magaza.php?mp=trendyol', ['csrf' => csrf($r['body']), 'action' => 'service_fees']);
+    $r = req($ch2, $base, 'magaza.php?mp=trendyol', ['csrf' => csrf($r['body']), 'action' => 'settlements']);
     $r = req($ch2, $base, 'magaza.php?mp=trendyol');
     check(str_contains($r['body'], 'Bu dönemde platform hizmet bedeli hareketi yok (eksiksiz boş sonuç)'), 'HTML: eksiksiz boş dönem açıkça gösterilir');
     check(!str_contains($r['body'], 'Henüz platform hizmet bedeli çekilmedi'), 'HTML: boş dönem "henüz çekilmedi" ile karışmaz');
