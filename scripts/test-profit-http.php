@@ -47,8 +47,8 @@ $lines=[['barcode'=>'A','quantity'=>2,'price'=>400],['barcode'=>'B','quantity'=>
 $insert=db()->prepare('INSERT INTO orders(user_id,marketplace,order_number,package_number,status,total_price,order_date,lines) VALUES (?,\'trendyol\',?,?,?,?,?,?)');
 foreach([['ok','Delivered',1100],['discount','Delivered',990],['cancel','Cancelled',10000],['return','Returned',10000]] as [$number,$status,$sale])
     $insert->execute([$id,$number,$number,$status,$sale,strtotime('today')+60,json_encode($lines)]);
-$expected=calc_order_profit(['total_price'=>1100,'status'=>'Delivered','lines'=>$lines],$by)['profit']
-    +calc_order_profit(['total_price'=>990,'status'=>'Delivered','lines'=>$lines],$by)['profit'];
+$expected=calc_order_profit(['marketplace'=>'trendyol','total_price'=>1100,'status'=>'Delivered','lines'=>$lines],$by)['profit']
+    +calc_order_profit(['marketplace'=>'trendyol','total_price'=>990,'status'=>'Delivered','lines'=>$lines],$by)['profit'];
 $r=req('giris.php');$csrf=csrf($r['body']);
 $r=req('giris.php',['csrf'=>$csrf,'email'=>'profit@example.test','password'=>'Test-Profit-Only!']);
 check($r['status']===302,'Kârlılık test kullanıcısı giriş yapar');

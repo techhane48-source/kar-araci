@@ -33,6 +33,22 @@ function updateRateHint(){
 }
 
 function num(id){ return parseFloat($(id).value) || 0; }
+function shippingCost(){ return $("cargo-payer").value === "buyer" ? 0 : num("cargo"); }
+function extraCost(){ return cargoType === "seller" ? 0 : num("extra-fee"); }
+
+function renderVat(result){
+  const rows = [
+    ["Satış KDV’si", result.vat.sale],
+    ["Alış KDV’si", -result.vat.cost],
+    ["Komisyon KDV’si", -result.vat.commission],
+    ["Kargo KDV’si", -result.vat.cargo],
+    ["Hizmet bedeli KDV’si", -result.vat.service_fee],
+    ["Ek gider KDV’si", -result.vat.extra_fee],
+    ["KDV farkı", result.vat_balance],
+  ];
+  $("vat-breakdown").innerHTML = rows
+    .map(([label, value]) => `<tr><th scope="row">${label}</th><td>${tl(value)}</td></tr>`).join("");
+}
 
 // Stopaj: "otomatik" işaretliyse KDV-hariç satış × %1; değilse elle girilen ₺.
 function stopajAutoOn(){
@@ -48,7 +64,7 @@ function stopajValue(P, kdvRate){
 // Belirli bir satış fiyatında tüm kalemleri hesapla (PHP calc_profit ile birebir aynı).
 function computeAt(P, cost, cargo, rateFrac, kdvRate, extra, serviceFee, returnFrac){
   const r=KarProfit.calcProfit({cost,price:P,cargo,rate:rateFrac*100,kdv:kdvRate,
-    extra_fee:extra,service_fee:serviceFee,stopaj:stopajValue(P,kdvRate),return_rate:returnFrac*100});
+    marketplace,extra_fee:extra,service_fee:serviceFee,stopaj:stopajValue(P,kdvRate),return_rate:returnFrac*100});
   return {...r,netKdv:r.net_kdv,returnLoss:r.return_loss};
 }
 
@@ -59,6 +75,7 @@ function calculationError(message){
   $("result-value").textContent="—";
   ["kpi-margin","kpi-ratio","kpi-commission","kpi-kdv"].forEach(id=>kpi(id,"—"));
   $("breakdown").textContent=message;
+  $("vat-breakdown").replaceChildren();
   const save=$("save-btn"); if(save) save.disabled=true;
 }
 function calculate(){
@@ -69,10 +86,10 @@ function calculate(){
   }catch(e){calculationError(e.message);}
 }
 function calculateValid(){
-  const cost = num("cost"), price = num("price"), cargo = num("cargo");
+  const cost = num("cost"), price = num("price"), cargo = shippingCost();
   const rate = num("rate") / 100;
   const kdvRate = num("kdv");
-  const extra = num("extra-fee");
+  const extra = extraCost();
   const serviceFee = num("service-fee");
   const returnRate = num("return-rate") / 100;
 
@@ -80,6 +97,7 @@ function calculateValid(){
     const r = computeAt(price, cost, cargo, rate, kdvRate, extra, serviceFee, returnRate);
     const margin = price > 0 ? (r.profit/price)*100 : 0;
     const ratio = cost > 0 ? (r.profit/cost)*100 : 0;
+    renderVat(r);
     renderProfit(r.profit, margin, ratio, r.commission, r.netKdv, r.stopaj, extra, serviceFee, r.returnLoss);
   } else if(mode === "campaign"){
     KarProfit.validate([], [num("discount")]);
@@ -88,13 +106,15 @@ function calculateValid(){
     const r = computeAt(salePrice, cost, cargo, rate, kdvRate, extra, serviceFee, returnRate);
     const margin = salePrice > 0 ? (r.profit/salePrice)*100 : 0;
     const ratio = cost > 0 ? (r.profit/cost)*100 : 0;
+    renderVat(r);
     renderCampaign(salePrice, discount, r.profit, margin, ratio, r.commission, r.netKdv, r.stopaj, extra, serviceFee, r.returnLoss);
   } else {
-    const result=KarProfit.calcPrice({cost,cargo,rate:rate*100,kdv:kdvRate,extra_fee:extra,
+    const result=KarProfit.calcPrice({marketplace,cost,cargo,rate:rate*100,kdv:kdvRate,extra_fee:extra,
       service_fee:serviceFee,return_rate:returnRate*100,stopaj:num("stopaj"),
       stopaj_mode:stopajAutoOn()?"auto":"manual",targetProfit:num("targetProfit"),targetMargin:num("targetMargin")});
     if(!result.ok) throw new Error(result.error);
     const r={...result,netKdv:result.net_kdv,returnLoss:result.return_loss};
+    renderVat(result);
     renderPrice(result.price,r,result.margin,result.ratio,rate);
   }
 }
@@ -127,7 +147,7 @@ function renderProfit(profit, margin, ratio, commission, netKdv, stopaj, extra, 
   kpi("kpi-commission", tl(commission));
   kpi("kpi-kdv", tl(netKdv));
 
-  const price = num("price"), cost = num("cost"), cargo = num("cargo");
+  const price = num("price"), cost = num("cost"), cargo = shippingCost();
   const stopajLabel = stopajAutoOn() ? "Stopaj (KDV-hariç × %"+STOPAJ_RATE+")" : "Stopaj";
   const rows = [
     ["Satış Fiyatı", price, ""],
@@ -159,8 +179,8 @@ function renderPrice(P, r, margin, ratio, rate){
   kpi("kpi-commission", "%"+(rate*100).toFixed(2));
   kpi("kpi-kdv", tl(r.netKdv));
 
-  const cost = num("cost"), cargo = num("cargo");
-  const extra = num("extra-fee"), serviceFee = num("service-fee");
+  const cost = num("cost"), cargo = shippingCost();
+  const extra = extraCost(), serviceFee = num("service-fee");
   const stopajLabel = stopajAutoOn() ? "Stopaj (KDV-hariç × %"+STOPAJ_RATE+")" : "Stopaj";
   const rows = [
     ["Satış Fiyatı", P, ""],
@@ -192,7 +212,7 @@ function renderCampaign(salePrice, discount, profit, margin, ratio, commission, 
   kpi("kpi-commission", tl(commission));
   kpi("kpi-kdv", tl(netKdv));
 
-  const price = num("price"), cost = num("cost"), cargo = num("cargo");
+  const price = num("price"), cost = num("cost"), cargo = shippingCost();
   const discountAmt = price - salePrice;
   const stopajLabel = stopajAutoOn() ? "Stopaj (KDV-hariç × %"+STOPAJ_RATE+")" : "Stopaj";
   const verdict = profit >= 0
@@ -250,6 +270,10 @@ document.addEventListener("DOMContentLoaded", () => {
     $("rate").value = suggestedRate().toFixed(2);
     syncHizmetBedeli();
     refresh();
+  });
+  $("cargo-payer").addEventListener("change", ()=>{
+    $("cargo").disabled = $("cargo-payer").value === "buyer";
+    calculate();
   });
   $("cargoType").addEventListener("click", e=>{
     const b = e.target.closest("button"); if(!b) return;

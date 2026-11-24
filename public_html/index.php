@@ -94,8 +94,12 @@ require __DIR__ . '/../includes/header.php';
           </div>
           <div class="row">
             <label>Kargo Tipi</label>
+            <select id="cargo-payer" aria-label="Kargoyu kim öder?">
+              <option value="seller">Kargoyu satıcı öder</option>
+              <option value="buyer">Kargoyu alıcı öder</option>
+            </select>
             <div class="seg seg-3" id="cargoType">
-              <button data-c="seller" class="on">Satıcıya Ait</button>
+              <button data-c="seller" class="on">Standart</button>
               <button data-c="export">İhracat</button>
               <button data-c="sameday">Aynı Gün</button>
             </div>
@@ -170,11 +174,16 @@ require __DIR__ . '/../includes/header.php';
         </div>
         <div class="kpi-row" style="grid-template-columns:repeat(4,1fr)">
           <div class="kpi"><div class="k-label">Kâr Marjı</div><div class="k-value" id="kpi-margin">—</div></div>
-          <div class="kpi"><div class="k-label">Kâr Oranı</div><div class="k-value" id="kpi-ratio">—</div></div>
+          <div class="kpi"><div class="k-label">Yatırım Getirisi</div><div class="k-value" id="kpi-ratio">—</div></div>
           <div class="kpi"><div class="k-label">Komisyon</div><div class="k-value" id="kpi-commission">—</div></div>
           <div class="kpi"><div class="k-label">Ödenecek KDV</div><div class="k-value" id="kpi-kdv">—</div></div>
         </div>
         <table id="breakdown"></table>
+        <details>
+          <summary>KDV dökümü</summary>
+          <table id="vat-breakdown"></table>
+          <p class="hint">KDV farkı negatifse bu hesapta ödenecek KDV sıfır gösterilir.</p>
+        </details>
         <div class="note">
           <b>Nasıl hesaplanıyor?</b>
           Pazaryeri, ürün satış fiyatı üzerinden <b>komisyon</b> ve (varsa) <b>hizmet bedeli</b> adı altında ana giderleri keser.
@@ -350,8 +359,8 @@ require __DIR__ . '/../includes/header.php';
 </div>
 
 <script>window.CATEGORIES = <?= json_encode(categories(), JSON_UNESCAPED_UNICODE) ?>; window.PROFIT_DEFAULTS = <?= json_encode(['service_fee'=>trendyol_service_fee(),'stopaj_rate'=>1.0]) ?>;</script>
-<script src="assets/profit.js?v=1"></script>
-<script src="assets/app.js?v=5"></script>
+<script src="assets/profit.js?v=2"></script>
+<script src="assets/app.js?v=6"></script>
 <?php if ($u): ?>
 <script>
 document.getElementById("save-btn").addEventListener("click", async () => {
@@ -362,10 +371,10 @@ document.getElementById("save-btn").addEventListener("click", async () => {
   const stopajVal = (sa && sa.checked) ? priceVal / (1 + num("kdv")/100) * 0.01 : num("stopaj");
   const body = {
     marketplace, category,
-    cost: num("cost"), price: priceVal, cargo: num("cargo"),
+    cost: num("cost"), price: priceVal, cargo: shippingCost(),
     rate: num("rate"), kdv: num("kdv"),
     cargo_type: cargoType,
-    extra_fee: num("extra-fee"),
+    extra_fee: extraCost(),
     service_fee: num("service-fee"), stopaj: stopajVal, stopaj_mode: (sa && sa.checked) ? "auto" : "manual", return_rate: num("return-rate"),
     name: prompt("Ürüne bir ad ver (örn. 'Kadın Bot 38')", "") || "Ürün"
   };

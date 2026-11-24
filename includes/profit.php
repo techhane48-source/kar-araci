@@ -18,17 +18,23 @@ function profit_validate(array $amounts, array $percentages = []): void
 }
 
 /** Tüm tutarlar KDV dahil; giderler ürün adedi başına tanımlıdır. */
-function calc_profit(float $cost, float $price, float $cargo, float $rate, float $kdvRate = 20.0, float $extraFee = 0.0, float $serviceFee = 0.0, float $stopaj = 0.0, float $returnRate = 0.0): array
+function calc_profit(float $cost, float $price, float $cargo, float $rate, float $kdvRate = 20.0, float $extraFee = 0.0, float $serviceFee = 0.0, float $stopaj = 0.0, float $returnRate = 0.0, string $marketplace = ''): array
 {
     profit_validate([$cost,$price,$cargo,$extraFee,$serviceFee,$stopaj], [$rate,$kdvRate,$returnRate]);
     $commission = $price * $rate / 100;
     $returnLoss = $price * $returnRate / 100;
-    $netKdv = max(0.0, ($price-$cost-$commission-$cargo-$extraFee-$serviceFee) * $kdvRate / (100+$kdvRate));
+    $productVat = $kdvRate / (100+$kdvRate);
+    $expenseVat = $marketplace === 'trendyol' ? 1 / 6 : $productVat;
+    $vat = ['sale' => $price*$productVat, 'cost' => $cost*$productVat,
+        'commission' => $commission*$expenseVat, 'cargo' => $cargo*$expenseVat,
+        'extra_fee' => $extraFee*$expenseVat, 'service_fee' => $serviceFee*$expenseVat];
+    $vatBalance = $vat['sale']-$vat['cost']-$vat['commission']-$vat['cargo']-$vat['extra_fee']-$vat['service_fee'];
+    $netKdv = max(0.0, $vatBalance);
     $profit = $price-$cost-$commission-$cargo-$extraFee-$serviceFee-$stopaj-$netKdv-$returnLoss;
     return ['ok'=>true, 'price'=>$price, 'sale'=>$price, 'cost'=>$cost, 'cargo'=>$cargo,
         'profit'=>$profit, 'margin'=>$price>0 ? $profit/$price*100 : 0.0,
         'ratio'=>$cost>0 ? $profit/$cost*100 : 0.0, 'commission'=>$commission,
-        'net_kdv'=>$netKdv, 'extra_fee'=>$extraFee, 'service_fee'=>$serviceFee,
+        'net_kdv'=>$netKdv, 'vat_balance'=>$vatBalance, 'vat'=>$vat, 'extra_fee'=>$extraFee, 'service_fee'=>$serviceFee,
         'stopaj'=>$stopaj, 'return_loss'=>$returnLoss,
         'totalCuts'=>$commission+$cargo+$extraFee+$serviceFee+$stopaj+$netKdv+$returnLoss];
 }
@@ -64,7 +70,7 @@ function calc_product_profit(array $p, ?float $price = null): array
 {
     try {
         if ((float)($p['cost'] ?? 0) <= 0) throw new InvalidArgumentException('Ürün maliyeti eksik.');
-        return calc_profit(...product_profit_inputs($p,$price));
+        return calc_profit(...[...product_profit_inputs($p,$price), (string)($p['marketplace'] ?? '')]);
     } catch (InvalidArgumentException $e) {
         return ['ok'=>false,'missing'=>true,'profit'=>null,'margin'=>null,'ratio'=>null,
             'commission'=>null,'error'=>$e->getMessage()];
@@ -75,7 +81,7 @@ function calc_product_profit(array $p, ?float $price = null): array
 function calc_price(float $cost, float $cargo, float $rate, float $kdvRate = 20.0,
     float $extraFee = 0.0, float $serviceFee = 13.19, float $stopajRate = 1.0,
     float $returnRate = 0.0, float $targetProfit = 0.0, float $targetMargin = 0.0,
-    ?float $manualStopaj = null): array
+    ?float $manualStopaj = null, string $marketplace = ''): array
 {
     try {
         profit_validate([$cost,$cargo,$extraFee,$serviceFee,$targetProfit,$manualStopaj ?? 0],
@@ -83,14 +89,20 @@ function calc_price(float $cost, float $cargo, float $rate, float $kdvRate = 20.
         $vat = $kdvRate/(100+$kdvRate);
         $withholding = $manualStopaj === null ? $stopajRate/(100+$kdvRate) : 0.0;
         $margin = $targetMargin/100;
-        $slope = (1-$rate/100)*(1-$vat)-$returnRate/100-$withholding-$margin;
-        if ($slope <= 1e-12) throw new InvalidArgumentException('Bu kesintilerle hedef kâra ulaşılamıyor.');
-        $fixed = $cost+$cargo+$extraFee+$serviceFee;
-        $exact = ($fixed*(1-$vat)+($manualStopaj ?? 0)+($targetMargin>0 ? 0 : $targetProfit))/$slope;
+        $expenseVat = $marketplace === 'trendyol' ? 1 / 6 : $vat;
+        $grossSlope = 1-$rate/100-$returnRate/100-$withholding-$margin;
+        $slope = $grossSlope-$vat+$rate/100*$expenseVat;
+        if (min($slope,$grossSlope) <= 1e-12) throw new InvalidArgumentException('Bu kesintilerle hedef kâra ulaşılamıyor.');
+        $expenses = $cargo+$extraFee+$serviceFee;
+        $targetFixed = ($manualStopaj ?? 0)+($targetMargin>0 ? 0 : $targetProfit);
+        $exact = max(
+            ($cost+$expenses+$targetFixed)/$grossSlope,
+            ($cost*(1-$vat)+$expenses*(1-$expenseVat)+$targetFixed)/$slope
+        );
         $price = max(0.01,ceil($exact*100-1e-7)/100);
         if (!is_finite($price) || $price > PROFIT_MAX_AMOUNT) throw new InvalidArgumentException('Hedef için gereken fiyat izin verilen sınırı aşıyor.');
         $stopaj = $manualStopaj ?? auto_stopaj($price,$kdvRate,$stopajRate);
-        $result = calc_profit($cost,$price,$cargo,$rate,$kdvRate,$extraFee,$serviceFee,$stopaj,$returnRate);
+        $result = calc_profit($cost,$price,$cargo,$rate,$kdvRate,$extraFee,$serviceFee,$stopaj,$returnRate,$marketplace);
         $target = $targetMargin>0 ? $price*$margin : $targetProfit;
         if ($result['profit']+1e-7 < $target) throw new InvalidArgumentException('Hedef fiyat hesaplanamadı.');
         return $result;
@@ -103,7 +115,8 @@ function calc_product_price(array $p,float $targetProfit=0.0,float $targetMargin
 {
     return calc_price((float)$p['cost'],(float)($p['cargo']??0),(float)$p['rate'],(float)($p['kdv']??20),
         (float)($p['extra_fee']??0),(float)($p['service_fee']??0),1.0,(float)($p['return_rate']??0),
-        $targetProfit,$targetMargin,($p['stopaj_mode']??'manual')==='auto' ? null : (float)($p['stopaj']??0));
+        $targetProfit,$targetMargin,($p['stopaj_mode']??'manual')==='auto' ? null : (float)($p['stopaj']??0),
+        (string)($p['marketplace'] ?? ''));
 }
 
 function order_is_sale(array $order): bool
@@ -173,6 +186,7 @@ function calc_order_profit(array $order,array $byBarcode, ?float $packageCargo =
         $remaining-=$lineSale;
         $p=$byBarcode[$line['barcode']??'']??null;
         if ($p && ($order['marketplace'] ?? '') === 'trendyol') {
+            $p['marketplace'] = 'trendyol';
             foreach (['commissionRate' => 'rate', 'vatRate' => 'kdv'] as $field => $input) {
                 $rate = $line[$field] ?? null;
                 if (is_numeric($rate) && (float)$rate >= 0 && (float)$rate <= 100) {

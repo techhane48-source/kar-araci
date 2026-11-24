@@ -7,7 +7,7 @@ const php=process.env.PHP_BIN||'php';
 const fixtures=JSON.parse(execFileSync(php,[path.join(__dirname,'profit-fixtures.php')],{encoding:'utf8'}));
 for(const f of fixtures){
   const profit=engine.calcProfit(f.direct);
-  for(const key of ['profit','margin','ratio','commission','net_kdv','stopaj','return_loss','totalCuts']) {
+  for(const key of ['profit','margin','ratio','commission','net_kdv','vat_balance','stopaj','return_loss','totalCuts']) {
     assert.ok(Math.abs(profit[key]-f.profit[key])<1e-7,`İleri hesap uyuşmuyor: ${key}`);
   }
   const price=engine.calcPrice(f.input);

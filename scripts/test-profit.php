@@ -72,5 +72,11 @@ check(near($known['A']['sale'],800),'İptal paket rapor toplamlarına girmez');
 // Başka modellerle karıştırılmadan, sıfır KDV ve kayıplı satış kontrolü.
 check(near(calc_profit(100,50,10,10,0)['profit'],-65),'Zararlı satışta vergi sıfırlanır, zarar korunur');
 check(!calc_price(1000000000,0,99,20,0,0,0,0,1000000000)['ok'],'Aşırı hedef izin verilen fiyat sınırını aşamaz');
+// Verified against the public Trendyol calculator with ordinary domestic shipping.
+foreach ([[0, 660, 127.65, -4.86], [160, 660, -32.35, -31.53], [40, 400, 335.54, 12.11]] as [$cargo, $cost, $profit, $vat]) {
+    $result = calc_profit($cost, 1025.52, $cargo, 21, 10, 0, 13.19, auto_stopaj(1025.52, 10), 0, 'trendyol');
+    check(near(round($result['profit'], 2), $profit) && near(round($result['vat_balance'], 2), $vat),
+        "Trendyol referans hesabı: $cargo TL kargo, $cost TL maliyet");
+}
 echo $failed?"$failed test başarısız\n":"TÜM TESTLER GEÇTİ\n";
 exit($failed?1:0);
