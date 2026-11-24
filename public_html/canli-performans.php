@@ -99,7 +99,7 @@ foreach ($orders as $o) {
             );
         }
         $cargo = $cargoByOrder[$orderNumber] ?? [];
-        $pr = ($cargo['calculation'] ?? ['ok' => false]) + ['cargo_source' => $cargo['source'] ?? 'pending'];
+        $pr = ($cargo['calculation'] ?? ['ok' => false]) + ['cargo_source' => $cargo['source'] ?? 'pending', 'tariff' => $cargo['tariff'] ?? null];
         if (!$pr['ok']) {
             $beforeCargo = calc_order_profit($o, $byBarcode, 0.0);
             $pr['before_cargo'] = $beforeCargo['ok'] ? $beforeCargo['profit'] : null;
@@ -109,7 +109,7 @@ foreach ($orders as $o) {
                 $o['source_seller_id'] === null => 'Siparişin yeniden senkronize edilmesi gerekiyor',
                 $cargo === [] || !$cargo['scope_matches'] => 'Siparişin mağaza veya ortamı doğrulanamadı',
                 $pr['cargo_source'] === 'invoice' => 'Fatura sipariş düzeyinde · Paket kargosu ayrıştırılamadı',
-                $pr['cargo_source'] === 'history' => 'Kargo tahmini var · Sipariş maliyet kaydı bekleniyor',
+                in_array($pr['cargo_source'], ['history', 'tariff'], true) => 'Kargo tahmini var · Sipariş maliyet kaydı bekleniyor',
                 ($integration['last_sync_error_scope'] ?? null) === 'cargo_invoices' => 'Son kargo faturası çekimi başarısız',
                 !$integration['last_cargo_invoices_sync'] => 'Kargo faturaları henüz senkronize edilmedi',
                 default => 'Kargo tutarı aktarılmadı',
@@ -295,11 +295,12 @@ require __DIR__ . '/../includes/header.php';
           <td>
             <?php if ($pr['ok']): ?>
               <details>
-                <summary class="<?= $pr['profit'] < 0 ? 'neg' : 'pos' ?>"><?= tl($pr['profit']) ?></summary>
+                <summary class="<?= $pr['profit'] < 0 ? 'neg' : 'pos' ?>"><?= tl($pr['profit']) ?><?= in_array($pr['cargo_source'] ?? '', ['tariff', 'history'], true) ? ' · Geçici kâr' : '' ?></summary>
                 <?php if (isset($pr['cargo_source'])): ?>
                   <p class="hint"><?= match ($pr['cargo_source']) {
                       'invoice' => 'Faturalı kargo',
                       'panel' => 'Trendyol panelinden girilen kargo',
+                      'tariff' => 'Tahmini kargo · ' . order_cargo_tariff_text($pr['tariff']),
                       default => 'Geçici kargo · Kargo faturası bekleniyor',
                   } ?></p>
                 <?php endif; ?>

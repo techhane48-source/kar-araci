@@ -299,6 +299,47 @@ function order_cargo_reference(array $integration, array $package): ?float
     return null;
 }
 
+/** Published standard TEX domestic tariff, KDV excluded. Barem shipments need separate inputs. */
+function order_cargo_tariff(array $integration, array $package): ?array
+{
+    $carrier = strtolower(trim($package['cargo_company']));
+    if (!in_array($carrier, ['trendyol express', 'tex', 'tex mp'], true)
+        || (int)$integration['stage'] !== 0 || (float)$package['total_price'] < 350
+        || !in_array(strtolower($package['status']), ['readytoship', 'created', 'picking', 'invoiced', 'shipped', 'delivered'], true)) {
+        return null;
+    }
+
+    $day = (new DateTimeImmutable('@' . (int)$package['order_date']))
+        ->setTimezone(new DateTimeZone('Europe/Istanbul'))->format('Y-m-d');
+    if ($day < '2026-08-10' || $day > '2026-11-30') return null;
+
+    $composition = order_cargo_composition($package['lines']);
+    if ($composition === null || array_values($composition) !== [1]) return null;
+    $query = db()->prepare('SELECT kesilen_desi, en, boy, yukseklik FROM products
+        WHERE user_id=? AND marketplace=? AND barcode=? LIMIT 2');
+    $query->execute([$integration['user_id'], 'trendyol', array_key_first($composition)]);
+    $products = $query->fetchAll();
+    if (count($products) !== 1) return null;
+    $product = $products[0];
+    $desi = (float)$product['kesilen_desi'];
+    if ($desi <= 0 && min($product['en'], $product['boy'], $product['yukseklik']) > 0) {
+        $desi = desi_from_dims((float)$product['en'], (float)$product['boy'], (float)$product['yukseklik']);
+    }
+    if (!is_finite($desi) || $desi <= 0 || $desi > 30) return null;
+
+    $rates = [1 => 81.95, 81.95, 100.20, 107.20, 114.10, 125.60, 133.41, 142.32,
+        150.64, 164.18, 173.42, 182.20, 190.46, 198.10, 206.03, 213.82, 224.32,
+        233.82, 243.28, 252.77, 263.34, 272.61, 283.24, 293.35, 303.36, 315.98,
+        327.76, 338.64, 350.65, 360.55];
+    $billableDesi = (int)ceil($desi);
+    return ['amount' => round($rates[$billableDesi] * 1.20, 2), 'desi' => $billableDesi, 'carrier' => 'Trendyol Express'];
+}
+
+function order_cargo_tariff_text(array $tariff): string
+{
+    return 'Desi tarifesi · ' . $tariff['carrier'] . ' · ' . $tariff['desi'] . ' desi · Kargo faturası bekleniyor';
+}
+
 function order_panel_shipping(array $integration, string $order): ?float
 {
     $query = db()->prepare('SELECT amount_cents FROM order_panel_shipping
@@ -341,17 +382,21 @@ function order_cargo_profit_view(array $integration, array $packages, array $ite
     if (!$packages) return $result;
     $result['scope_matches'] = true;
 
+    $tariff = null;
     $amount = order_cargo_recorded_amount($items);
     if ($amount !== null) {
         $source = 'invoice';
     } elseif (($amount = order_panel_shipping($integration, $packages[0]['order_number'])) !== null) {
         $source = 'panel';
+    } elseif (!$items && count($packages) === 1 && ($tariff = order_cargo_tariff($integration, $packages[0])) !== null) {
+        $amount = $tariff['amount'];
+        $source = 'tariff';
     } elseif (!$items && count($packages) === 1) {
         $amount = order_cargo_reference($integration, $packages[0]);
         $source = 'history';
     }
     if ($amount === null) return $result;
-    $result = ['source' => $source, 'amount' => $amount, 'profit' => null, 'scope_matches' => true];
+    $result = ['source' => $source, 'amount' => $amount, 'profit' => null, 'scope_matches' => true, 'tariff' => $tariff];
 
     // Package allocation would imply a link the invoice API does not provide.
     if (count($packages) !== 1 || $packages[0]['profit_inputs'] === null) return $result;

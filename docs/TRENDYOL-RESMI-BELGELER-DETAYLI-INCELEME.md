@@ -110,3 +110,9 @@ teslim edilmiş, tek gönderi faturalı sipariş örnek alınabilir. Bu tutar
 geçicidir. Birden çok paket, tanımsız gider veya çelişkili fatura varsa
 uygulama paketlere gider dağıtmaz. Kaynağı kaydedilmemiş eski siparişler
 yeni senkronla sağlayıcı kapsamına alınana kadar otomatik bağlanmaz.
+
+### Fatura öncesi Trendyol Express desi tahmini
+
+[Trendyol anlaşmalı taşıma tablosu (10 Ağustos 2026)](https://9be604a381897de8.mncdn.com/tymp/prod/documents/trendyol_guncel_kargo_fiyatlari.pdf) ve [barem altı tablosu](https://9be604a381897de8.mncdn.com/tymp/prod/documents/Trendyol_guncel_barem_alti_Kargo_Fiyatlari.pdf) ayrı kurallar yayımlar. Trendyol Express standart değerleri 5 Ekim tablosuyla da karşılaştırılmıştır ([tarife karşılaştırması](https://ezv.com.tr/kargo-ucretleri/trendyol/trendyol-express)).
+
+Uygulama, 10 Ağustos–30 Kasım 2026 kapsamındaki standart Trendyol Express tahmininde siparişin taşıyıcısını ve tek ürünün ayarlardaki desisini (yoksa paket ölçülerinden hesaplanan desiyi) kullanır ve %20 KDV ekler. 30 Kasım uygulama içindeki veri kapsamının sonudur. Güncel tarife doğrulandığında bu aralık ve tutarlar birlikte güncellenir. Barem olasılığı bulunan 350 TL altındaki siparişlerde ve paket desisi güvenle çıkarılamayan gönderilerde standart tarife uygulanmaz. Eşleşen kargo faturası varsa hesapta fatura tutarı kullanılır.

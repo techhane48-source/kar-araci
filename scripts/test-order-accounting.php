@@ -225,3 +225,23 @@ check(order_cargo_records(array_replace($integration, ['stage' => 1]), '1002') =
 $broken = true;
 check(!sync_cargo_invoices($uid, 'trendyol', 3, $client)['ok']
     && order_cargo_records($integration, '1002') === $items, 'Eksik fatura yanıtı önceki kayıtları silmez');
+
+db()->prepare("INSERT INTO products(user_id, marketplace, barcode, category, rate, kesilen_desi)
+    VALUES (?, 'trendyol', 'tariff-test', '', 20, 2)")->execute([$uid]);
+$tariffPackage = array_replace($packages[0], [
+    'cargo_company' => 'Trendyol Express', 'status' => 'ReadyToShip', 'total_price' => 1025.52,
+    'order_date' => strtotime('2026-11-24T12:00:00+03:00'),
+    'lines' => json_encode([['barcode' => 'tariff-test', 'quantity' => 1]]),
+]);
+$tariff = order_cargo_profit_view($integration, [$tariffPackage], []);
+check($tariff['source'] === 'tariff' && $tariff['amount'] === 98.34
+    && $tariff['tariff']['desi'] === 2, 'TEX tarifesi iki desilik pakete otomatik ve KDV dahil uygulanır');
+check(order_cargo_profit_view($integration, [$tariffPackage], $items)['source'] === 'invoice',
+    'Fatura geldiğinde desi tahmini kaldırılır');
+check(order_cargo_tariff($integration, array_replace($tariffPackage, ['total_price' => 349.99])) === null,
+    'Barem ihtimali olan pakette standart tarife kullanılmaz');
+check(order_cargo_tariff($integration, array_replace($tariffPackage, [
+    'lines' => json_encode([['barcode' => 'tariff-test', 'quantity' => 2]]),
+])) === null, 'Birden fazla üründe paket desisi varsayılmaz');
+check(order_cargo_tariff($integration, array_replace($tariffPackage, ['order_date' => 0])) === null,
+    'Tarife desteklenen dönemle sınırlı kalır');

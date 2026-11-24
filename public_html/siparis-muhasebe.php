@@ -128,11 +128,12 @@ require __DIR__ . '/../includes/header.php';
           <small><?= match ($cargoProfit['source']) {
              'invoice' => 'Trendyol faturasındaki kalemler',
              'panel' => 'Trendyol panelinden girildi',
+             'tariff' => order_cargo_tariff_text($cargoProfit['tariff']),
              'history' => 'Benzer gönderi · Fatura bekleniyor',
              default => 'Bu sipariş için doğrulanmış tutar yok',
           } ?></small>
         </div>
-        <div><span><?= $cargoProfit['source'] === 'history' ? 'Geçici kâr' : 'Hesaplanan kâr' ?></span>
+        <div><span><?= in_array($cargoProfit['source'], ['history', 'tariff'], true) ? 'Geçici kâr' : 'Hesaplanan kâr' ?></span>
           <strong><?= $cargoProfit['profit'] !== null ? tl($cargoProfit['profit']) : 'Hesaplanamadı' ?></strong>
           <small><?= $cargoProfit['profit'] !== null ? 'Diğer finans kesintileri ayrıca doğrulanır'
               : (count($packages) > 1 ? 'Birden fazla paket var; kargo sipariş genelinde' : 'Maliyet veya doğrulanmış kargo bilgisi eksik') ?></small>
@@ -231,13 +232,15 @@ require __DIR__ . '/../includes/header.php';
           <p>Faturada görülen sipariş kargosu: <?= tl($cargoProfit['amount']) ?></p>
         <?php elseif ($cargoProfit['source'] === 'panel'): ?>
           <p>Trendyol panelinden girilen toplam kargo: <?= tl($cargoProfit['amount']) ?></p>
+        <?php elseif ($cargoProfit['source'] === 'tariff'): ?>
+          <p>Tahmini kargo: <?= tl($cargoProfit['amount']) ?> · <?= h(order_cargo_tariff_text($cargoProfit['tariff'])) ?></p>
         <?php elseif ($cargoProfit['source'] === 'history'): ?>
           <p>Kargo faturası bekleniyor · Benzer gönderiden alınan geçici kargo: <?= tl($cargoProfit['amount']) ?></p>
         <?php else: ?>
           <p>Kargo gideri bekleniyor veya mevcut kayıt doğrulanamadı.</p>
         <?php endif; ?>
         <?php if ($cargoProfit['profit'] !== null): ?>
-          <p><?= $cargoProfit['source'] === 'history' ? 'Geçici kâr' : 'Kargo dahil hesaplanan kâr' ?>: <?= tl($cargoProfit['profit']) ?>. Diğer finans kalemleri ayrıca doğrulanır.</p>
+          <p><?= in_array($cargoProfit['source'], ['history', 'tariff'], true) ? 'Geçici kâr' : 'Kargo dahil hesaplanan kâr' ?>: <?= tl($cargoProfit['profit']) ?>. Diğer finans kalemleri ayrıca doğrulanır.</p>
         <?php endif; ?>
       <?php endif; ?>
       <?php if ($invoice === '' && ($cargoProfit['scope_matches'] ?? false)): $cargo = $cachedCargo; endif; ?>
