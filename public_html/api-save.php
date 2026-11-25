@@ -23,7 +23,11 @@ foreach (['cost','price','cargo','rate','extra_fee','kdv','cost_vat','service_fe
 }
 $marketplace = $data['marketplace'] ?? '';
 $category = $data['category'] ?? '';
-$name = trim($data['name'] ?? 'Ürün');
+$name = $data['name'] ?? 'Ürün';
+if (!is_string($marketplace) || !is_string($category) || !is_string($name)) {
+    http_response_code(422); echo json_encode(['ok'=>false,'error'=>'Geçersiz ürün bilgisi']); exit;
+}
+$name=trim($name);
 
 if (!array_key_exists($marketplace, marketplaces())) {
     echo json_encode(['ok' => false, 'error' => 'Geçersiz pazaryeri']);

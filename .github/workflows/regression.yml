@@ -28,5 +28,7 @@ jobs:
           php scripts/test-payout.php
           php scripts/test-db-safety.php
           php scripts/test-api-contract.php
+      - name: Isolated HTTP smoke test
+        run: python3 scripts/test-http-smoke.py
       - name: JavaScript syntax
         run: node --check public_html/assets/app.js

@@ -28,7 +28,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $supported) {
             $apiSecret = trim($_POST['api_secret'] ?? '');
             $stage = isset($_POST['stage']) && $_POST['stage'] === '1';
 
-            if ($sellerId === '' || $apiKey === '' || $apiSecret === '') {
+            if (!ctype_digit($sellerId) || $apiKey === '' || $apiSecret === '') {
                 $error = 'Satıcı ID, API key ve API secret alanlarının üçünü de doldurun.';
             } else {
                 // Bağlantıyı gerçekten test et
