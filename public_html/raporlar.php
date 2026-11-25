@@ -33,8 +33,9 @@ $reportCols = [];
 $toplam = ['ciro' => 0.0, 'kar' => 0.0, 'maliyet' => 0.0];
 
 if ($rapor === 'order') {
-    $reportCols = ['Sipariş No', 'Tarih', 'Tutar', 'Kâr', 'Kâr Oranı', 'Kâr Marjı'];
+    $reportCols = ['Sipariş No', 'Tarih', 'Tutar', 'Tahmini Kâr', 'Kâr Oranı', 'Kâr Marjı'];
     foreach ($orders as $o) {
+        if (!order_is_active_sale($o)) continue;
         $sale = (float)$o['total_price'];
         $pr = calc_order_profit($o, $byBarcode);
         $reportRows[] = [
@@ -49,9 +50,10 @@ if ($rapor === 'order') {
         if ($pr['ok']) { $toplam['kar'] += $pr['profit']; $toplam['maliyet'] += $pr['cost']; }
     }
 } elseif ($rapor === 'product') {
-    $reportCols = ['Barkod', 'Ürün', 'Adet', 'Ciro', 'Maliyet', 'Kâr', 'Kâr Marjı'];
+    $reportCols = ['Barkod', 'Ürün', 'Adet', 'Ciro', 'Maliyet', 'Kesintiler Öncesi Fark', 'Kesintiler Öncesi Oran'];
     $agg = [];
     foreach ($orders as $o) {
+        if (!order_is_active_sale($o)) continue;
         $sale = (float)$o['total_price'];
         $pr = calc_order_profit($o, $byBarcode);
         foreach ($o['lines'] as $l) {
@@ -79,6 +81,7 @@ if ($rapor === 'order') {
     $reportCols = ['Kategori', 'Adet', 'Ciro', 'Maliyet', 'Kâr'];
     $agg = [];
     foreach ($orders as $o) {
+        if (!order_is_active_sale($o)) continue;
         foreach ($o['lines'] as $l) {
             $bc = $l['barcode'] ?? '';
             $p = $byBarcode[$bc] ?? null;
@@ -101,6 +104,7 @@ if ($rapor === 'order') {
     // Satış toplamı barkod bazında (iade-satış oranı için)
     $saleMap = [];
     foreach ($orders as $o) {
+        if (!order_is_active_sale($o)) continue;
         foreach ($o['lines'] as $l) {
             $bc = $l['barcode'] ?? '';
             $saleMap[$bc] = ($saleMap[$bc] ?? 0) + (float)($l['price'] ?? 0) * max(1, (int)($l['quantity'] ?? 1));
@@ -133,6 +137,7 @@ if ($rapor === 'order') {
     // Satış toplamı barkod bazında
     $saleMap = [];
     foreach ($orders as $o) {
+        if (!order_is_active_sale($o)) continue;
         foreach ($o['lines'] as $l) {
             $bc = $l['barcode'] ?? '';
             $saleMap[$bc] = ($saleMap[$bc] ?? 0) + (float)($l['price'] ?? 0) * max(1, (int)($l['quantity'] ?? 1));
@@ -204,6 +209,7 @@ if ($rapor === 'order') {
     }
     $saleMap = [];
     foreach ($orders as $o) {
+        if (!order_is_active_sale($o)) continue;
         foreach ($o['lines'] as $l) {
             $bc = $l['barcode'] ?? '';
             $saleMap[$bc] = ($saleMap[$bc] ?? 0) + (float)($l['price'] ?? 0) * max(1, (int)($l['quantity'] ?? 1));

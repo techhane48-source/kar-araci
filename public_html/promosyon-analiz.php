@@ -19,7 +19,7 @@ $modules = [
 $mod = $_GET['mod'] ?? 'komisyon';
 if (!isset($modules[$mod])) $mod = 'komisyon';
 
-function parse_price2(string $raw): float { return (float) str_replace(',', '.', str_replace(' ', '', trim($raw))); }
+function parse_price2(string $raw): float { return parse_money_input($raw) ?? 0.0; }
 
 // --- Analiz ---
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'analyze') {
@@ -43,8 +43,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'analy
     $bIdx = $idx(['barkod', 'barcode', 'sku']);
     // Tier columns: find any column containing 'fiyat' keyword variants
     $tierCols = [];
+    $tierRates = [];
     foreach ($header as $i => $col) {
         $c = $norm($col);
+        if (preg_match('/^(\d+)(?:fiyat|price)/', $c, $match)) $tierCols[$i] = $col;
+        if (preg_match('/^(\d+)(?:komisyon|commission)/', $c, $match)) $tierRates[$match[1]] = $i;
         if (str_contains($c, 'fiyat') || str_contains($c, 'price')) {
             // skip base sale price column if it's just "satis"/"fiyat" without tier keyword
             $tierCols[$i] = $col;
@@ -78,8 +81,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'analy
         foreach ($tierCols as $colIdx => $colName) {
             $price = parse_price2($row[$colIdx] ?? '');
             $t = ['price' => $price, 'profit' => null, 'margin' => null, 'ratio' => null, 'col' => $colName];
-            if ($hasCost && $price > 0) {
-                $r = calc_profit($cost, $price, (float)$p['cargo'], (float)$p['rate'],
+            $rate = (float)($p['rate'] ?? 0);
+            $rateKnown = !in_array($mod, ['komisyon','plus'], true);
+            if (preg_match('/^(\d+)(?:fiyat|price)/', $norm($colName), $match) && isset($tierRates[$match[1]])) {
+                $parsedRate = parse_money_input(str_replace('%','', (string)($row[$tierRates[$match[1]]] ?? '')));
+                if ($parsedRate !== null && $parsedRate >= 0 && $parsedRate <= 100) {
+                    $rate = $parsedRate; $rateKnown = true;
+                }
+            }
+            if ($hasCost && $price > 0 && $rateKnown) {
+                $r = calc_profit($cost, $price, (float)$p['cargo'], $rate,
                     (float)($p['kdv'] ?? 20), (float)($p['extra_fee'] ?? 0),
                     (float)($p['service_fee'] ?? 0), (float)($p['stopaj'] ?? 0),
                     (float)($p['return_rate'] ?? 0));

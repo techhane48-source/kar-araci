@@ -1,0 +1,22 @@
+name: PHP regression checks
+on:
+  pull_request:
+    branches: [master]
+  push:
+    branches: ['dev/profit-engine-phase-1']
+permissions:
+  contents: read
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: PHP syntax
+        run: find includes public_html scripts -name '*.php' -print0 | xargs -0 -n1 php -l
+      - name: Regression tests
+        run: |
+          php scripts/test-profit.php
+          php scripts/test-trendyol-v2.php
+          php scripts/test-money-input.php
+      - name: JavaScript syntax
+        run: node --check public_html/assets/app.js

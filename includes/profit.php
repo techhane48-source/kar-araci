@@ -121,3 +121,18 @@ function calc_price(float $cost, float $cargo, float $rate, float $kdvRate = 20.
     ];
 }
 
+
+/** Parse Turkish money or a plain decimal. Invalid/range text is not a price. */
+function parse_money_input(string $raw): ?float
+{
+    $v = trim(str_replace(["₺", "TL", "\xc2\xa0", "\xe2\x80\xaf", " "], '', $raw));
+    if (preg_match('/^-?\d{1,3}(?:\.\d{3})+,\d{1,2}$/D', $v)) {
+        $v = str_replace(',', '.', str_replace('.', '', $v));
+    } elseif (preg_match('/^-?\d+,\d{1,2}$/D', $v)) {
+        $v = str_replace(',', '.', $v);
+    } elseif (!preg_match('/^-?\d+(?:\.\d{1,2})?$/D', $v)) {
+        return null;
+    }
+    $n = (float)$v;
+    return is_finite($n) ? $n : null;
+}

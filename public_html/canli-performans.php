@@ -81,6 +81,7 @@ $hourly = array_fill(0, 24, ['sale' => 0.0, 'profit' => 0.0, 'count' => 0]);
 $week = []; // dayKey (Y-m-d) => [sale, profit, count]
 
 foreach ($orders as $o) {
+    if (!order_is_active_sale($o)) continue;
     $o['lines'] = json_decode($o['lines'] ?? '[]', true) ?: [];
     $day = strtotime(date('Y-m-d', (int)$o['order_date']));
     $dayKey = date('Y-m-d', (int)$o['order_date']);
@@ -136,7 +137,7 @@ require __DIR__ . '/../includes/header.php';
 
   <div class="kpi-row">
     <div class="kpi"><div class="k-label">Bugün Satış</div><div class="k-value"><?= tl($today['sale']) ?></div></div>
-    <div class="kpi"><div class="k-label">Bugün Net Kâr</div><div class="k-value <?= $today['profit'] < 0 ? 'neg' : '' ?>"><?= tl($today['profit']) ?></div></div>
+    <div class="kpi"><div class="k-label">Bugün Tahmini Kâr</div><div class="k-value <?= $today['profit'] < 0 ? 'neg' : '' ?>"><?= tl($today['profit']) ?></div></div>
     <div class="kpi"><div class="k-label">Sipariş</div><div class="k-value"><?= $today['count'] ?></div></div>
     <div class="kpi"><div class="k-label">Ort. Kâr Marjı</div><div class="k-value">%<?= number_format($avgMargin, 1, ',', '.') ?></div></div>
   </div>
@@ -243,7 +244,7 @@ require __DIR__ . '/../includes/header.php';
           <td><?= tl((float)$o['total_price']) ?></td>
           <td>
             <?php if ($pr['ok']): ?><span class="<?= $pr['profit'] < 0 ? 'neg' : 'pos' ?>"><?= tl($pr['profit']) ?></span>
-            <?php else: ?><span class="hint">maliyet eksik</span><?php endif; ?>
+            <?php else: ?><span class="hint"><?= h($pr['reason'] ?? 'Veri eksik') ?></span><?php endif; ?>
           </td>
           <td style="font-size:12px"><?= h($o['status'] ?: '—') ?></td>
         </tr>

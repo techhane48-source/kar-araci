@@ -21,7 +21,7 @@ if (!in_array($mp, ['trendyol', 'hepsiburada', 'amazon', 'n11'], true)) $mp = 't
 
 function parse_price(string $raw): float
 {
-    return (float) str_replace(',', '.', str_replace(' ', '', trim($raw)));
+    return parse_money_input($raw) ?? 0.0;
 }
 
 // --- İndirme: seçilen barkodlar + oturumdaki analiz satırları → CSV ---
@@ -113,7 +113,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'analy
 
                     $p = null;
                     if ($barcode !== '' && isset($byBarcode[$barcode])) $p = $byBarcode[$barcode];
-                    elseif ($name !== '' && isset($byName[mb_strtolower($name)])) $p = $byName[mb_strtolower($name)];
+                    elseif ($barcode === '' && $name !== '' && isset($byName[mb_strtolower($name)])) $p = $byName[mb_strtolower($name)];
 
                     $cost = $p ? (float)$p['cost'] : null;
                     $hasCost = $p !== null && $cost > 0;

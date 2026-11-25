@@ -43,6 +43,7 @@ $reklam = 0.0; $ceza = 0.0; $erkenOdeme = 0.0; $diger = 0.0;
 $siparis = 0; $maliyetliSiparis = 0; $urunAdet = 0;
 
 foreach ($orders as $o) {
+    if (!order_is_active_sale($o)) continue;
     $o['lines'] = json_decode($o['lines'] ?? '[]', true) ?: [];
     $sale = (float)$o['total_price'];
     $ciro += $sale;
@@ -65,6 +66,7 @@ foreach ($orders as $o) {
 // Bugün saatlik (dashboard mini grafik)
 $todayHourly = array_fill(0, 24, 0.0);
 foreach ($orders as $o) {
+    if (!order_is_active_sale($o)) continue;
     if ((int)$o['order_date'] >= strtotime('today')) {
         $todayHourly[(int)date('G', (int)$o['order_date'])] += (float)$o['total_price'];
     }
