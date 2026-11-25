@@ -22,6 +22,7 @@ jobs:
         run: |
           php scripts/test-profit.php
           php scripts/test-trendyol-v2.php
+          php scripts/test-verify-trendyol.php
           php scripts/test-money-input.php
           php scripts/test-order-estimate.php
           php scripts/test-commission-evidence.php

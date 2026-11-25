@@ -39,7 +39,15 @@ function encrypt_string(string $plaintext): string
 function decrypt_string(string $ciphertext): string
 {
     if($ciphertext==='')return '';
-    $key=hex2bin(enc_key());
+    return decrypt_string_with_key($ciphertext,enc_key());
+}
+
+/** Read existing key material without creating a key file or lock. */
+function decrypt_string_with_key(string $ciphertext,string $keyHex): string
+{
+    if($ciphertext==='')return '';
+    if(!preg_match('/^[0-9a-f]{64}$/iD',$keyHex))throw new RuntimeException('Şifreleme anahtarı geçersiz.');
+    $key=hex2bin($keyHex);
     if(str_starts_with($ciphertext,'v2:')){
         $data=base64_decode(substr($ciphertext,3),true);
         if($data===false||strlen($data)<29)throw new RuntimeException('Şifreli API bilgisi geçersiz.');
