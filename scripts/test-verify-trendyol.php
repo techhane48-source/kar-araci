@@ -12,9 +12,11 @@ $t['existing encrypted connection']=$c['uid']===$uid&&$c['stage']&&$c['key']==='
 try{$ro->exec("DELETE FROM integrations");$t['read only database']=false;}catch(PDOException $e){$t['read only database']=true;}
 $client=new class{
     public bool $fail=false;
+    public bool $badCatalog=false;
+    public array $orders=[];
     function testConnection(){return ['ok'=>true];}
-    function getProducts(){return ['ok'=>true,'products'=>[['barcode'=>'PRIVATE-BARCODE','salePrice'=>100,'quantity'=>5]]];}
-    function getOrders(...$args){return ['ok'=>true,'orders'=>[]];}
+    function getProducts(){return ['ok'=>true,'products'=>[['barcode'=>'PRIVATE-BARCODE','salePrice'=>$this->badCatalog?null:100,'quantity'=>5]]];}
+    function getOrders(...$args){return ['ok'=>true,'orders'=>$this->orders];}
     function getSettlements($type,...$args){return $this->fail&&$type==='Sale'?['ok'=>false,'error'=>'PRIVATE-ERROR']:['ok'=>true,'settlements'=>[]];}
     function getClaims(...$args){return ['ok'=>true,'items'=>[]];}
     function getPaymentOrders($page){return ['ok'=>true,'items'=>[],'totalPages'=>0];}
@@ -24,6 +26,17 @@ $r=verify_trendyol_read_only($client,$ro,$uid,7,time(),static fn()=>null);
 $t['missing local detected']=!$r['ok']&&$r['checks']['catalog']['missing_local']===1;
 $r=verify_trendyol_read_only($client,null,null,7,time(),static fn()=>null);
 $t['API only not acceptance']=$r['ok']&&!$r['live_acceptance']&&$r['local_comparison']===null&&!$r['bank_verified'];
+$client->badCatalog=true;
+$r=verify_trendyol_read_only($client,null,null,7,time(),static fn()=>null);
+$t['API only invalid product rejected']=!$r['ok']&&in_array('catalog',$r['failed_checks'],true)&&$r['checks']['catalog']['unknown_price_or_stock']===1;
+$client->badCatalog=false;
+$client->orders=[['packageNumber'=>'PRIVATE-PACKAGE','totalPrice'=>100,'status'=>'Delivered','lines'=>[]]];
+$r=verify_trendyol_read_only($client,null,null,7,time(),static fn()=>null);
+$t['API only invalid lines rejected']=!$r['ok']&&in_array('orders',$r['failed_checks'],true)&&$r['checks']['orders']['unknown_lines']===1;
+$client->orders=[['packageNumber'=>'PRIVATE-PACKAGE','totalPrice'=>null,'status'=>'Delivered','lines'=>[['line_id'=>'PRIVATE-LINE','barcode'=>'PRIVATE-BARCODE','quantity'=>1,'price'=>100]]]];
+$r=verify_trendyol_read_only($client,null,null,7,time(),static fn()=>null);
+$t['API only invalid order fields rejected']=!$r['ok']&&$r['checks']['orders']['unknown_order_fields']===1&&$r['checks']['orders']['unknown_lines']===0&&!str_contains(json_encode($r),'PRIVATE');
+$client->orders=[];
 $client->fail=true;$r=verify_trendyol_read_only($client,null,null,7,time(),static fn()=>null);
 $t['failure reported without private data']=!$r['ok']&&in_array('settlement_Sale',$r['failed_checks'],true)&&!str_contains(json_encode($r),'PRIVATE');
 $db->exec("UPDATE integration_bindings SET seller_id='999'");

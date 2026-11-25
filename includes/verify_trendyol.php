@@ -81,16 +81,18 @@ function verify_trendyol_read_only(object $client,?PDO $db,?int $uid,int $days,i
     $from=$now-$days*86400;$start=date('c',$from);$end=date('c',$now);
     $record('orders',static function()use($client,$db,$uid,$start,$end){
         $r=$client->getOrders('',$start,$end);if(empty($r['ok'])||!is_array($r['orders']??null))return ['ok'=>false];
-        $missing=0;$diff=0;$unknown=0;$seen=[];
+        $missing=0;$diff=0;$unknown=0;$unknownOrderFields=0;$seen=[];
         if($db)$q=$db->prepare("SELECT total_price,status,lines,currency_code,country_code FROM orders WHERE user_id=? AND marketplace='trendyol' AND package_number=?");
         foreach($r['orders'] as $o){
             $id=(string)($o['packageNumber']??'');if($id===''||isset($seen[$id]))return ['ok'=>false];$seen[$id]=true;
             $lines=verify_order_lines($o['lines']??null);if($lines===null)$unknown++;
+            $total=$o['totalPrice']??null;
+            if(!is_numeric($total)||!is_finite((float)$total)||(float)$total<0||!is_string($o['status']??null)||trim($o['status'])==='')$unknownOrderFields++;
             if(!$db)continue;
             $q->execute([$uid,$id]);$p=$q->fetch();if(!$p){$missing++;continue;}
             if(!is_numeric($o['totalPrice']??null)||abs((float)$p['total_price']-(float)$o['totalPrice'])>0.005||$p['status']!==($o['status']??null)||$lines===null||$lines!==verify_order_lines($p['lines'])||$p['currency_code']!==($o['currencyCode']??null)||$p['country_code']!==($o['orderCountryCode']??null))$diff++;
         }
-        return ['ok'=>true,'provider_rows'=>count($seen),'unknown_lines'=>$unknown,'missing_local'=>$db?$missing:null,'differences'=>$db?$diff:null,'matched'=>$db?($missing+$diff+$unknown===0):null];
+        return ['ok'=>true,'provider_rows'=>count($seen),'unknown_lines'=>$unknown,'unknown_order_fields'=>$unknownOrderFields,'missing_local'=>$db?$missing:null,'differences'=>$db?$diff:null,'matched'=>$db?($missing+$diff+$unknown+$unknownOrderFields===0):null];
     });
     foreach(['Sale','Return','Discount','DiscountCancel','Coupon','CouponCancel','TyDiscount','TyCoupon','DeliveryFee','DeliveryFeeCancel'] as $type){
         $pause();$record('settlement_'.$type,static function()use($client,$start,$end,$type){
@@ -108,6 +110,15 @@ function verify_trendyol_read_only(object $client,?PDO $db,?int $uid,int $days,i
     $record('claims',static function()use($client,$from,$now){$r=$client->getClaims(max($from,$now-14*86400+1),$now);return ['ok'=>!empty($r['ok']),'rows'=>count($r['items']??[])];});
     $record('payout_page',static function()use($client){$r=$client->getPaymentOrders(0);return ['ok'=>!empty($r['ok']),'rows'=>count($r['items']??[]),'pages'=>(int)($r['totalPages']??0)];});
     if($barcodes)$record('buybox',static function()use($client,$barcodes){$r=$client->getBuybox($barcodes);return ['ok'=>!empty($r['ok']),'rows'=>count($r['items']??[]),'missing'=>count($r['missing']??[])];});
+    // Successful HTTP calls are not enough: malformed normalized data must fail in both modes.
+    foreach(['catalog'=>['unknown_price_or_stock'],'orders'=>['unknown_lines','unknown_order_fields']] as $label=>$fields){
+        foreach($fields as $field){
+            if(($checks[$label][$field]??0)>0){
+                $checks[$label]['ok']=false;
+                if(!in_array($label,$errors,true))$errors[]=$label;
+            }
+        }
+    }
     $match=$db?(!empty($checks['catalog']['matched'])&&!empty($checks['orders']['matched'])):null;
     return ['ok'=>!$errors&&($match!==false),'checks'=>$checks,'failed_checks'=>$errors,'local_comparison'=>$match,
         'read_only'=>true,'live_acceptance'=>false,'bank_verified'=>false,'limits'=>['Seçili sorgular ve yerel katalog/sipariş gözlemi; tüm mali hareketlerin panel mutabakatı değildir.','Boş sonuçlar ilgili senaryonun doğrulandığını kanıtlamaz.','Kargo fatura detayı, gerçek tarife, vergi ve banka mutabakatı ayrıca gerekir.']];
