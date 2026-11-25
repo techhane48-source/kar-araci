@@ -30,7 +30,7 @@ function migrate(): void
 {
     $pdo = db();
     // Versioned, serialized and atomic; normal reads avoid schema writes.
-    $version=5;
+    $version=6;
     if((int)$pdo->query('PRAGMA user_version')->fetchColumn()>=$version)return;
     $pdo->exec('BEGIN IMMEDIATE');
     try{
@@ -135,7 +135,7 @@ function migrate(): void
     )");
     $pdo->exec("CREATE INDEX IF NOT EXISTS idx_orders_user_date ON orders(user_id, order_date)");
     $orderCols=array_column($pdo->query("PRAGMA table_info(orders)")->fetchAll(PDO::FETCH_ASSOC),'name');
-    foreach (['currency_code'=>'TEXT DEFAULT NULL','country_code'=>'TEXT DEFAULT NULL','last_modified_ms'=>'INTEGER NOT NULL DEFAULT 0','cargo_estimate'=>'REAL DEFAULT NULL','cargo_estimate_json'=>'TEXT DEFAULT NULL','cargo_provider'=>'TEXT DEFAULT NULL'] as $col=>$definition) {
+    foreach (['currency_code'=>'TEXT DEFAULT NULL','country_code'=>'TEXT DEFAULT NULL','last_modified_ms'=>'INTEGER NOT NULL DEFAULT 0','cargo_estimate'=>'REAL DEFAULT NULL','cargo_estimate_json'=>'TEXT DEFAULT NULL','cargo_provider'=>'TEXT DEFAULT NULL','cargo_first_estimate'=>'REAL DEFAULT NULL','cargo_first_estimate_json'=>'TEXT DEFAULT NULL','cargo_api_desi'=>'REAL DEFAULT NULL'] as $col=>$definition) {
         if(!in_array($col,$orderCols,true)) $pdo->exec("ALTER TABLE orders ADD COLUMN $col $definition");
     }
 

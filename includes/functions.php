@@ -369,13 +369,14 @@ function sync_orders_unlocked(int $userId, string $marketplace, int $days = 7): 
             return ['ok'=>false,'error'=>'Sipariş kimliği veya tarihi eksik; veri kaydedilmedi.'];
         }
     }
-    $ins = db()->prepare("INSERT INTO orders (user_id, marketplace, order_number, package_number, status, customer_name, total_price, order_date, lines, currency_code, country_code, last_modified_ms,cargo_estimate,cargo_estimate_json,cargo_provider)
-                          VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+    $ins = db()->prepare("INSERT INTO orders (user_id, marketplace, order_number, package_number, status, customer_name, total_price, order_date, lines, currency_code, country_code, last_modified_ms,cargo_estimate,cargo_estimate_json,cargo_provider,cargo_first_estimate,cargo_first_estimate_json,cargo_api_desi)
+                          VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                           ON CONFLICT(user_id, marketplace, package_number) DO UPDATE SET
                             status = excluded.status, total_price = excluded.total_price, order_date = excluded.order_date, lines = excluded.lines,
                             currency_code=excluded.currency_code,country_code=excluded.country_code,last_modified_ms=excluded.last_modified_ms,
-                            cargo_estimate=CASE WHEN orders.cargo_provider=excluded.cargo_provider THEN COALESCE(orders.cargo_estimate,excluded.cargo_estimate) ELSE excluded.cargo_estimate END,
-                            cargo_estimate_json=CASE WHEN orders.cargo_provider=excluded.cargo_provider THEN COALESCE(orders.cargo_estimate_json,excluded.cargo_estimate_json) ELSE excluded.cargo_estimate_json END,cargo_provider=excluded.cargo_provider
+                            cargo_first_estimate=COALESCE(orders.cargo_first_estimate,excluded.cargo_first_estimate),
+                            cargo_first_estimate_json=COALESCE(orders.cargo_first_estimate_json,excluded.cargo_first_estimate_json),
+                            cargo_estimate=excluded.cargo_estimate,cargo_estimate_json=excluded.cargo_estimate_json,cargo_provider=excluded.cargo_provider,cargo_api_desi=excluded.cargo_api_desi
                           WHERE excluded.last_modified_ms >= orders.last_modified_ms");
 
     $count = 0;
@@ -412,6 +413,8 @@ function sync_orders_unlocked(int $userId, string $marketplace, int $days = 7): 
         }
         unset($line);
         $quote=$marketplace==='trendyol'?cargo_order_quote($o,$cargoProducts,$tariffs):null;
+        $quoteJson=$quote?json_encode($quote,JSON_THROW_ON_ERROR|JSON_UNESCAPED_UNICODE):null;
+        $initial=$quote&&!cargo_has_shipped($o)?$quote['amount']:null;
         $ins->execute([
             $userId, $marketplace,
             (string)($o['orderNumber'] ?? ''),
@@ -424,7 +427,7 @@ function sync_orders_unlocked(int $userId, string $marketplace, int $days = 7): 
             isset($o['currencyCode']) ? strtoupper((string)$o['currencyCode']) : null,
             isset($o['orderCountryCode']) ? strtoupper((string)$o['orderCountryCode']) : null,
             (int)($o['lastModifiedDate'] ?? 0),
-            $quote['amount']??null,$quote?json_encode($quote,JSON_THROW_ON_ERROR|JSON_UNESCAPED_UNICODE):null,(string)($o['cargoCompany']??''),
+            $quote['amount']??null,$quoteJson,(string)($o['cargoCompany']??''),$initial,$initial!==null?$quoteJson:null,cargo_positive_desi($o['cargoDeci']??null),
         ]);
         $count++;
     }
