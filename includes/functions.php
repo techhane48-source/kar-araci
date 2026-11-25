@@ -11,6 +11,7 @@ require_once __DIR__ . '/order_evidence.php';
 require_once __DIR__ . '/cost_history.php';
 require_once __DIR__ . '/profit_targets.php';
 require_once __DIR__ . '/buybox_decision.php';
+require_once __DIR__ . '/catalog_alerts.php';
 
 // ---- İş mantığı: komisyon oranları + kâr hesabı ----
 
@@ -279,6 +280,8 @@ function sync_products_unlocked(int $userId, string $marketplace): array
     // Only refresh marketplace fields; never overwrite user costs, cargo or commission settings.
     $upd = $db->prepare("UPDATE products SET price = COALESCE(?, price), quantity = COALESCE(?, quantity), cost_vat = COALESCE(cost_vat, kdv), kdv = COALESCE(?, kdv)
                           WHERE id = ? AND user_id = ? AND marketplace = ?");
+    $observation=$db->prepare("UPDATE products SET stock_observed_at=?,sale_price_observed_at=? WHERE id=? AND user_id=? AND marketplace='trendyol'");
+    $now=time();
     $db->beginTransaction();
     try {
         foreach ($res['products'] as $p) {
@@ -288,12 +291,16 @@ function sync_products_unlocked(int $userId, string $marketplace): array
             $rate = isset($p['commission']) && is_numeric($p['commission']) && $p['commission']>=0 && $p['commission']<=100
                 ? (float)$p['commission'] : category_rate($cat, $marketplace);
             $price = ($p['salePrice'] ?? 0) > 0 ? (float)$p['salePrice'] : (isset($p['listPrice']) && $p['listPrice'] > 0 ? (float)$p['listPrice'] : null);
-            $quantity = isset($p['quantity']) ? (int)$p['quantity'] : null;
+            $quantity = isset($p['quantity']) && is_numeric($p['quantity']) && (float)$p['quantity']>=0 && floor((float)$p['quantity'])===(float)$p['quantity'] ? (int)$p['quantity'] : null;
+            $stockAt=$quantity===null?null:$now;
+            $saleAt=isset($p['salePrice'])&&is_numeric($p['salePrice'])&&is_finite((float)$p['salePrice'])&&(float)$p['salePrice']>0?$now:null;
+            if($marketplace==='trendyol'&&$saleAt===null)$price=null;
             $vat = isset($p['vatRate']) && is_numeric($p['vatRate']) && $p['vatRate'] >= 0 && $p['vatRate'] <= 100 ? (float)$p['vatRate'] : null;
 
             // Tekil anahtar: barkod (Trendyol'da benzersiz). Barkod yoksa isim'e düş.
             $key = ($barcode !== '') ? ('b:' . $barcode) : ('n:' . $name);
             if (isset($existing[$key])) {
+                if($marketplace==='trendyol')$observation->execute([$stockAt,$saleAt,$existing[$key],$userId]);
                 if ($barcode !== '' && ($price !== null || $quantity !== null || $vat !== null)) {
                     $upd->execute([$price, $quantity, $vat, $existing[$key], $userId, $marketplace]);
                     $updated++;
@@ -303,6 +310,7 @@ function sync_products_unlocked(int $userId, string $marketplace): array
 
             $ins->execute([$userId, $name, $barcode, $marketplace, $cat, $rate, $price ?? 0.0, $quantity ?? 0, $marketplace === 'trendyol' ? trendyol_service_fee() : 0.0, $vat ?? 20.0]);
             $existing[$key] = (int)$db->lastInsertId();
+            if($marketplace==='trendyol')$observation->execute([$stockAt,$saleAt,$existing[$key],$userId]);
             $inserted++;
         }
         $db->commit();

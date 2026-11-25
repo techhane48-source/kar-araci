@@ -24,7 +24,9 @@ $ps->execute([$u['id'], $mp]);
 $byBarcode = [];
 $toplamUrun = 0;
 $maliyetGirilen = 0;
-foreach ($ps->fetchAll() as $p) {
+$catalogProducts=$ps->fetchAll();
+$catalogAlerts=$mp==='trendyol'?alert_catalog_summary($catalogProducts,target_rules(db(),(int)$u['id']),time()):null;
+foreach ($catalogProducts as $p) {
     $toplamUrun++;
     if ($p['barcode'] !== '') $byBarcode[$p['barcode']] = $p;
     if ((float)$p['cost'] > 0) $maliyetGirilen++;
@@ -74,7 +76,7 @@ foreach ($orders as $o) {
 
 // Brüt & Net kâr (Melontik ayrımı)
 $brutKar = $maliyetliCiro - $urunMaliyeti - $komisyon - $kargo - $hizmet - $stopaj - $netKdv;
-$netKar = $brutKar - $reklam - $ceza - $erkenOdeme - $diger;
+$netKar = $brutKar; // Order estimate only; unmatched store expenses are unknown.
 $karSatis = $maliyetliCiro > 0 ? $netKar / $maliyetliCiro * 100 : 0.0;
 $karMaliyet = $urunMaliyeti > 0 ? $netKar / $urunMaliyeti * 100 : 0.0;
 $ortKomisyon = $maliyetliCiro > 0 ? $komisyon / $maliyetliCiro * 100 : 0.0;
@@ -108,13 +110,17 @@ require __DIR__ . '/../includes/header.php';
     </div>
   </div>
 
+  <?php if($catalogAlerts!==null): ?><div class="card" style="margin:12px 0"><h2>Mağaza kontrolü</h2>
+  <p><?= $catalogAlerts['products'] ?> ürün · <?= $catalogAlerts['evaluated'] ?> kâr hesabı · <?= $catalogAlerts['flagged'] ?> uyarılı ürün</p>
+  <p><?= $catalogAlerts['counts']['loss'] ?> tahmini zarar · <?= $catalogAlerts['counts']['below_target'] ?> hedef altı · <?= $catalogAlerts['counts']['missing_cost'] ?> maliyet eksik</p>
+  <a href="uyarilar.php">Uyarı merkezini aç</a> · <a href="kar-hedefleri.php">Kâr hedefleri</a></div><?php endif; ?>
   <?php if (!$orders): ?>
     <div class="card" style="padding:32px;text-align:center">
       <h2>Henüz veri yok</h2>
       <p class="hint" style="max-width:520px;margin:8px auto">
         <?= $toplamUrun === 0
             ? 'Mağazanı bağla, siparişler ve kârlılığın otomatik gelsin. <a href="magaza.php">Mağaza Bağla →</a>'
-            : 'Siparişler senkron edilmedi. <a href="canli-performans.php">Canlı Performans</a> sayfasını aç, siparişler otomatik çekilsin.' ?>
+            : 'Siparişler senkron edilmedi. <a href="canli-performans.php">Canlı Performans</a> sayfasından siparişleri senkronize et.' ?>
       </p>
     </div>
   <?php else: ?>
@@ -122,10 +128,10 @@ require __DIR__ . '/../includes/header.php';
   <div class="kpi-row">
     <div class="kpi"><div class="k-label">Toplam Ciro</div><div class="k-value"><?= tl($ciro) ?></div></div>
     <div class="kpi"><div class="k-label">Maliyeti Olan Ciro</div><div class="k-value"><?= tl($maliyetliCiro) ?></div></div>
-    <div class="kpi"><div class="k-label">Tahmini Brüt Kâr</div><div class="k-value <?= $brutKar < 0 ? 'neg' : '' ?>"><?= tl($brutKar) ?></div></div>
-    <div class="kpi"><div class="k-label">Tahmini Net Kâr</div><div class="k-value <?= $netKar < 0 ? 'neg' : 'pos' ?>"><?= $maliyetliSiparis > 0 ? tl($netKar) : '—' ?></div></div>
-    <div class="kpi"><div class="k-label">Tahmini Net Kâr / Satış</div><div class="k-value <?= $karSatis < 0 ? 'neg' : '' ?>">%<?= number_format($karSatis, 1, ',', '.') ?></div></div>
-    <div class="kpi"><div class="k-label">Tahmini Net Kâr / Maliyet</div><div class="k-value <?= $karMaliyet < 0 ? 'neg' : '' ?>">%<?= number_format($karMaliyet, 1, ',', '.') ?></div></div>
+    <div class="kpi"><div class="k-label">Kesin mağaza net kârı</div><div class="k-value">—</div></div>
+    <div class="kpi"><div class="k-label">Tahmini Sipariş Kârı</div><div class="k-value <?= $netKar < 0 ? 'neg' : 'pos' ?>"><?= $maliyetliSiparis > 0 ? tl($netKar) : '—' ?></div></div>
+    <div class="kpi"><div class="k-label">Tahmini Sipariş Kârı / Satış</div><div class="k-value <?= $karSatis < 0 ? 'neg' : '' ?>"><?= $maliyetliSiparis>0?'%'.number_format($karSatis,1,',','.'):'—' ?></div></div>
+    <div class="kpi"><div class="k-label">Tahmini Sipariş Kârı / Maliyet</div><div class="k-value <?= $karMaliyet < 0 ? 'neg' : '' ?>"><?= $maliyetliSiparis>0?'%'.number_format($karMaliyet,1,',','.'):'—' ?></div></div>
   </div>
 
   <?php $excludedCurrency=count(array_filter($orders,static fn($o)=>!order_is_domestic_try($o))); if($excludedCurrency): ?><p class="hint"><?= $excludedCurrency ?> paket ülke/para birimi doğrulanmadığından TL cirosuna dahil edilmedi. Eski kayıtları tekrar senkronize edin.</p><?php endif; ?>
@@ -184,10 +190,10 @@ require __DIR__ . '/../includes/header.php';
       <tr><td>Hizmet Bedeli</td><td class="tar"><?= tl($hizmet) ?></td></tr>
       <tr><td>Stopaj Kesintisi</td><td class="tar"><?= tl($stopaj) ?></td></tr>
       <tr><td>Net KDV</td><td class="tar"><?= tl($netKdv) ?></td></tr>
-      <tr><td>Reklam Harcaması</td><td class="tar"><?= tl($reklam) ?> <span class="hint">(cari hesap ekstresi çekilince dolar)</span></td></tr>
-      <tr><td>Ceza</td><td class="tar"><?= tl($ceza) ?></td></tr>
-      <tr><td>Erken Ödeme Kesintisi</td><td class="tar"><?= tl($erkenOdeme) ?></td></tr>
-      <tr><td>Diğer Faturalar</td><td class="tar"><?= tl($diger) ?></td></tr>
+      <tr><td>Reklam Harcaması</td><td class="tar">— <span class="hint">(mutabakat yok)</span></td></tr>
+      <tr><td>Ceza</td><td class="tar">— <span class="hint">(doğrulanmadı)</span></td></tr>
+      <tr><td>Erken Ödeme Kesintisi</td><td class="tar">— <span class="hint">(doğrulanmadı)</span></td></tr>
+      <tr><td>Diğer Faturalar</td><td class="tar">— <span class="hint">(doğrulanmadı)</span></td></tr>
     </table>
   </div>
 

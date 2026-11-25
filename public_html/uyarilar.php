@@ -24,46 +24,38 @@ unset($o);
 $byBarcode = [];
 foreach ($products as $p) if ($p['barcode'] !== '') $byBarcode[$p['barcode']] = $p;
 
-$alerts = [
-    'maliyet' => [],
-    'zarar' => [],
-    'komisyon' => [],
-    'stok' => [],
-    'desi' => [],
-    'iade' => [],
-    'siparis' => [],
-    'cari' => [],
-];
-
-foreach ($products as $p) {
-    $cost = (float)$p['cost'];
-    $price = (float)$p['price'];
-    if ($cost <= 0) {
-        $alerts['maliyet'][] = $p;
-    } else {
-        $r = product_profit($p);
-        if ($r['profit'] < 0) $alerts['zarar'][] = array_merge($p, ['_profit' => $r['profit']]);
-    }
-    if ((float)$p['rate'] <= 0) $alerts['komisyon'][] = $p;
-    if ((int)$p['quantity'] <= 0) $alerts['stok'][] = $p;
-    $beklenen = desi_from_dims((float)$p['en'], (float)$p['boy'], (float)$p['yukseklik']);
-    $kesilen = (float)$p['kesilen_desi'];
-    if ($beklenen > 0 && $kesilen > $beklenen + 0.01) $alerts['desi'][] = array_merge($p, ['_beklenen' => $beklenen, '_kesilen' => $kesilen]);
-    if ((float)$p['return_rate'] > 15) $alerts['iade'][] = $p;
+$rules=target_rules(db(),(int)$u['id']);$now=time();
+$labels=alert_catalog_labels();$alerts=array_fill_keys(array_keys($labels),[]);
+$summary=alert_catalog_summary($products,$rules,$now);
+foreach($products as $p){
+    $a=alert_catalog_row($p,target_for_product($rules,$p),$now);
+    foreach($a['issues'] as $key)$alerts[$key][]=array_merge($p,['_profit'=>$a['profit'],'_rule'=>$a['rule']]);
 }
-
-foreach ($orders as $o) {
-    $pr = calc_order_profit($o, $byBarcode);
-    if (!$pr['ok'] && $pr['sale'] > 0) $alerts['siparis'][] = array_merge($o, ['_sale' => $pr['sale']]);
+$orders=cost_history_overlay(db(),(int)$u['id'],$orders);
+$alerts['siparis']=[];$alerts['cari']=[];
+foreach($orders as $o){
+    $a=alert_order_row($o,$byBarcode);
+    if($a)$alerts['siparis'][]=array_merge($o,['_sale'=>(float)$o['total_price'],'_reason'=>$a['reason'],'_profit'=>$a['profit']]);
 }
-
-if (count($orders) === 0) {
-    $alerts['cari'][] = ['msg' => 'Son 30 günde sipariş senkron edilmemiş.'];
+$q=db()->prepare("SELECT job,state,last_success FROM sync_status WHERE user_id=? AND marketplace=?");
+$q->execute([$u['id'],$mp]);$sync=[];foreach($q->fetchAll() as $r)$sync[$r['job']]=$r;
+foreach(['products'=>'Ürün','orders'=>'Sipariş','settlements'=>'Finans','documents'=>'Belge','claims'=>'İade'] as $key=>$name){
+    $r=$sync[$key]??null;
+    if(!$r||!$r['last_success']||$r['state']!=='success'||!catalog_fresh($r['last_success'],$now))
+        $alerts['cari'][]=['msg'=>$name.': son başarılı sorgu yok, eski veya son işlem başarısız.'];
 }
-
-$totalAlerts = 0;
-foreach ($alerts as $list) $totalAlerts += count($list);
-
+$totalAlerts=array_sum(array_map('count',$alerts));
+$selected=is_string($_GET['type']??null)?$_GET['type']:'all';
+if($selected!=='all'&&!isset($labels[$selected]))$selected='all';
+if(($_GET['export']??'')==='csv'){
+    header('Content-Type: text/csv; charset=utf-8');header('Content-Disposition: attachment; filename="kar-uyarilari.csv"');echo "\xEF\xBB\xBF";
+    $out=fopen('php://output','w');fputcsv($out,['Barkod','Ürün','Kategori','Kayıtlı fiyat','Maliyet','Tahmini kâr','Uyarılar'],';','"','');
+    foreach($products as $p){
+        $a=alert_catalog_row($p,target_for_product($rules,$p),$now);
+        if(!$a['issues']||($selected!=='all'&&!in_array($selected,$a['issues'],true)))continue;
+        fputcsv($out,[csv_safe_text($p['barcode']),csv_safe_text($p['name']),csv_safe_text($p['category']),$p['price'],$p['cost'],$a['profit'],implode('; ',array_map(static fn($k)=>$labels[$k],$a['issues']))],';','"','');
+    }fclose($out);exit;
+}
 $pageTitle = 'Uyarılar — ' . APP_NAME;
 require __DIR__ . '/../includes/header.php';
 ?>
@@ -79,29 +71,25 @@ require __DIR__ . '/../includes/header.php';
     </form>
   </div>
 
-  <?php if ($totalAlerts === 0): ?>
-    <div class="card" style="padding:32px;text-align:center">
-      <h2 style="color:var(--green)">Tüm kontroller temiz ✓</h2>
-      <p class="hint">Maliyet, kârlılık, stok, desi ve komisyon kontrollerinde uyarı bulunamadı.</p>
-    </div>
-  <?php else: ?>
-    <div class="alert alert-error" style="margin-bottom:16px">
-      <b><?= $totalAlerts ?></b> uyarı tespit edildi. Aşağıdaki kalemleri inceleyin.
-    </div>
-  <?php endif; ?>
-
+  <p class="hint">Kayıtlı ürün ayarlarıyla tahmini kâr kontrolü; gerçekleşmiş zarar değildir. Trendyol stok ve satış fiyatı için 24 saatlik API gözlemi aranır.</p>
+  <div class="kpi-row">
+    <div class="kpi"><div class="k-label">İncelenen ürün</div><div class="k-value"><?=$summary['products']?></div></div>
+    <div class="kpi"><div class="k-label">Kârı hesaplanan</div><div class="k-value"><?=$summary['evaluated']?></div></div>
+    <div class="kpi"><div class="k-label">Uyarılı benzersiz ürün</div><div class="k-value"><?=$summary['flagged']?></div></div>
+    <div class="kpi"><div class="k-label">Tahmini zarar</div><div class="k-value"><?=$summary['counts']['loss']?></div></div>
+    <div class="kpi"><div class="k-label">Hedef altı (zarar hariç)</div><div class="k-value"><?=$summary['counts']['below_target']?></div></div>
+  </div>
+  <form method="get"><input type="hidden" name="mp" value="<?=h($mp)?>"><select name="type"><option value="all">Tüm ürün uyarıları</option>
+  <?php foreach($labels as $key=>$label):?><option value="<?=h($key)?>" <?=$selected===$key?'selected':''?>><?=h($label)?> (<?=$summary['counts'][$key]?>)</option><?php endforeach;?></select>
+  <button>Filtrele</button><button name="export" value="csv">CSV indir</button> <a href="kar-hedefleri.php">Kâr hedefleri</a></form>
+  <?php if(!$totalAlerts):?><p class="hint">Uyarı yok. Bu, verilerin eksiksiz olduğunu garanti etmez.</p><?php endif;?>
   <?php
-  $sections = [
-    'maliyet' => ['title' => 'Maliyeti Girilmemiş Ürünler', 'desc' => 'Kâr hesaplaması için alış maliyeti zorunlu.'],
-    'zarar' => ['title' => 'Zarar Eden Ürünler', 'desc' => 'Net kârı negatif olan ürünler.'],
-    'komisyon' => ['title' => 'Komisyon Oranı Eksik (0%)', 'desc' => 'Komisyon oranı girilmemiş; kâr hesabı hatalı.'],
-    'stok' => ['title' => 'Stokta Olmayan Ürünler', 'desc' => 'Stok adedi 0 olan ürünler.'],
-    'desi' => ['title' => 'Fazla Kargo (Desi) Kesilenler', 'desc' => 'Kesilen desi, olması gerekenden büyük.'],
-    'iade' => ['title' => 'Yüksek İade Oranı (> %15)', 'desc' => 'İade kaybı kârı düşürüyor.'],
-    'siparis' => ['title' => 'Maliyeti Eksik Siparişler', 'desc' => 'Maliyeti girilmemiş ürün içeren siparişler.'],
-    'cari' => ['title' => 'Sipariş Senkronu Eksik', 'desc' => 'Son 30 günde sipariş senkron edilmemiş.'],
-  ];
+  $sections=[];
+  foreach($labels as $key=>$label)$sections[$key]=['title'=>$label,'desc'=>'Kayıtlı ürün ayarları ve son gözleme göre.'];
+  $sections['siparis']=['title'=>'Son 30 gün: sipariş kontrolü','desc'=>'Eksik hesap, kapsam dışı kayıt veya tahmini zarar; iptal ve iadeler ayrı raporlanır.'];
+  $sections['cari']=['title'=>'Senkronizasyon kontrolü','desc'=>'Başarılı sorgu, veri kapsamının eksiksiz olduğunu garanti etmez.'];
   foreach ($sections as $key => $sec):
+    if($selected!=='all'&&isset($labels[$key])&&$key!==$selected)continue;
     $list = $alerts[$key];
     if (!$list) continue;
   ?>
@@ -109,40 +97,28 @@ require __DIR__ . '/../includes/header.php';
     <h2><?= h($sec['title']) ?> <span class="hint" style="font-weight:400">(<?= count($list) ?>)</span></h2>
     <p class="hint" style="margin-bottom:10px"><?= h($sec['desc']) ?></p>
     <?php if ($key === 'cari'): ?>
-      <p><?= h($list[0]['msg']) ?> <a href="canli-performans.php">Canlı Performans →</a></p>
+      <?php foreach($list as $item):?><p><?= h($item['msg']) ?></p><?php endforeach;?> <a href="magaza.php">Mağaza bağlantısı →</a>
     <?php elseif ($key === 'siparis'): ?>
       <table>
-        <tr><th>Sipariş No</th><th>Tarih</th><th>Satış</th></tr>
+        <tr><th>Sipariş No</th><th>Tarih</th><th>Uyarı</th><th>Tahmini kâr</th></tr>
         <?php foreach (array_slice($list, 0, 50) as $o): ?>
         <tr>
           <td style="font-size:12px"><?= h($o['order_number'] ?: $o['package_number'] ?: '—') ?></td>
           <td style="font-size:12px"><?= date('d.m.Y H:i', (int)$o['order_date']) ?></td>
-          <td><?= tl((float)$o['_sale']) ?></td>
+          <td><?= h($o['_reason']) ?></td><td><?= $o['_profit']===null?'—':tl((float)$o['_profit']) ?></td>
         </tr>
         <?php endforeach; ?>
       </table>
-    <?php elseif ($key === 'desi'): ?>
+    <?php elseif (in_array($key,['loss','below_target'],true)): ?>
       <table>
-        <tr><th>Ürün</th><th>Beklenen Desi</th><th>Kesilen Desi</th><th>Fazla</th></tr>
-        <?php foreach (array_slice($list, 0, 50) as $p): ?>
-        <tr>
-          <td><?= h($p['name']) ?></td>
-          <td><?= number_format($p['_beklenen'], 2, ',', '.') ?></td>
-          <td><?= number_format($p['_kesilen'], 2, ',', '.') ?></td>
-          <td class="neg">+<?= number_format($p['_kesilen'] - $p['_beklenen'], 2, ',', '.') ?></td>
-        </tr>
-        <?php endforeach; ?>
-      </table>
-    <?php elseif ($key === 'zarar'): ?>
-      <table>
-        <tr><th>Barkod</th><th>Ürün</th><th>Satış</th><th>Maliyet</th><th>Net Kâr</th></tr>
+        <tr><th>Barkod</th><th>Ürün</th><th>Satış</th><th>Maliyet</th><th>Tahmini Kâr</th></tr>
         <?php foreach (array_slice($list, 0, 50) as $p): ?>
         <tr>
           <td style="font-size:12px"><?= h($p['barcode']) ?></td>
           <td><?= h($p['name']) ?></td>
           <td><?= tl((float)$p['price']) ?></td>
           <td><?= tl((float)$p['cost']) ?></td>
-          <td class="neg"><?= tl($p['_profit']) ?></td>
+          <td><?= $p['_profit']===null?'—':tl((float)$p['_profit']) ?></td>
         </tr>
         <?php endforeach; ?>
       </table>
@@ -154,7 +130,7 @@ require __DIR__ . '/../includes/header.php';
           <td style="font-size:12px"><?= h($p['barcode']) ?></td>
           <td><?= h($p['name']) ?></td>
           <td class="muted"><?= h($p['category'] ?: '—') ?></td>
-          <td><?= (int)$p['quantity'] ?></td>
+          <td><?= catalog_fresh($p['stock_observed_at']??null,$now)?(int)$p['quantity']:'—' ?></td>
           <td><?= (float)$p['cost'] > 0 ? tl((float)$p['cost']) : '<span class="muted">boş</span>' ?></td>
         </tr>
         <?php endforeach; ?>

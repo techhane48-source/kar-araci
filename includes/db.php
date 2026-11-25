@@ -332,6 +332,8 @@ function migrate(): void
         'yukseklik' => "ALTER TABLE products ADD COLUMN yukseklik REAL NOT NULL DEFAULT 0",
         'kesilen_desi' => "ALTER TABLE products ADD COLUMN kesilen_desi REAL NOT NULL DEFAULT 0",
         'quantity' => "ALTER TABLE products ADD COLUMN quantity INTEGER NOT NULL DEFAULT 0",
+        'stock_observed_at' => "ALTER TABLE products ADD COLUMN stock_observed_at INTEGER DEFAULT NULL",
+        'sale_price_observed_at' => "ALTER TABLE products ADD COLUMN sale_price_observed_at INTEGER DEFAULT NULL",
         'marka' => "ALTER TABLE products ADD COLUMN marka TEXT NOT NULL DEFAULT ''",
         'model_kodu' => "ALTER TABLE products ADD COLUMN model_kodu TEXT NOT NULL DEFAULT ''",
         'renk' => "ALTER TABLE products ADD COLUMN renk TEXT NOT NULL DEFAULT ''",
