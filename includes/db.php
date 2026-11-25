@@ -30,7 +30,7 @@ function migrate(): void
 {
     $pdo = db();
     // Versioned, serialized and atomic; normal reads avoid schema writes.
-    $version=1;
+    $version=2;
     if((int)$pdo->query('PRAGMA user_version')->fetchColumn()>=$version)return;
     $pdo->exec('BEGIN IMMEDIATE');
     try{
@@ -274,6 +274,9 @@ function migrate(): void
         transaction_type TEXT NOT NULL, payment_order_id TEXT, transaction_date INTEGER NOT NULL,
         raw_json TEXT NOT NULL, PRIMARY KEY(user_id, external_id)
     )");
+    $docCols=array_column($pdo->query("PRAGMA table_info(trendyol_financial_documents)")->fetchAll(PDO::FETCH_ASSOC),'name');
+    if(!in_array('service_fee_verified',$docCols,true))$pdo->exec("ALTER TABLE trendyol_financial_documents ADD COLUMN service_fee_verified INTEGER DEFAULT NULL");
+    $pdo->exec("CREATE INDEX IF NOT EXISTS idx_financial_documents_period ON trendyol_financial_documents(user_id,transaction_date)");
     $pdo->exec("CREATE TABLE IF NOT EXISTS trendyol_cargo_items (
         user_id INTEGER NOT NULL, invoice_serial TEXT NOT NULL, row_number INTEGER NOT NULL,
         parcel_id TEXT NOT NULL, order_number TEXT NOT NULL, shipment_type TEXT NOT NULL,

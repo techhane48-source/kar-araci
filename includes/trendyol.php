@@ -297,7 +297,7 @@ final class TrendyolClient
      * @param string $startDate      Y-m-d (işlem tarihi; paymentDate yoksa zorunlu, aralık ≤15 gün)
      * @param string $endDate        Y-m-d
      */
-    public function getSettlements(string $transactionType, string $startDate = '', string $endDate = '', int $maxPage = 2000, string $source = 'settlements', ?string $paymentOrderId = null): array
+    public function getSettlements(string $transactionType, string $startDate = '', string $endDate = '', int $maxPage = 2000, string $source = 'settlements', ?string $paymentOrderId = null, ?string $subType = null): array
     {
         $all = [];
         $page = 0;
@@ -305,8 +305,10 @@ final class TrendyolClient
         $seen=[];$expected=null;$pages=null;
         if (!in_array($source, ['settlements', 'otherfinancials'], true)) return ['ok'=>false,'error'=>'Geçersiz finans servisi.'];
 
+        if($subType!==null&&($subType!=='PlatformServiceFee'||$source!=='otherfinancials'||$transactionType!=='DeductionInvoices'))return ['ok'=>false,'error'=>'Geçersiz finans alt türü.'];
         while (true) {
             $params = ['page'=>(string)$page,'size'=>(string)$size,'transactionType'=>$transactionType,'supplierId'=>$this->sellerId];
+            if($subType!==null)$params['transactionSubType']=$subType;
             if ($paymentOrderId !== null) {
                 if (!ctype_digit($paymentOrderId)) return ['ok'=>false,'error'=>'Geçersiz ödeme emri.'];
                 $params['paymentOrderId']=$paymentOrderId;

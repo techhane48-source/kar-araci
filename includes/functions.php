@@ -15,6 +15,7 @@ require_once __DIR__ . '/catalog_alerts.php';
 require_once __DIR__ . '/cargo_audit.php';
 require_once __DIR__ . '/payout_receipts.php';
 require_once __DIR__ . '/catalog_cost_import.php';
+require_once __DIR__ . '/period_finance.php';
 
 // ---- İş mantığı: komisyon oranları + kâr hesabı ----
 
@@ -541,16 +542,25 @@ function sync_trendyol_documents_unlocked(int $userId, int $days = 30): array
             $e=min($s+14*86400-1,$end);
             $res=$client->getSettlements($type,date('c',$s),date('c',$e),2000,'otherfinancials');
             if (!$res['ok']) return ['ok'=>false,'error'=>$type.': '.($res['error']??'Eksik finansal veri')];
+            $serviceIds=[];
+            if($type==='DeductionInvoices'){
+                $filtered=$client->getSettlements($type,date('c',$s),date('c',$e),2000,'otherfinancials',null,'PlatformServiceFee');
+                if(!$filtered['ok'])return ['ok'=>false,'error'=>'Platform hizmet bedeli: '.($filtered['error']??'Eksik veri')];
+                try{$serviceIds=service_fee_ids($res['settlements'],$filtered['settlements'],(string)$int['seller_id']);}
+                catch(InvalidArgumentException $ex){return ['ok'=>false,'error'=>$ex->getMessage()];}
+            }
             $db->beginTransaction();
             try {
                 foreach ($res['settlements'] as $row) {
                     $ts=(int)$row['transactionDate']; if($ts>100000000000)$ts=intdiv($ts,1000);
                     $up->execute([$userId,$row['externalId'],$type,$row['transactionType'],$row['paymentOrderId'],$ts,
                         json_encode($row['raw'],JSON_THROW_ON_ERROR|JSON_UNESCAPED_UNICODE)]);
+                    if($type==='DeductionInvoices')$db->prepare("UPDATE trendyol_financial_documents SET service_fee_verified=? WHERE user_id=? AND external_id=?")->execute([isset($serviceIds[$row['externalId']])?1:0,$userId,$row['externalId']]);
                     if ($type==='DeductionInvoices' && in_array($row['transactionType'],['Kargo Faturası','Kargo Fatura'],true))
                         $invoices[$row['externalId']]=true;
                     $count++;
                 }
+                if($type==='DeductionInvoices')sync_record_range($db,$userId,'trendyol','service_fee_transaction',$s,$e+1);
                 $db->commit();
             } catch (Throwable $ex) {
                 if($db->inTransaction())$db->rollBack();

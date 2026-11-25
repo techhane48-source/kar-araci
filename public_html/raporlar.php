@@ -9,7 +9,7 @@ $mp = $_GET['mp'] ?? $mps[0];
 if (!in_array($mp, $mps, true)) $mp = $mps[0];
 
 $rapor = $_GET['r'] ?? 'order';
-$allowed = ['order', 'product', 'category', 'return', 'ads', 'campaign', 'buybox', 'claims', 'order_finance'];
+$allowed = ['order', 'product', 'category', 'return', 'ads', 'campaign', 'buybox', 'claims', 'order_finance', 'period_finance'];
 if (!in_array($rapor, $allowed, true)) $rapor = 'order';
 
 $days = (int)($_GET['days'] ?? 30);
@@ -102,6 +102,13 @@ if($rapor==='order'){
         $reportRows[]=[$bc,$byBarcode[$bc]['name']??$bc,(string)$row['query_type'],$count,$c,$d,$d-$c];$credit+=$c;$debt+=$d;$n+=$count;}
     $summary=['Finansal işlem kaydı'=>$n,'Alacak'=>$money($credit),'Borç'=>$money($debt),'Borç − alacak'=>$money($debt-$credit)];
     $reportNote=$rapor==='return'?'Finansal işlem adedi ürün iade adedi değildir. İade tutarı, yeniden satılabilirlik ve gerçek kargo maliyeti eşleşmeden iade zararı hesaplanmaz.':'Satıcı ve Trendyol kaynaklı indirim/kuponlar ayrı işlem türleridir; iptaller dahil. Tarih finansal işlem tarihidir; kampanya kârlılığı değildir.';
+}elseif($rapor==='period_finance'){
+    $reportCols=['Finans hareketi','Kayıt adedi','Alacak (TL)','Borç (TL)','Borç − alacak (TL)'];
+    $data=$mp==='trendyol'?period_finance(db(),(int)$u['id'],$fromTs,time()):['groups'=>[],'excluded'=>0,'coverage'=>[]];
+    foreach($data['groups'] as $label=>$g)$reportRows[]=[$label,$g['count'],$g['credit']/10000.0,$g['debt']/10000.0,($g['debt']-$g['credit'])/10000.0];
+    $summary=['Hareket grubu'=>count($reportRows),'Doğrulanamayan kayıt'=>$data['excluded'],'Kesin dönem net kârı'=>'—'];
+    $reportNote='İşlem tarihine göre mevcut yurtiçi finansal kayıtlar. Hizmet bedeli resmî filtre ve genel ekstre eşleşmesiyle sınıflanır. Reklam açıklamaları adaydır; gerçek reklam harcaması veya ROAS değildir. Kargo fatura detayı ayrıca toplanmaz. Stopaj nakit kesintisidir; bu tablo net kâr değildir. Kayıt yoksa sıfır gider kabul edilmez.';
+    foreach(['settlements_transaction'=>'Ekstre','documents_transaction'=>'Belgeler','service_fee_transaction'=>'Hizmet bedeli'] as $job=>$label)$reportNote.=' '.$label.': '.sync_coverage_label(db(),(int)$u['id'],$mp,$job,$fromTs,time());
 }elseif($rapor==='buybox'){
     $reportCols=['Barkod','Ürün','Bizim Fiyat','Buybox Sırası','Buybox Fiyatı','Fiyat Farkı','Son Sorgu','Güncellik'];
     $integration=get_integration((int)$u['id'],$mp);
@@ -154,6 +161,7 @@ if (isset($_GET['export'])) {
 $raporLabels = [
     'order' => 'Sipariş Kârlılık Analizi',
     'order_finance' => 'Sipariş Finansal Eşleştirme',
+    'period_finance' => 'Dönem Finans Hareketleri',
     'product' => 'Ürün Kârlılık Analizi',
     'category' => 'Kategori Kârlılık Analizi',
     'claims' => 'İade Talepleri ve Durumları',
