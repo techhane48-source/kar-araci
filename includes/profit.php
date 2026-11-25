@@ -192,6 +192,9 @@ function calc_order_profit(array $order, array $byBarcode): array
     if (!order_is_domestic_try($order)) return $fail('Para birimi veya ülke doğrulanmadı; yurtiçi TL hesabına alınmadı.');
     if (!order_is_active_sale($order)) return $fail('İptal/iade: finansal kayıt bekleniyor.');
     if (!is_array($lines) || !$lines || !is_numeric($order['total_price']??null) || !is_finite($sale) || $sale <= 0) return $fail('Sipariş verisi eksik.');
+    $cargoOverride=array_key_exists('cargo_override',$order);$cargoSource=$order['cargo_source']??'Kayıtlı kargo tahmini';
+    if($cargoOverride&&(!is_numeric($order['cargo_override'])||!is_finite((float)$order['cargo_override'])||(float)$order['cargo_override']<0))return $fail((string)$cargoSource);
+    if(!$cargoOverride&&($order['marketplace']??'')==='trendyol'&&(count($lines)!==1||(int)($lines[0]['quantity']??0)!==1))return $fail('Çoklu ürün paketinin kargo tahmini eksik.');
     $cost=0.0; $cargo=0.0; $commission=0.0; $saleVat=0.0; $costVat=0.0;
     $stopaj=0.0; $sum=0.0; $extra=0.0;
     $seenLines=[];
@@ -219,7 +222,7 @@ function calc_order_profit(array $order, array $byBarcode): array
             }
             $lineSale=$itemSum;
         }
-        foreach([$line['commission_rate']??$product['rate']??null,$line['vat_rate']??$product['kdv']??null,$line['cost_vat_snapshot']??$product['cost_vat']??$product['kdv']??null,$product['cargo']??0] as $value){
+        foreach([$line['commission_rate']??$product['rate']??null,$line['vat_rate']??$product['kdv']??null,$line['cost_vat_snapshot']??$product['cost_vat']??$product['kdv']??null,($cargoOverride?0:($product['cargo']??0))] as $value){
             if(!is_numeric($value)||!is_finite((float)$value)||(float)$value<0)return $fail('Geçersiz komisyon, KDV veya kargo girdisi.');
         }
         $rate=(float)($line['commission_rate']??$product['rate']??-1);
@@ -230,17 +233,19 @@ function calc_order_profit(array $order, array $byBarcode): array
         if(!is_finite($lineCost)||!is_finite($lineSale))return $fail('Satır tutarı geçersiz.');
         $sum+=$lineSale; $cost+=$lineCost;
         // Product cargo is a forecast; multi-line package fee allocation is not verified.
-        $cargo+=(float)($product['cargo']??0);
+        if(!$cargoOverride)$cargo+=(float)($product['cargo']??0);
         $commission+=$lineSale*$rate/100;
         $saleVat+=$lineSale*$vat/(100+$vat);
         $costVat+=$lineCost*$purchaseVat/(100+$purchaseVat);
         $stopaj+=auto_stopaj($lineSale,$vat);
     }
+    if($cargoOverride)$cargo=(float)$order['cargo_override'];
+    elseif(($order['marketplace']??'')==='trendyol'&&$cargo<=0)return $fail('Kargo tahmini eksik.');
     if (!is_finite($sum)||!is_finite($cost)||!is_finite($cargo)||abs($sum-$sale)>0.05) return $fail('Paket ve satır toplamları uyuşmuyor.');
     $service=trendyol_service_fee();
     $netVat=max(0.0,$saleVat-$costVat-($commission+$cargo+$service)/6);
     $profit=$sale-$cost-$cargo-$commission-$service-$stopaj-$netVat;
-    return ['ok'=>true,'estimated'=>true,'sale'=>$sale,'cost'=>$cost,'cargo'=>$cargo,'profit'=>$profit,
+    return ['ok'=>true,'estimated'=>true,'sale'=>$sale,'cost'=>$cost,'cargo'=>$cargo,'cargo_source'=>$cargoSource,'profit'=>$profit,
         'margin'=>$profit/$sale*100,'ratio'=>$profit/$cost*100,'commission'=>$commission,
         'service_fee'=>$service,'stopaj'=>$stopaj,'net_kdv'=>$netVat,'extra_fee'=>0.0,'return_loss'=>0.0];
 }

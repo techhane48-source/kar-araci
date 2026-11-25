@@ -17,4 +17,16 @@ $tests['duplicate invoice withheld']=cargo_effective([$p],[$r,$r],'123')['select
 $tests['multi package withheld']=cargo_effective([$p,$p],[$r],'123')['selected']===null;
 $tests['return separate']=cargo_effective([$p],[array_replace($r,['shipment_type'=>'İade Kargo Bedeli'])],'123')['selected']===120.0;
 $tests['foreign seller withheld']=cargo_effective([$p],[$r],'999')['selected']===null;
+$raw=['id'=>'F','sellerId'=>123,'affiliate'=>'TRENDYOLTR','country'=>'TR','credit'=>0,'debt'=>132];
+$tests['gross total match']=cargo_invoice_basis($raw,[$r],'123','F')==='gross';
+$tests['net total match']=cargo_invoice_basis(array_replace($raw,['debt'=>158.4]),[$r],'123','F')==='net';
+$tests['unmatched VAT withheld']=cargo_invoice_basis(array_replace($raw,['debt'=>145]),[$r],'123','F')===null;
+$tests['duplicate detail basis withheld']=cargo_invoice_basis($raw,[$r,$r],'123','F')===null;
+$tests['invoice without basis blocks profit']=cargo_effective([$p],[$r],'123')['gross_for_profit']===null;
+$tests['invoice gross overrides estimate']=cargo_effective([$p],[array_replace($r,['invoice_basis'=>'gross'])],'123')['gross_for_profit']===132.0;
+$tests['invoice net converted']=cargo_effective([$p],[array_replace($r,['invoice_basis'=>'net'])],'123')['gross_for_profit']===158.4;
+$ref=require __DIR__.'/../includes/cargo_reference_20261005.php';
+$tests['reference three desi']=cargo_tariff_quote($ref,'TEX',3,500,'2026-11-25')['amount']===120.24;
+$tests['reference no invented missing desi']=cargo_tariff_quote($ref,'TEX',4,500,'2026-11-25')===null;
+$tests['reference expires']=cargo_tariff_quote($ref,'TEX',3,500,'2026-11-26')===null;
 foreach($tests as $n=>$ok)echo ($ok?'PASS':'FAIL')." $n\n";exit(in_array(false,$tests,true)?1:0);

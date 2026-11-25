@@ -17,5 +17,8 @@ $c=$o;$c['lines'][0]['quantity']=1.5;$tests['fractional quantity rejected']=!cal
 $c=$o;$c['lines'][0]['commission_rate']='invalid';$tests['malformed commission rejected']=!calc_order_profit($c,$products)['ok'];
 $c=$o;$c['lines'][0]['line_id']='L1';$c['lines'][1]['line_id']='L1';$tests['duplicate line rejected']=!calc_order_profit($c,$products)['ok'];
 $bad=$products;$bad['A']['cargo']=-50;$tests['negative cargo rejected']=!calc_order_profit($o,$bad)['ok'];
+$c=$o;$c['cargo_override']=132.0;$c['cargo_source']='Fatura';$r=calc_order_profit($c,$products);
+$tests['override once not per line']=$r['ok']&&$r['cargo']===132.0&&$r['cargo_source']==='Fatura';
+$c['cargo_override']=null;$tests['unknown invoice basis not fallback']=!calc_order_profit($c,$products)['ok'];
 foreach($tests as $n=>$ok)echo ($ok?'PASS':'FAIL')." $n\n";
 exit(in_array(false,$tests,true)?1:0);

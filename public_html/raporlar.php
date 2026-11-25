@@ -33,7 +33,8 @@ $reportRows=[];$reportCols=[];$summary=[];$reportNote='';
 $excludedCurrency=count(array_filter($orders,static fn($o)=>!order_is_domestic_try($o)));
 $money=static fn(float $n):string=>tl($n);
 if($rapor==='order'){
-    $reportCols=['Sipariş No','Tarih','Tutar','Tahmini Kâr','Kâr Oranı %','Kâr Marjı %','Durum'];
+    $orders=cargo_profit_overlay(db(),(int)$u['id'],$orders);
+    $reportCols=['Sipariş No','Tarih','Tutar','Tahmini Kâr','Kâr Oranı %','Kâr Marjı %','Kargo (KDV dahil tahmin)','Kargo kaynağı','Durum'];
     $sale=0.0;$knownSale=0.0;$profit=0.0;$count=0;$known=0;
     foreach($orders as $o){
         if(!order_is_active_sale($o))continue;
@@ -41,7 +42,7 @@ if($rapor==='order'){
         if($pr['ok']){$known++;$knownSale+=$amount;$profit+=$pr['profit'];}
         $reportRows[]=[$o['order_number'],date('d.m.Y',(int)$o['order_date']),$amount,
             $pr['ok']?$pr['profit']:null,$pr['ok']?$pr['ratio']:null,$pr['ok']?$pr['margin']:null,
-            $pr['ok']?'Tahmini':($pr['reason']??'Veri eksik')];
+            $pr['ok']?$pr['cargo']:null,$pr['ok']?$pr['cargo_source']:($o['cargo_source']??null),$pr['ok']?'Tahmini':($pr['reason']??'Veri eksik')];
     }
     $summary=['Ciro'=>$money($sale),'Hesaplanan ciro'=>$money($knownSale),'Tahmini kâr'=>$known?$money($profit):'—','Kapsam'=>"$known / $count"];
     $reportNote='Tarihli kullanıcı maliyeti veya ilk gözlem ile komisyon ve kargo tahminleri kullanılır. Güncel maliyet geçmişe uygulanmaz. Gerçek finansal mutabakat değildir.';
@@ -106,11 +107,11 @@ if($rapor==='order'){
     $summary=['Finansal işlem kaydı'=>$n,'Alacak'=>$money($credit),'Borç'=>$money($debt),'Borç − alacak'=>$money($debt-$credit)];
     $reportNote=$rapor==='return'?'Finansal işlem adedi ürün iade adedi değildir. İade tutarı, yeniden satılabilirlik ve gerçek kargo maliyeti eşleşmeden iade zararı hesaplanmaz.':'Satıcı ve Trendyol kaynaklı indirim/kuponlar ayrı işlem türleridir; iptaller dahil. Tarih finansal işlem tarihidir; kampanya kârlılığı değildir.';
 }elseif($rapor==='cargo_effective'){
-    $reportCols=['Sipariş','Tarife tahmini (KDV dahil)','Fatura gönderi tutarı (API)','Seçilen kargo tutarı','Fatura kalemi','Durum'];
+    $reportCols=['Sipariş','Tarife tahmini (KDV dahil)','Fatura gönderi tutarı (API)','Seçilen kargo tutarı','Kâr hesabına uygun brüt tutar','Fatura kalemi','Durum'];
     $data=$mp==='trendyol'?cargo_effective_report(db(),(int)$u['id'],array_column($orders,'order_number')):[];$known=0;$estimated=0;
-    foreach($data as $no=>$a){$reportRows[]=[(string)$no,$a['estimate'],$a['invoiced'],$a['selected'],$a['invoice_rows'],$a['state']];if($a['invoiced']!==null)$known++;elseif($a['selected']!==null)$estimated++;}
+    foreach($data as $no=>$a){$reportRows[]=[(string)$no,$a['estimate'],$a['invoiced'],$a['selected'],$a['gross_for_profit'],$a['invoice_rows'],$a['state']];if($a['invoiced']!==null)$known++;elseif($a['selected']!==null)$estimated++;}
     $summary=['Sipariş'=>count($data),'Fatura kaydı olan'=>$known,'Tarife tahmini olan'=>$estimated,'Diğer'=>count($data)-$known-$estimated];
-    $reportNote='Sipariş tarihindeki doğrulanmış tarife tahmini saklanır. Tek paketli siparişte doğrulanan gönderi faturası tutarı tahminin yerini alır; ikisi toplanmaz. Çoklu paketler ayrıca incelenir. Fatura API tutarının KDV niteliği doğrulanmalıdır. Tarifeler sunucu yöneticisi tarafından doğrulanmış tarihli dosya olarak yüklenmelidir. Bu aşamada diğer kâr ekranları bu tutara geçirilmemiştir.';
+    $reportNote='Sipariş tarihindeki doğrulanmış tarife tahmini saklanır. Tek paketli siparişte doğrulanan gönderi faturası tutarı tahminin yerini alır; ikisi toplanmaz. Çoklu paketler ayrıca incelenir. Fatura API tutarının KDV niteliği doğrulanmalıdır. Kâr ekranlarında faturanın tüm detayları ve toplam borç tutarıyla tek anlamlı KDV uyumu aranır; bu bir muhasebe varsayımıdır, canlı doğrulama gerekir. 5 Ekim 2026 referansı ikincil kaynaklardan alınan sınırlı tahmindir; 25 Kasım sonrası otomatik kullanılmaz. Resmî tarihli tarife dosyası sunucu yöneticisi tarafından eklenmelidir.';
 }elseif($rapor==='product_cost_evidence'){
     $reportCols=['Barkod','Ürün','Eşleşen sipariş','Adet','Satış alacağı','Satış komisyonu','Satıcı geliri','Kayıtlı alış maliyeti','Kargo öncesi fark','Kargosu doğrudan eşleşen sipariş','Bu siparişlerin kargosu','Yalnız bu siparişlerin kargo sonrası farkı'];
     $data=$mp==='trendyol'?product_cost_evidence(db(),(int)$u['id'],array_column($orders,'order_number')):['groups'=>[],'orders'=>0,'matched'=>0,'shared_orders'=>0,'shared_cargo'=>null];
