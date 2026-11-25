@@ -3,80 +3,46 @@
 // Melontik parity: ürettiğimiz .xlsx Melontik'in "Ürün Ayarları" Excel'iyle birebir yapıda olmalı.
 
 function xlsx_read(string $path): array {
-    // returns ['headers' => [...], 'rows' => [[...], ...]] using first sheet
-    $zip = new ZipArchive();
-    if ($zip->open($path) !== true) throw new RuntimeException('xlsx açılamadı');
-    $work = sys_get_temp_dir() . '/xlsx_' . uniqid();
-    mkdir($work);
-    $zip->extractTo($work);
-    $zip->close();
-
-    // shared strings
-    $shared = [];
-    $ss = $work . '/xl/sharedStrings.xml';
-    if (is_file($ss)) {
-        $xml = simplexml_load_file($ss);
-        foreach ($xml->si as $si) {
-            $t = '';
-            if (isset($si->t)) $t = (string)$si->t;
-            else foreach ($si->r as $r) $t .= (string)$r->t;
-            $shared[] = $t;
+    $zip=new ZipArchive();
+    if($zip->open($path)!==true) throw new RuntimeException('XLSX açılamadı.');
+    try {
+        $read=static function(string $name,bool $required=true)use($zip):?SimpleXMLElement {
+            $stat=$zip->statName($name);
+            if(!$stat){if(!$required)return null;throw new RuntimeException('Excel sayfası bulunamadı.');}
+            if($stat['size']>32*1024*1024)throw new RuntimeException('Excel sayfası çok büyük.');
+            $raw=$zip->getFromName($name);
+            if($raw===false||stripos($raw,'<!DOCTYPE')!==false)throw new RuntimeException('Geçersiz Excel XML.');
+            $xml=@simplexml_load_string($raw,'SimpleXMLElement',LIBXML_NONET);
+            if($xml===false)throw new RuntimeException('Excel XML okunamadı.');
+            return $xml;
+        };
+        $shared=[];$ss=$read('xl/sharedStrings.xml',false);
+        if($ss!==null)foreach($ss->si as $si){$v=(string)$si->t;foreach($si->r as $r)$v.=(string)$r->t;$shared[]=$v;}
+        $sheet=$read('xl/worksheets/sheet1.xml');$headers=null;$rows=[];$headerRow=0;
+        foreach($sheet->sheetData->row as $row){
+            $cells=[];$max=0;
+            foreach($row->c as $c){
+                if(!preg_match('/^([A-Z]{1,3})\d+$/D',(string)$c['r'],$m))continue;
+                $col=0;foreach(str_split($m[1]) as $ch)$col=$col*26+ord($ch)-64;
+                if($col>256)throw new RuntimeException('Excel kolon sınırı aşıldı.');
+                $type=(string)$c['t'];
+                if(isset($c->f))$v=''; // do not treat cached formula values as authoritative inputs
+                elseif($type==='s')$v=$shared[(int)$c->v]??'';
+                elseif($type==='inlineStr'){$v=(string)$c->is->t;foreach($c->is->r as $r)$v.=(string)$r->t;}
+                else $v=(string)$c->v;
+                $cells[$col]=$v;$max=max($max,$col);
+            }
+            $arr=[];for($i=1;$i<=$max;$i++)$arr[]=$cells[$i]??'';
+            if($headers===null){
+                foreach($arr as $v)if(in_array(strtolower(trim($v)),['barkod','barcode'],true)){$headers=$arr;$headerRow=(int)$row['r'];break;}
+                continue;
+            }
+            if(!array_filter($arr,static fn($v)=>trim($v)!==''))continue;
+            $rows[]=$arr;if(count($rows)>50000)throw new RuntimeException('Excel en fazla 50.000 veri satırı içerebilir.');
         }
-    }
-
-    function colIndex($ref) {
-        preg_match('/^([A-Z]+)\d+$/', $ref, $m);
-        $col = 0;
-        for ($i = 0; $i < strlen($m[1]); $i++) $col = $col * 26 + (ord($m[1][$i]) - 64);
-        return $col;
-    }
-
-    $sheetXml = simplexml_load_file($work . '/xl/worksheets/sheet1.xml');
-    $rows = [];
-    foreach ($sheetXml->sheetData->row as $row) {
-        $r = (int)$row['r'];
-        $cells = []; $maxCol = 0;
-        foreach ($row->c as $c) {
-            $col = colIndex((string)$c['r']);
-            $t = (string)$c['t'];
-            if ($t === 's') { $v = $shared[(int)$c->v] ?? ''; }
-            elseif ($t === 'inlineStr') { $v = (string)$c->is->t; }
-            elseif (isset($c->v)) { $v = (string)$c->v; }
-            else { $v = ''; }
-            $cells[$col] = $v;
-            if ($col > $maxCol) $maxCol = $col;
-        }
-        $arr = [];
-        for ($i = 1; $i <= $maxCol; $i++) $arr[] = $cells[$i] ?? '';
-        $rows[$r] = $arr;
-    }
-
-    // find header row: first row containing 'Barkod'
-    $headerRow = null;
-    foreach ($rows as $r => $arr) {
-        foreach ($arr as $v) {
-            if (is_string($v) && trim($v) === 'Barkod') { $headerRow = $r; break 2; }
-        }
-    }
-    if ($headerRow === null) $headerRow = 4;
-
-    $headers = $rows[$headerRow];
-    $data = [];
-    foreach ($rows as $r => $arr) {
-        if ($r <= $headerRow) continue;
-        // skip fully empty
-        $allEmpty = true;
-        foreach ($arr as $v) if (trim((string)$v) !== '') { $allEmpty = false; break; }
-        if ($allEmpty) continue;
-        $data[] = $arr;
-    }
-
-    // cleanup
-    $it = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($work, RecursiveDirectoryIterator::SKIP_DOTS), RecursiveIteratorIterator::CHILD_FIRST);
-    foreach ($it as $f) { $f->isDir() ? @rmdir($f->getPathname()) : @unlink($f->getPathname()); }
-    @rmdir($work);
-
-    return ['header_row' => $headerRow, 'headers' => $headers, 'rows' => $data];
+        if($headers===null)throw new RuntimeException('Barkod başlığı bulunamadı.');
+        return ['header_row'=>$headerRow,'headers'=>$headers,'rows'=>$rows];
+    }finally{$zip->close();}
 }
 
 function xlsx_write_maliyet(array $products, string $path): void {

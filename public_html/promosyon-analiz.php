@@ -25,12 +25,21 @@ function parse_price2(string $raw): float { return parse_money_input($raw) ?? 0.
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'analyze') {
     if (!csrf_verify($_POST['csrf'] ?? '')) { flash_set('error', 'Oturum süresi doldu.'); e_redirect('promosyon-analiz.php?mod=' . $mod); }
     if (empty($_FILES['csv']['tmp_name'])) { flash_set('error', 'CSV dosyası seçin.'); e_redirect('promosyon-analiz.php?mod=' . $mod); }
-    $mp = $_POST['mp'] ?? 'trendyol';
-    $file = fopen($_FILES['csv']['tmp_name'], 'r');
-    $firstLine = fgets($file); rewind($file);
-    $delim = (substr_count((string)$firstLine, ';') > substr_count((string)$firstLine, ',')) ? ';' : ',';
-    $header = fgetcsv($file, null, $delim, '"', '\\');
-    if ($header === false) { flash_set('error', 'Dosya boş.'); e_redirect('promosyon-analiz.php?mod=' . $mod); }
+    $mp='trendyol';
+    $input=$_FILES['csv'];
+    $file=null;$dataRows=null;$delim=';';
+    try {
+        if(($input['error']??UPLOAD_ERR_NO_FILE)!==UPLOAD_ERR_OK || ($input['size']??0)>20*1024*1024)throw new RuntimeException('Dosya yükleme hatası veya 20 MB sınırı.');
+        $ext=strtolower(pathinfo((string)$input['name'],PATHINFO_EXTENSION));
+        if($ext==='xlsx'){$sheet=xlsx_read($input['tmp_name']);$header=$sheet['headers'];$dataRows=$sheet['rows'];}
+        elseif($ext==='csv'){
+            $file=fopen($input['tmp_name'],'r');if(!$file)throw new RuntimeException('CSV açılamadı.');
+            $firstLine=fgets($file);rewind($file);$delim=substr_count((string)$firstLine,';')>substr_count((string)$firstLine,',')?';':',';
+            $header=fgetcsv($file,null,$delim,'"','\\');
+        }else throw new RuntimeException('CSV veya XLSX yükleyin.');
+        if(!$header)throw new RuntimeException('Dosya boş.');
+        $header[0]=preg_replace('/^\xEF\xBB\xBF/','',(string)$header[0]);
+    } catch(Throwable $e){if(is_resource($file))fclose($file);flash_set('error',$e->getMessage());e_redirect('promosyon-analiz.php?mod='.$mod);}
     $header = array_map(fn($x) => strtolower(trim($x)), $header);
     $fold = fn($x) => strtr($x, ['ç'=>'c','Ç'=>'c','ğ'=>'g','Ğ'=>'g','ı'=>'i','İ'=>'i','ö'=>'o','Ö'=>'o','ş'=>'s','Ş'=>'s','ü'=>'u','Ü'=>'u']);
     $norm = fn($x) => preg_replace('/[^a-z0-9]/', '', $fold($x));
@@ -70,7 +79,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'analy
     foreach ($stmt->fetchAll() as $p) if ($p['barcode'] !== '') $byBarcode[$p['barcode']] = $p;
 
     $rows = [];
-    while (($row = fgetcsv($file, null, $delim, '"', '\\')) !== false) {
+    $iterator=(static function()use($dataRows,$file,$delim){if($dataRows!==null){yield from $dataRows;return;}while(($r=fgetcsv($file,null,$delim,'"','\\'))!==false)yield $r;})();
+    foreach($iterator as $row) {
+        if(count($rows)>=50000){if(is_resource($file))fclose($file);flash_set('error','50.000 satır sınırı aşıldı.');e_redirect('promosyon-analiz.php?mod='.$mod);}
         $barcode = trim($row[$bIdx] ?? '');
         if ($barcode === '') continue;
         $p = $byBarcode[$barcode] ?? null;
@@ -98,7 +109,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'analy
         }
         $rows[] = ['barcode' => $barcode, 'name' => $p['name'] ?? $barcode, 'cost' => $cost, 'matched' => $p !== null, 'tiers' => $tiers, 'best' => $best];
     }
-    fclose($file);
+    if(is_resource($file))fclose($file);
     $_SESSION['promo_rows'] = $rows;
     $_SESSION['promo_tiers'] = array_values($tierCols);
     $_SESSION['promo_mod'] = $mod;
@@ -112,7 +123,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'downl
     $rows = $_SESSION['promo_rows'] ?? [];
     $tierCols = $_SESSION['promo_tiers'] ?? [];
     $sel = array_fill_keys(array_map('strval', $_POST['sel'] ?? []), true);
-    if (!$rows) { flash_set('error', 'Önce bir CSV analiz edin.'); e_redirect('promosyon-analiz.php?mod=' . $mod); }
+    if (!$rows || ($_SESSION['promo_mod']??null)!==$mod) { flash_set('error', 'Önce bu modülde bir dosya analiz edin.'); e_redirect('promosyon-analiz.php?mod=' . $mod); }
     header('Content-Type: text/csv; charset=utf-8');
     header('Content-Disposition: attachment; filename="promosyon-secimler.csv"');
     echo "\xEF\xBB\xBF";
@@ -136,7 +147,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'downl
     exit;
 }
 
-$rows = $_SESSION['promo_rows'] ?? null;
+$rows = ($_SESSION['promo_mod'] ?? null)===$mod ? ($_SESSION['promo_rows'] ?? null) : null;
 $tierCols = $_SESSION['promo_tiers'] ?? [];
 $mp = $_SESSION['promo_mp'] ?? 'trendyol';
 
@@ -147,7 +158,7 @@ require __DIR__ . '/../includes/header.php';
   <div class="toolbar">
     <h1>Promosyon Kârlılık Analizi</h1>
   </div>
-  <p class="hint" style="max-width:760px">Melontik'in killer özelliği: Trendyol'dan indirdiğin promosyon Excel'ini CSV olarak kaydet ve yükle. Kâr&Fiyat, barkodu kayıtlı ürünlerinle eşleştirip <b>her fiyat kademesinin</b> net kârını hesaplar. Kârlıları işaretle, seçimleri indir, Trendyol'a geri yükle.</p>
+  <p class="hint" style="max-width:760px">Trendyol'dan indirdiğin XLSX veya CSV dosyasını yükle. Kâr&Fiyat, barkodu kayıtlı ürünlerinle eşleştirip <b>her fiyat kademesinin</b> net kârını hesaplar. Kârlıları işaretle ve analiz raporunu indir. Rapor doğrudan Trendyol yükleme şablonu değildir.</p>
 
   <div class="card" style="margin:16px 0">
     <h2>Modül Seç</h2>
@@ -164,18 +175,18 @@ require __DIR__ . '/../includes/header.php';
   <?php endif; ?>
 
   <div class="card" style="margin:16px 0">
-    <h2>1. CSV Yükle</h2>
+    <h2>1. Excel veya CSV Yükle</h2>
     <form method="post" enctype="multipart/form-data" style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end">
       <input type="hidden" name="csrf" value="<?= h(csrf_token()) ?>">
       <input type="hidden" name="action" value="analyze">
       <div class="field" style="margin:0"><label>Pazaryeri</label>
         <select name="mp" style="width:auto">
-          <?php foreach (['trendyol'=>'Trendyol','hepsiburada'=>'Hepsiburada'] as $c=>$l): ?>
+          <?php foreach (['trendyol'=>'Trendyol'] as $c=>$l): ?>
             <option value="<?= $c ?>" <?= $mp === $c ? 'selected' : '' ?>><?= $l ?></option>
           <?php endforeach; ?>
         </select>
       </div>
-      <div class="field" style="margin:0"><label>CSV dosyası</label><input type="file" name="csv" accept=".csv" required style="width:auto;font-size:13px"></div>
+      <div class="field" style="margin:0"><label>Excel / CSV dosyası</label><input type="file" name="csv" accept=".csv,.xlsx" required style="width:auto;font-size:13px"></div>
       <button type="submit" class="btn-primary">Analiz Et</button>
     </form>
     <p class="hint" style="margin-top:10px">Başlıklar: <code>barkod</code> + fiyat kademesi kolonları (örn. <code>süper_avantaj_fiyat</code>, <code>çok_avantaj_fiyat</code>, <code>avantaj_fiyat</code>, <code>4. fiyat aralığı</code>). Ayraç virgül veya noktalı virgül.</p>
@@ -211,7 +222,7 @@ require __DIR__ . '/../includes/header.php';
                   <div style="font-size:11px;color:var(--muted)"><?= tl($t['price']) ?></div>
                   <div class="<?= $t['profit'] < 0 ? 'neg' : 'pos' ?>"><?= tl($t['profit']) ?></div>
                   <div style="font-size:11px;color:var(--muted)">%<?= number_format($t['margin'], 1, ',', '.') ?> marj</div>
-                <?php elseif ($r['matched']): ?><span class="hint">maliyet yok</span>
+                <?php elseif ($r['matched']): ?><span class="hint">Maliyet, geçerli fiyat veya kademe komisyonu eksik</span>
                 <?php else: ?><span class="hint">ürün bulunamadı</span><?php endif; ?>
               </td>
             <?php endforeach; ?>

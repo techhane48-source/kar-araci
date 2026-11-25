@@ -385,6 +385,28 @@ final class TrendyolClient
         return ['ok'=>true,'items'=>$items,'totalPages'=>(int)$body['totalPages']];
     }
 
+    /** The official Buybox service accepts at most ten barcodes per request. */
+    public function getBuybox(array $barcodes): array
+    {
+        $barcodes=array_values(array_unique(array_map('strval',$barcodes)));
+        if (!$barcodes || count($barcodes)>10 || in_array('', $barcodes,true)) return ['ok'=>false,'error'=>'1–10 barkod girin.'];
+        $res=$this->request('POST',"/integration/product/sellers/{$this->sellerId}/products/buybox-information",[],
+            json_encode(['barcodes'=>$barcodes],JSON_THROW_ON_ERROR));
+        if (($res['http']??0)!==200 || !is_array($res['body']['buyboxInfo']??null))
+            return ['ok'=>false,'error'=>'Buybox servisi yanıt vermedi (HTTP '.($res['http']??0).').'];
+        $items=[];
+        foreach($res['body']['buyboxInfo'] as $r) {
+            $bc=(string)($r['barcode']??'');
+            if (!in_array($bc,$barcodes,true) || isset($items[$bc])) return ['ok'=>false,'error'=>'Buybox barkod eşleşmesi geçersiz.'];
+            if (!is_numeric($r['buyboxOrder']??null) || !is_numeric($r['buyboxPrice']??null) || !is_bool($r['hasMultipleSeller']??null))
+                return ['ok'=>false,'error'=>'Buybox yanıtı eksik.'];
+            $items[$bc]=['barcode'=>$bc,'rank'=>(int)$r['buyboxOrder'],'price'=>(float)$r['buyboxPrice'],
+                'multiple'=>$r['hasMultipleSeller'],'second'=>isset($r['secondBuyboxPrice'])&&is_numeric($r['secondBuyboxPrice'])?(float)$r['secondBuyboxPrice']:null,
+                'third'=>isset($r['thirdBuyboxPrice'])&&is_numeric($r['thirdBuyboxPrice'])?(float)$r['thirdBuyboxPrice']:null];
+        }
+        return ['ok'=>true,'items'=>$items,'missing'=>array_values(array_diff($barcodes,array_keys($items)))];
+    }
+
     /** Read actual invoice rows; no guessed allocation to shipment packages. */
     public function getCargoInvoiceItems(string $serial, int $maxPage = 2000): array
     {

@@ -9,6 +9,44 @@ if (!$pro) {
     e_redirect('odeme.php');
 }
 
+// Official Buybox: read-only requests, restricted to products owned by the current user.
+$bbIntegration=get_integration((int)$u['id'],'trendyol');
+$bbPage=max(1,(int)($_POST['bb_page']??$_GET['bb_page']??1));
+$bbSearch=trim((string)($_GET['bb_q']??$_POST['bb_q']??''));
+$bbRows=[];$bbMessage=null;$bbTotal=0;
+if ($bbIntegration) {
+    $filter="user_id=? AND marketplace='trendyol' AND barcode!=''";
+    $args=[$u['id']];
+    if ($bbSearch!=='') {$filter.=" AND (barcode LIKE ? OR name LIKE ?)";$args[]='%'.$bbSearch.'%';$args[]='%'.$bbSearch.'%';}
+    $q=db()->prepare("SELECT COUNT(*) FROM products WHERE ".$filter);$q->execute($args);$bbTotal=(int)$q->fetchColumn();
+    $bbPage=min($bbPage,max(1,(int)ceil($bbTotal/50)));$offset=($bbPage-1)*50;
+    $q=db()->prepare("SELECT * FROM products WHERE ".$filter." ORDER BY id LIMIT 50 OFFSET ".$offset);
+    $q->execute($args);$bbRows=$q->fetchAll();
+    if ($_SERVER['REQUEST_METHOD']==='POST' && ($_POST['action']??'')==='buybox_refresh') {
+        if (!csrf_verify($_POST['csrf']??'')) $bbMessage='Oturum süresi doldu.';
+        else {
+            $client=integration_client($bbIntegration);$count=0;$missing=0;
+            $up=db()->prepare("INSERT INTO trendyol_buybox(user_id,seller_id,barcode,buybox_rank,buybox_price,multiple_sellers,second_price,third_price,checked_at)
+              VALUES(?,?,?,?,?,?,?,?,?) ON CONFLICT(user_id,seller_id,barcode) DO UPDATE SET
+              buybox_rank=excluded.buybox_rank,buybox_price=excluded.buybox_price,multiple_sellers=excluded.multiple_sellers,
+              second_price=excluded.second_price,third_price=excluded.third_price,checked_at=excluded.checked_at");
+            $del=db()->prepare("DELETE FROM trendyol_buybox WHERE user_id=? AND seller_id=? AND barcode=?");
+            foreach(array_chunk(array_column($bbRows,'barcode'),10) as $chunk) {
+                $res=$client->getBuybox($chunk);
+                if(!$res['ok']) {$bbMessage=$res['error'].' Önceki kayıtlar eski tarihleriyle gösterilir.';break;}
+                foreach($res['items'] as $r) {
+                    $up->execute([$u['id'],$bbIntegration['seller_id'],$r['barcode'],$r['rank'],$r['price'],(int)$r['multiple'],$r['second'],$r['third'],time()]);$count++;
+                }
+                foreach($res['missing'] as $bc) {$del->execute([$u['id'],$bbIntegration['seller_id'],$bc]);$missing++;}
+            }
+            if($bbMessage===null)$bbMessage="$count barkod güncellendi; $missing barkod için veri dönmedi.";
+        }
+    }
+    $lookup=db()->prepare("SELECT * FROM trendyol_buybox WHERE user_id=? AND seller_id=? AND barcode=?");
+    foreach($bbRows as &$row) {$lookup->execute([$u['id'],$bbIntegration['seller_id'],$row['barcode']]);$row['_buybox']=$lookup->fetch()?:null;}
+    unset($row);
+}
+
 // --- Ekle ---
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'add') {
     if (!csrf_verify($_POST['csrf'] ?? '')) {
@@ -126,6 +164,26 @@ require __DIR__ . '/../includes/header.php';
 ?>
 <div class="wrap">
   <div class="toolbar"><h1>Pazar Zekası</h1></div>
+<div class="card table-card" style="margin:16px 0">
+<h2>Trendyol Buybox — resmî API</h2>
+<p class="hint">Sıra, ilk üç fiyat ve çoklu satıcı bilgisi Trendyol'dan gelir. Kâr ve taban fiyat tahminidir. Fiyatı otomatik değiştirmez; Buybox kazanma garantisi vermez.</p>
+<?php if(!$bbIntegration): ?><p>Önce <a href="magaza.php">Trendyol mağazanızı bağlayın</a>.</p>
+<?php else: ?>
+<?php if($bbMessage!==null): ?><p><?= h($bbMessage) ?></p><?php endif; ?>
+<form method="get"><input name="bb_q" value="<?= h($bbSearch) ?>" placeholder="Barkod veya ürün"><button>Ara</button></form>
+<form method="post"><input type="hidden" name="csrf" value="<?= h(csrf_token()) ?>"><input type="hidden" name="action" value="buybox_refresh"><input type="hidden" name="bb_page" value="<?= $bbPage ?>"><input type="hidden" name="bb_q" value="<?= h($bbSearch) ?>"><button>Bu sayfanın Buybox verisini yenile</button></form>
+<table><tr><th>Ürün / barkod</th><th>Bizim fiyat</th><th>Sıra</th><th>Buybox fiyatı</th><th>2. / 3.</th><th>Çoklu satıcı</th><th>Buybox fiyatında tahmini kâr</th><th>Başabaş fiyatı</th><th>Son sorgu</th></tr>
+<?php foreach($bbRows as $row): $bb=$row['_buybox']; $hasCost=(float)$row['cost']>0; $floor=$hasCost?product_target_price($row,0,0):null; $estimate=$bb&&$hasCost&&(float)$bb['buybox_price']>0?product_profit($row,(float)$bb['buybox_price']):null; ?>
+<tr><td><?= h($row['name']) ?><br><?= h($row['barcode']) ?></td><td><?= tl((float)$row['price']) ?></td><td><?= $bb&&(int)$bb['buybox_rank']>0?(int)$bb['buybox_rank']:'—' ?></td>
+<td><?= $bb&&(float)$bb['buybox_price']>0?tl((float)$bb['buybox_price']):'—' ?></td>
+<td><?= $bb&&$bb['second_price']!==null?tl((float)$bb['second_price']):'—' ?> / <?= $bb&&$bb['third_price']!==null?tl((float)$bb['third_price']):'—' ?></td><td><?= $bb?((int)$bb['multiple_sellers']?'Evet':'Hayır'):'—' ?></td>
+<td><?= $estimate?tl($estimate['profit']):'—' ?></td><td><?= $floor&&$floor['ok']?tl(ceil($floor['price']*100)/100):'—' ?></td><td><?= $bb?date('d.m H:i',(int)$bb['checked_at']):'Veri yok' ?></td></tr>
+<?php endforeach; ?></table>
+<p>Sayfa <?= $bbPage ?> / <?= max(1,(int)ceil($bbTotal/50)) ?> · <?= $bbTotal ?> ürün
+<?php if($bbPage>1): ?><a href="?bb_page=<?= $bbPage-1 ?>&bb_q=<?= urlencode($bbSearch) ?>">Önceki</a><?php endif; ?>
+<?php if($bbPage*50<$bbTotal): ?><a href="?bb_page=<?= $bbPage+1 ?>&bb_q=<?= urlencode($bbSearch) ?>">Sonraki</a><?php endif; ?></p>
+<?php endif; ?></div>
+
 
   <?php $flash = flash_get(); if ($flash): ?><div class="alert alert-<?= $flash['type'] ?>"><?= h($flash['msg']) ?></div><?php endif; ?>
 
