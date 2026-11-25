@@ -166,6 +166,8 @@ require __DIR__ . '/../includes/header.php';
 ?>
 <?php if($supported && $int): ?>
 <div class="wrap"><div class="card"><h2>Otomatik veri güncelleme</h2>
+<?php $day=date('Y-m-d');$activeTariffs=array_values(array_filter(cargo_tariffs(),static fn($t)=>$t['from']<=$day&&$t['through']>=$day));$primaryTariffs=array_filter($activeTariffs,static fn($t)=>($t['confidence']??'')!=='secondary_partial'); ?>
+<p class="hint">Kargo tarifesi: <?= $primaryTariffs?'Tarihli yönetici referansı mevcut; kapsamı kontrol edin.':($activeTariffs?'Sınırlı ikincil kaynak tahmini; resmî tarife doğrulanmadı.':'Geçerli tarife yok; yeni fiyatlar tahmin edilmez.') ?></p>
 <?php $heartbeat=(int)setting('auto_sync_heartbeat');$now=time();$active=$heartbeat>0&&$heartbeat<=$now&&$now-$heartbeat<=1800;
 $labels=['orders'=>'Siparişler','products'=>'Ürün / fiyat / stok','claims'=>'İadeler','settlements'=>'Cari ekstre','documents'=>'Finans / kargo belgeleri','payout_list'=>'Son ödeme emri sayfası','buybox'=>'Buybox (50 barkodluk dilim)','payout_detail'=>'Ödeme emri detay kontrolü'];
 $q=db()->prepare("SELECT job,state,last_success,last_attempt FROM sync_status WHERE user_id=? AND marketplace='trendyol'");$q->execute([$u['id']]);$status=[];foreach($q->fetchAll() as $row)$status[$row['job']]=$row; ?>

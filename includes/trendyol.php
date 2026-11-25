@@ -253,6 +253,8 @@ final class TrendyolClient
                         'totalPrice' => (float)($it['packageTotalPrice'] ?? $it['totalPrice'] ?? 0),
                         'cargoCompany' => $it['cargoProviderName'] ?? '',
                         'cargoDeci' => $it['cargoDeci'] ?? null,
+                        'createdBy' => $it['createdBy'] ?? null,
+                        'originPackageIds' => $it['originPackageIds'] ?? null,
                         'sellerCargoAgreement' => ($it['whoPays']??null)==1,
                         'lines' => $lines,
                         'orderDate' => $it['orderDate'] ?? null,
