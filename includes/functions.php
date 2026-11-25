@@ -5,6 +5,7 @@ require_once __DIR__ . '/auth.php';
 require_once __DIR__ . '/crypto.php';
 require_once __DIR__ . '/profit.php';
 require_once __DIR__ . '/finance.php';
+require_once __DIR__ . '/sync_coverage.php';
 
 // ---- İş mantığı: komisyon oranları + kâr hesabı ----
 
@@ -330,9 +331,13 @@ function sync_orders_unlocked(int $userId, string $marketplace, int $days = 7): 
         return ['ok' => false, 'error' => marketplace_label($marketplace) . ' için sipariş senkronu desteklenmiyor.'];
     }
 
-    $started=time();
-    $start = date('c', $started - max(1,min(89,$days)) * 86400);
-    $res = $client->getOrders('', $start, date('c',$started));
+    $started=time()-1; // query only completed seconds
+    $windowStart=$started-max(1,min(89,$days))*86400;
+    if($marketplace==='trendyol'){
+        try{[$windowStart,$started]=sync_order_window(sync_read_ranges(db(),$userId,$marketplace,'orders_modified'),$started,$days);}
+        catch(RuntimeException $e){return ['ok'=>false,'error'=>$e->getMessage()];}
+    }
+    $res = $client->getOrders('', date('c',$windowStart), date('c',$started));
     if (!$res['ok']) return $res;
 
     foreach ($res['orders'] as $o) {
@@ -394,6 +399,7 @@ function sync_orders_unlocked(int $userId, string $marketplace, int $days = 7): 
         ]);
         $count++;
     }
+    if($marketplace==='trendyol')sync_record_range($db,$userId,$marketplace,'orders_modified',$windowStart,$started+1);
     $db->prepare("UPDATE integrations SET last_orders_sync = ? WHERE user_id = ? AND marketplace = ?")
         ->execute([time(), $userId, $marketplace]);
     $db->commit();
@@ -433,8 +439,8 @@ function sync_settlements_unlocked(int $userId, string $marketplace, int $days =
     }
 
     if ($marketplace !== 'trendyol') return ['ok' => false, 'error' => 'Finansal senkron yalnızca Trendyol için desteklenir.'];
-    $end = time();
-    $start = $end - max(1, $days) * 86400;
+    $end = time()-1;
+    $start = $end - max(1,min(90,$days)) * 86400+1;
     $types = ['Sale','Return','Discount','DiscountCancel','Coupon','CouponCancel',
         'ProvisionPositive','ProvisionNegative','ManualRefund','ManualRefundCancel',
         'TyDiscount','TyDiscountCancel','TyCoupon','TyCouponCancel',
@@ -486,8 +492,11 @@ function sync_settlements_unlocked(int $userId, string $marketplace, int $days =
             }
         }
     }
-    // Historical transaction rates are not current product commission settings.
-    return ['ok' => true, 'records' => $total, 'rates_updated' => 0, 'errors' => []];
+    // Record coverage only once every requested type and slice has succeeded.
+    $db->beginTransaction();
+    try{sync_record_range($db,$userId,$marketplace,'settlements_transaction',$start,$end+1);$db->commit();}
+    catch(Throwable $e){if($db->inTransaction())$db->rollBack();return ['ok'=>false,'error'=>'Senkron kapsamı kaydedilemedi.'];}
+    return ['ok' => true, 'records' => $total, 'rates_updated' => 0, 'errors' => [],'range_start'=>$start,'range_end'=>$end+1];
 }
 
 /** Separate otherfinancials and invoice data from settlement sales to avoid double counting. */
@@ -507,8 +516,8 @@ function sync_trendyol_documents_unlocked(int $userId, int $days = 30): array
         VALUES(?,?,?,?,?,?,?) ON CONFLICT(user_id,external_id) DO UPDATE SET
         query_type=excluded.query_type,transaction_type=excluded.transaction_type,
         payment_order_id=excluded.payment_order_id,transaction_date=excluded.transaction_date,raw_json=excluded.raw_json");
-    $end = time();
-    $start = $end - max(1,min(90,$days))*86400;
+    $end = time()-1;
+    $start = $end - max(1,min(90,$days))*86400+1;
     $count = 0; $invoices = [];
     foreach (['Stoppage','CashAdvance','WireTransfer','IncomingTransfer','ReturnInvoice',
         'CommissionAgreementInvoice','PaymentOrder','DeductionInvoices','FinancialItem'] as $type) {
@@ -554,7 +563,10 @@ function sync_trendyol_documents_unlocked(int $userId, int $days = 30): array
             return ['ok'=>false,'error'=>'Kargo faturası kaydedilemedi.'];
         }
     }
-    return ['ok'=>true,'documents'=>$count,'invoices'=>count($invoices),'cargo_items'=>$cargoCount];
+    $db->beginTransaction();
+    try{sync_record_range($db,$userId,'trendyol','documents_transaction',$start,$end+1);$db->commit();}
+    catch(Throwable $e){if($db->inTransaction())$db->rollBack();return ['ok'=>false,'error'=>'Belge sorgu kapsamı kaydedilemedi.'];}
+    return ['ok'=>true,'documents'=>$count,'invoices'=>count($invoices),'cargo_items'=>$cargoCount,'range_start'=>$start,'range_end'=>$end+1];
 }
 
 /** Fetch one payout page and persist it under the connected seller. */

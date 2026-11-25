@@ -191,7 +191,7 @@ final class TrendyolClient
         }
 
         $chunk = 14 * 86400;
-        for ($cs = $startTs; $cs < $endTs; $cs += $chunk) {
+        for ($cs = $startTs; $cs <= $endTs; $cs += $chunk) {
             $ce = min($cs + $chunk - 1, $endTs);
             $page = 0;
             $cursor = null;

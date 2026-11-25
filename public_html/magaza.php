@@ -55,10 +55,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $supported) {
                 $error = 'Senkronizasyon hatası: ' . ($res['error'] ?? 'Bilinmeyen hata');
             }
         } elseif ($action === 'settlements') {
-            $res = sync_settlements((int)$u['id'], $mp);
+            $days=(int)($_POST['finance_days']??30);
+            if(!in_array($days,[7,30,90],true))$days=30;
+            $res = sync_settlements((int)$u['id'], $mp,$days);
             if ($res['ok']) {
                 $ok = "Cari hesap ekstresi (resmi komisyon/kargo/hakediş) çekildi: {$res['records']} işlem işlendi (tekrar gelen kayıtlar güncellendi). Geçmiş komisyonlar ürün ayarlarını değiştirmez.";
-                $docs = sync_trendyol_documents((int)$u['id'], 30);
+                $docs = sync_trendyol_documents((int)$u['id'], $days);
                 if ($docs['ok']) $ok .= " {$docs['documents']} finansal belge, {$docs['cargo_items']} kargo kalemi işlendi.";
                 else { $error = 'Finansal belgeler tamamlanmadı: ' . ($docs['error'] ?? 'Bilinmeyen hata'); $ok = ''; }
             } else {
@@ -189,6 +191,7 @@ require __DIR__ . '/../includes/header.php';
         <form method="post" style="display:inline">
           <input type="hidden" name="csrf" value="<?= csrf_token() ?>">
           <input type="hidden" name="action" value="settlements">
+              <select name="finance_days" aria-label="Finans geçmişi"><option value="7">7 gün</option><option value="30" selected>30 gün</option><option value="90">90 gün</option></select>
           <button type="submit" class="btn-ghost">Komisyonları Çek (Cari Hesap Ekstresi)</button>
         </form>
         <form method="post" style="display:inline" onsubmit="return confirm('Bağlantıyı kaldırmak istediğinize emin misiniz?');">

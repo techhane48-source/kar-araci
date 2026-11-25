@@ -102,7 +102,7 @@ if($rapor==='order'){
 if(in_array($rapor,['return','campaign','ads'],true)){
     $job=$rapor==='ads'?'documents':'settlements';
     $q=db()->prepare("SELECT state,last_success FROM sync_status WHERE user_id=? AND marketplace=? AND job=?");$q->execute([$u['id'],$mp,$job]);$st=$q->fetch();
-    $reportNote.=' Son başarılı senkron: '.($st&&!empty($st['last_success'])?date('d.m.Y H:i',(int)$st['last_success']):'yok').'. Son işlem: '.($st['state']??'bilinmiyor').'. Tarih aralığının tümünün çekildiği garanti edilmez. Kapsamı doğrulanmamış eski finans kayıtları tekrar çekilmeli.';
+    $reportNote.=' '.sync_coverage_label(db(),(int)$u['id'],$mp,$job.'_transaction',$fromTs,time()).' Son başarılı senkron: '.($st&&!empty($st['last_success'])?date('d.m.Y H:i',(int)$st['last_success']):'yok').'. Son işlem: '.($st['state']??'bilinmiyor').'. Kapsamı doğrulanmamış eski finans kayıtları tekrar çekilmeli.';
 }
 
 // CSV indir

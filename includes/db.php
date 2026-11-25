@@ -187,6 +187,11 @@ function migrate(): void
         last_attempt INTEGER NOT NULL, last_success INTEGER,
         state TEXT NOT NULL, PRIMARY KEY(user_id,marketplace,job)
     )");
+    $pdo->exec("CREATE TABLE IF NOT EXISTS sync_ranges (
+        user_id INTEGER NOT NULL, marketplace TEXT NOT NULL, job TEXT NOT NULL,
+        range_start INTEGER NOT NULL, range_end INTEGER NOT NULL,
+        PRIMARY KEY(user_id,marketplace,job,range_start), CHECK(range_end>range_start)
+    )");
     $pdo->exec("CREATE TABLE IF NOT EXISTS auth_attempts (
         scope TEXT PRIMARY KEY, window_start INTEGER NOT NULL, attempts INTEGER NOT NULL
     )");

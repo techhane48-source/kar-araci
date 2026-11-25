@@ -39,7 +39,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'sync'
     if (!csrf_verify($_POST['csrf'] ?? '')) {
         flash_set('error', 'Oturum süresi doldu.');
     } else {
-        $r = sync_orders($u['id'], $mp, 7);
+        $days=(int)($_POST['sync_days']??7);
+        if(!in_array($days,[7,30,89],true))$days=7;
+        $r = sync_orders($u['id'], $mp, $days);
         if ($r['ok']) {
             flash_set('success', ($r['count'] ?? 0) . ' sipariş senkronize edildi.');
         } else {
@@ -127,6 +129,7 @@ require __DIR__ . '/../includes/header.php';
           <option value="<?= $c ?>" <?= $mp === $c ? 'selected' : '' ?>><?= h(marketplace_label($c)) ?></option>
         <?php endforeach; ?>
       </select>
+      <select name="sync_days" aria-label="Güncelleme geçmişi"><option value="7">Son 7 gün</option><option value="30">Son 30 gün</option><option value="89">Son 89 gün</option></select>
       <button type="submit" class="btn-primary">Siparişleri Senkronize Et</button>
     </form>
   </div>
@@ -134,6 +137,7 @@ require __DIR__ . '/../includes/header.php';
   <?php $flash = flash_get(); if ($flash): ?><div class="alert alert-<?= $flash['type'] ?>"><?= h($flash['msg']) ?></div><?php endif; ?>
 
   <p class="hint">Son başarılı sipariş senkronu: <?= $lastOrdersSync > 0 ? date("d.m.Y H:i", $lastOrdersSync) : "Henüz yok" ?><?= $lastOrdersSync > 0 && $lastOrdersSync < time()-900 ? " — veriler eski olabilir" : "" ?>.</p>
+  <?php if($mp==='trendyol'): ?><p class="hint"><?= h(sync_coverage_label(db(),(int)$u['id'],$mp,'orders_modified',$weekStart,time())) ?> Sipariş aralığı son güncelleme tarihine göredir; oluşturulma tarihi kapsamı garanti edilmez.</p><?php endif; ?>
   <div class="kpi-row">
     <div class="kpi"><div class="k-label">Bugün Satış</div><div class="k-value"><?= tl($today['sale']) ?></div></div>
     <div class="kpi"><div class="k-label">Bugün Tahmini Kâr</div><div class="k-value <?= $today['profit'] < 0 ? 'neg' : '' ?>"><?= $today['profitCount'] > 0 ? tl($today['profit']) : '—' ?></div></div>
