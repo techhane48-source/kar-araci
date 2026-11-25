@@ -25,18 +25,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'save_
     if (!csrf_verify($_POST['csrf'] ?? '')) {
         flash_set('error', 'Oturum süresi doldu.');
     } else {
-        $ids = array_keys($_POST['en'] ?? []);
-        $upd = db()->prepare("UPDATE products SET en=?, boy=?, yukseklik=?, kesilen_desi=? WHERE id=? AND user_id=?");
-        $n = 0;
-        foreach ($ids as $id) {
-            $en = (float)($_POST['en'][$id] ?? 0);
-            $boy = (float)($_POST['boy'][$id] ?? 0);
-            $yuk = (float)($_POST['yukseklik'][$id] ?? 0);
-            $kes = (float)($_POST['kesilen'][$id] ?? 0);
-            $upd->execute([$en, $boy, $yuk, $kes, (int)$id, $u['id']]);
-            $n++;
-        }
-        flash_set('success', $n . ' ürünün desi bilgisi kaydedildi.');
+        $db=db();$n=0;
+        try{
+            if(!is_array($_POST['en']??null)||count($_POST['en'])>100)throw new InvalidArgumentException('En fazla 100 ürün.');
+            $upd=$db->prepare("UPDATE products SET en=?,boy=?,yukseklik=?,kesilen_desi=? WHERE id=? AND user_id=? AND marketplace=?");
+            $db->beginTransaction();
+            foreach(array_keys($_POST['en']) as $id){
+                $vals=[];
+                foreach(['en','boy','yukseklik','kesilen'] as $key){
+                    $v=$_POST[$key][$id]??'';
+                    if(!is_string($v))throw new InvalidArgumentException('Geçersiz ölçü.');
+                    $num=$v===''?0:parse_money_input($v);
+                    if($num===null||$num<0||$num>100000)throw new InvalidArgumentException('Geçersiz ölçü.');
+                    $vals[]=$num;
+                }
+                $upd->execute(array_merge($vals,[(int)$id,$u['id'],$mp]));$n+=$upd->rowCount();
+            }
+            $db->commit();flash_set('success',$n.' ürünün desi bilgisi kaydedildi.');
+        }catch(Throwable $ex){if($db->inTransaction())$db->rollBack();flash_set('error','Ölçüler kaydedilemedi; girişleri kontrol edin.');}
     }
     e_redirect('hakedis-desi.php?tab=desi&mp=' . $mp);
 }
@@ -164,11 +170,11 @@ require __DIR__ . '/../includes/header.php';
         <?php foreach ($products as $p): $beklenen = desi_from_dims((float)$p['en'], (float)$p['boy'], (float)$p['yukseklik']); $kesilen = (float)$p['kesilen_desi']; ?>
         <tr>
           <td><?= h($p['name']) ?></td>
-          <td><input type="number" step="0.1" name="en[<?= $p['id'] ?>]" value="<?= (float)$p['en'] > 0 ? number_format((float)$p['en'], 1, ',', '') : '' ?>" style="width:70px"></td>
-          <td><input type="number" step="0.1" name="boy[<?= $p['id'] ?>]" value="<?= (float)$p['boy'] > 0 ? number_format((float)$p['boy'], 1, ',', '') : '' ?>" style="width:70px"></td>
-          <td><input type="number" step="0.1" name="yukseklik[<?= $p['id'] ?>]" value="<?= (float)$p['yukseklik'] > 0 ? number_format((float)$p['yukseklik'], 1, ',', '') : '' ?>" style="width:70px"></td>
+          <td><input type="number" step="0.1" name="en[<?= $p['id'] ?>]" value="<?= (float)$p['en'] > 0 ? number_format((float)$p['en'], 1, '.', '') : '' ?>" style="width:70px"></td>
+          <td><input type="number" step="0.1" name="boy[<?= $p['id'] ?>]" value="<?= (float)$p['boy'] > 0 ? number_format((float)$p['boy'], 1, '.', '') : '' ?>" style="width:70px"></td>
+          <td><input type="number" step="0.1" name="yukseklik[<?= $p['id'] ?>]" value="<?= (float)$p['yukseklik'] > 0 ? number_format((float)$p['yukseklik'], 1, '.', '') : '' ?>" style="width:70px"></td>
           <td><?= $beklenen > 0 ? number_format($beklenen, 2, ',', '.') : '<span class="hint">—</span>' ?></td>
-          <td><input type="number" step="0.01" name="kesilen[<?= $p['id'] ?>]" value="<?= $kesilen > 0 ? number_format($kesilen, 2, ',', '') : '' ?>" style="width:80px"></td>
+          <td><input type="number" step="0.01" name="kesilen[<?= $p['id'] ?>]" value="<?= $kesilen > 0 ? number_format($kesilen, 2, '.', '') : '' ?>" style="width:80px"></td>
           <td>
             <?php if ($beklenen > 0 && $kesilen > 0): ?>
               <?php if ($kesilen > $beklenen + 0.01): ?><span class="neg">▲ Fazla <?= number_format($kesilen - $beklenen, 2, ',', '.') ?> desi</span>
@@ -207,7 +213,7 @@ require __DIR__ . '/../includes/header.php';
     <div style="margin-top:16px">
       <div class="alert alert-<?= ($hakedisResult['eksikSatis'] || $hakedisResult['fazlaDesi']) ? 'error' : 'success' ?>">
         <?php if (!$hakedisResult['eksikSatis'] && !$hakedisResult['fazlaDesi']): ?>
-          Hakedişinize yansıyan fazla kargo faturası veya eksik satış bedeli bulunmamaktadır.
+          Girilen değerlerde fark işareti görülmedi. Bu karşılaştırma, hakedişin veya kargo faturalarının doğru olduğunu kanıtlamaz.
         <?php else: ?>
           Dikkat gerektiren kalemler tespit edildi:
           <ul style="margin:8px 0 0 18px">
@@ -259,7 +265,7 @@ require __DIR__ . '/../includes/header.php';
     </table>
   </div>
   <div class="card table-card" style="margin:16px 0">
-    <h2>Resmî kargo faturası kalemleri</h2>
+    <h2>Resmî kargo faturası kalemleri</h2><p><a class="btn-primary" href="kargo-kontrol.php">Fatura / paket bazlı kargo kontrolü</a></p>
     <p class="hint">Sipariş numarası ve kargo türüne göre gruplanmış son 100 kayıt grubu. Gönderi ve iade kargoları ayrı tutulur.</p>
     <table><tr><th>Sipariş no</th><th>Kargo türü</th><th>Kalem</th><th>Toplam desi</th><th>Fatura tutarı</th></tr>
     <?php foreach ($officialCargo as $row): ?>

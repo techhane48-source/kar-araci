@@ -39,9 +39,10 @@ jobs:
           php scripts/test-profit-targets.php
           php scripts/test-buybox-decision.php
           php scripts/test-catalog-alerts.php
+          php scripts/test-cargo-audit.php
           php scripts/test-calculator-matrix.php /tmp/karfiyat-calculator-matrix.json
           node scripts/test-calculator-parity.js /tmp/karfiyat-calculator-matrix.json
       - name: Isolated HTTP smoke test
         run: python3 scripts/test-http-smoke.py
       - name: JavaScript syntax
-        run: node --check public_html/assets/app.js
+        run: node --check public_html/assets/app.js && node --check crawler/crawl.js

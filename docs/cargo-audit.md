@@ -1,0 +1,6 @@
+# Cargo invoice audit and release gates
+
+Official reference: https://developers.trendyol.com/docs/kargo-faturas%C4%B1-detaylar%C4%B1 .
+DeductionInvoices cargo document ID is the invoice serial; parcelUniqueId is not shipmentPackageId. Compare only an exact invoice/parcel/type row; no invented allocation from a product dimension or current tariff. Expected billed desi and gross amount are seller-entered evidence, not verified carrier charges. Missing/foreign/duplicate data is not a clean result. Actual billed amount minus entered gross expectation is a review difference, not proof of overbilling. Return cargo is kept separate.
+
+Release gates: verify actual API payloads and scope with a read-only test store; check package splits and returns, real payment orders and bank deposits; use actual carrier contracts and fee VAT; compare authenticated Melontik results if available; test migration/backup and populated data. The crawler is now restricted to exact Trendyol hosts and retains Chrome sandbox; it may fail on pages needing blocked CDN resources. Run with an isolated egress-restricted service account; host allowlisting alone is not a full network sandbox. No live writes or deployment authorized.

@@ -269,6 +269,12 @@ function migrate(): void
         PRIMARY KEY(user_id, invoice_serial, row_number)
     )");
     $pdo->exec("CREATE INDEX IF NOT EXISTS idx_cargo_order ON trendyol_cargo_items(user_id, order_number)");
+    $pdo->exec("CREATE INDEX IF NOT EXISTS idx_cargo_parcel ON trendyol_cargo_items(user_id,invoice_serial,parcel_id,shipment_type)");
+    $pdo->exec("CREATE TABLE IF NOT EXISTS cargo_expectations (
+        user_id INTEGER NOT NULL,invoice_serial TEXT NOT NULL,parcel_id TEXT NOT NULL,shipment_type TEXT NOT NULL,
+        expected_desi REAL NOT NULL,expected_amount REAL,updated_at INTEGER NOT NULL,
+        PRIMARY KEY(user_id,invoice_serial,parcel_id,shipment_type)
+    )");
     // Legacy rows have no authoritative ID; keep them but do not count as verified finance.
     $settlementCols = array_column($pdo->query("PRAGMA table_info(settlements)")->fetchAll(PDO::FETCH_ASSOC), 'name');
     foreach (['external_id', 'query_type', 'payment_order_id','raw_json','finance_scope'] as $col) {

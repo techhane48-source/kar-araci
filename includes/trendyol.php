@@ -467,7 +467,8 @@ final class TrendyolClient
             if (!$body['content'] && $page < (int)$body['totalPages']) return ['ok'=>false,'error'=>'Kargo faturası eksik sayfa.'];
             foreach ($body['content'] as $row) {
                 if (!isset($row['parcelUniqueId'], $row['orderNumber'], $row['amount'], $row['desi'], $row['shipmentPackageType'])
-                    || !is_numeric($row['amount']) || !is_numeric($row['desi'])) return ['ok'=>false,'error'=>'Kargo fatura kalemi eksik.'];
+                    || !is_numeric($row['amount']) || !is_numeric($row['desi']) || !is_finite((float)$row['amount']) || !is_finite((float)$row['desi'])
+                    || (float)$row['amount']<0 || (float)$row['desi']<0 || (string)$row['parcelUniqueId']==='' || (string)$row['orderNumber']==='') return ['ok'=>false,'error'=>'Kargo fatura kalemi eksik.'];
                 $key=(string)$row['parcelUniqueId'].'|'.(string)$row['shipmentPackageType'];
                 if(isset($seen[$key]))return ['ok'=>false,'error'=>'Kargo faturasında yinelenen paket; manuel doğrulama gerekli.'];
                 $seen[$key]=true;$all[] = $row;

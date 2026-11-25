@@ -67,6 +67,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'add')
         $note = trim($_POST['note'] ?? '');
         if ($name === '' || $url === '') {
             flash_set('error', 'Ad ve URL zorunludur.');
+        } elseif(!tracker_url_allowed($url)) {
+            flash_set('error','Yalnızca doğrudan HTTPS Trendyol bağlantıları desteklenir.');
         } else {
             db()->prepare("INSERT INTO trackers (user_id, type, name, url, note) VALUES (?,?,?,?,?)")
                 ->execute([$u['id'], $type, $name, $url, $note]);
@@ -111,6 +113,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'check
 }
 
 // --- URL'den fiyat çekmeyi dene (best-effort; bot koruması olabilir) ---
+function tracker_url_allowed(string $url): bool
+{
+    $p=parse_url($url);
+    return is_array($p)&&($p['scheme']??'')==='https'&&in_array(strtolower((string)($p['host']??'')),['trendyol.com','www.trendyol.com'],true)
+        &&!isset($p['user'],$p['pass'])&&!isset($p['user'])&&!isset($p['pass'])&&!isset($p['port']);
+}
+
 function fetch_tracker_price(string $url): array
 {
     $parts = parse_url($url);
@@ -234,7 +243,7 @@ require __DIR__ . '/../includes/header.php';
         <tr>
           <td><?= h($t['name']) ?></td>
           <td><?= $t['type'] === 'store' ? 'Mağaza' : 'Ürün' ?></td>
-          <td style="font-size:12px"><a href="<?= h($t['url']) ?>" target="_blank" rel="noopener"><?= h(mb_strimwidth($t['url'], 0, 48, '…')) ?></a></td>
+          <td style="font-size:12px"><?php if(tracker_url_allowed($t['url'])): ?><a href="<?= h($t['url']) ?>" target="_blank" rel="noopener noreferrer"><?= h(mb_strimwidth($t['url'], 0, 48, '…')) ?></a><?php else: ?>Geçersiz bağlantı<?php endif; ?></td>
           <td><?= $t['last_price'] !== null ? tl((float)$t['last_price']) : '<span class="hint">—</span>' ?></td>
           <td style="font-size:12px">
             <?php $h3 = $history[$t['id']] ?? []; ?>

@@ -130,9 +130,13 @@ function load_order_evidence(PDO $db,int $uid,array $orderNumbers): array
             $q=$db->prepare($sql);$q->execute($args);
             while($r=$q->fetch())$groups[(string)$r['order_number']][$key][]=$r;
         }
+        $packages=[];
+        foreach($groups as $g)foreach($g['packages']??[] as $p)$packages[]=$p;
+        $overlaid=[];
+        foreach(cost_history_overlay($db,$uid,$packages) as $p)$overlaid[(string)$p['order_number']][]=$p;
         foreach($chunk as $n){
             $g=$groups[$n]??[];
-            if(!empty($g['packages']))$out[$n]=order_evidence(cost_history_overlay($db,$uid,$g['packages']),$g['settlements']??[],$g['cargo']??[],$g['claims']??[]);
+            if(!empty($overlaid[$n]))$out[$n]=order_evidence($overlaid[$n],$g['settlements']??[],$g['cargo']??[],$g['claims']??[]);
         }
     }
     return $out;

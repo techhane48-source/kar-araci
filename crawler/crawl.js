@@ -112,8 +112,17 @@ async function extract(page, trackerType) {
   }, trackerType);
 }
 
+function allowedTrackerUrl(raw) {
+  try { const u=new URL(raw);return u.protocol==='https:'&&['www.trendyol.com','trendyol.com'].includes(u.hostname)&&!u.username&&!u.password&&!u.port; } catch {return false;}
+}
 async function crawlTracker(db, browser, tracker) {
+  if(!allowedTrackerUrl(tracker.url)){console.log('[skip] unsupported URL');return;}
   const page = await browser.newPage();
+  await page.setRequestInterception(true);
+  page.on('request',request=>{
+    if(allowedTrackerUrl(request.url()))request.continue().catch(()=>{});
+    else request.abort().catch(()=>{});
+  });
   await page.setUserAgent(
     'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36'
   );
@@ -171,7 +180,7 @@ async function crawlAll(db) {
     browser = await puppeteer.launch({
       executablePath: chrome,
       headless: HEADLESS ? 'new' : false,
-      args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-gpu', '--disable-dev-shm-usage', '--lang=tr-TR'],
+      args: ['--disable-gpu', '--disable-dev-shm-usage', '--lang=tr-TR'],
     });
   } catch (e) {
     console.error('[crawler] tarayıcı başlatılamadı:', e.message);
