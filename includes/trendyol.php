@@ -296,7 +296,7 @@ final class TrendyolClient
      * @param string $startDate      Y-m-d (işlem tarihi; paymentDate yoksa zorunlu, aralık ≤15 gün)
      * @param string $endDate        Y-m-d
      */
-    public function getSettlements(string $transactionType, string $startDate = '', string $endDate = '', int $maxPage = 2000, string $source = 'settlements'): array
+    public function getSettlements(string $transactionType, string $startDate = '', string $endDate = '', int $maxPage = 2000, string $source = 'settlements', ?string $paymentOrderId = null): array
     {
         $all = [];
         $page = 0;
@@ -304,9 +304,16 @@ final class TrendyolClient
         if (!in_array($source, ['settlements', 'otherfinancials'], true)) return ['ok'=>false,'error'=>'Geçersiz finans servisi.'];
 
         while (true) {
-            $params = ['page' => (string)$page, 'size' => (string)$size, 'transactionType' => $transactionType];
-            if ($startDate !== '') $params['startDate'] = strtotime($startDate) * 1000;
-            if ($endDate !== '') $params['endDate'] = strtotime($endDate) * 1000 + 999;
+            $params = ['page'=>(string)$page,'size'=>(string)$size,'transactionType'=>$transactionType,'supplierId'=>$this->sellerId];
+            if ($paymentOrderId !== null) {
+                if (!ctype_digit($paymentOrderId)) return ['ok'=>false,'error'=>'Geçersiz ödeme emri.'];
+                $params['paymentOrderId']=$paymentOrderId;
+            } else {
+                $start=strtotime($startDate); $end=strtotime($endDate);
+                if ($start===false || $end===false || $start>$end || $end-$start>=15*86400)
+                    return ['ok'=>false,'error'=>'Geçersiz finans tarih aralığı.'];
+                $params['startDate']=$start*1000; $params['endDate']=$end*1000+999;
+            }
 
             $res = $this->request('GET', "/integration/finance/che/sellers/{$this->sellerId}/{$source}", $params);
 
@@ -357,6 +364,25 @@ final class TrendyolClient
         }
 
         return ['ok' => true, 'settlements' => $all, 'count' => count($all)];
+    }
+
+    /** Official PAID payment orders. Caller selects an ID, not an order date. */
+    public function getPaymentOrders(int $page = 0): array
+    {
+        $res=$this->request('GET', "/integration/finance/che/sellers/{$this->sellerId}/payment-order",
+            ['page'=>(string)max(0,$page),'size'=>'10']);
+        $body=$res['body']??null;
+        if (($res['http']??0)!==200 || !is_array($body['content']??null) || !isset($body['totalPages']))
+            return ['ok'=>false,'error'=>'Ödeme emirleri alınamadı.'];
+        $items=[];
+        foreach($body['content'] as $row) {
+            if (!ctype_digit((string)($row['id']??'')) || ($row['status']??'')!=='PAID'
+                || !is_numeric($row['amount']??null) || !is_numeric($row['payoutDate']??null))
+                return ['ok'=>false,'error'=>'Ödeme emri verisi eksik.'];
+            if ((string)($row['sellerId']??'')!==$this->sellerId) return ['ok'=>false,'error'=>'Ödeme emri satıcı kimliği uyuşmuyor.'];
+            $items[]=$row;
+        }
+        return ['ok'=>true,'items'=>$items,'totalPages'=>(int)$body['totalPages']];
     }
 
     /** Read actual invoice rows; no guessed allocation to shipment packages. */

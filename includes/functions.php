@@ -286,12 +286,36 @@ function sync_orders(int $userId, string $marketplace, int $days = 7): array
                             status = excluded.status, total_price = excluded.total_price, order_date = excluded.order_date, lines = excluded.lines");
 
     $count = 0;
+    $db = db();
+    $products = $db->prepare("SELECT barcode,cost,COALESCE(cost_vat,kdv) AS purchase_vat FROM products WHERE user_id=? AND marketplace=? AND cost>0 AND barcode!=''");
+    $products->execute([$userId,$marketplace]);
+    $costs=[];foreach($products->fetchAll() as $row) $costs[$row['barcode']]=$row;
+    $snapIns=$db->prepare("INSERT OR IGNORE INTO order_cost_snapshots(user_id,marketplace,package_number,line_key,barcode,cost,cost_vat,observed_at) VALUES(?,?,?,?,?,?,?,?)");
+    $snapGet=$db->prepare("SELECT barcode,cost,cost_vat,observed_at FROM order_cost_snapshots WHERE user_id=? AND marketplace=? AND package_number=? AND line_key=?");
+    $db->beginTransaction();
+    try {
     foreach ($res['orders'] as $o) {
         $ts = $o['orderDate'] ?? 0;
-        if (is_string($ts)) $ts = strtotime($ts) ?: 0;
+        if (is_string($ts) && !is_numeric($ts)) $ts = strtotime($ts) ?: 0;
         $ts = (int)$ts;
         if ($ts > 100000000000) $ts = (int)($ts / 1000); // milisaniye -> saniye
-        if ($ts <= 0) return ['ok'=>false,'error'=>'Geçersiz sipariş tarihi.'];
+        if ($ts <= 0) throw new RuntimeException('Geçersiz sipariş tarihi.');
+        $lines=$o['lines']??[];
+        foreach ($lines as &$line) {
+            $key=(string)($line['line_id']??'');
+            $barcode=(string)($line['barcode']??'');
+            if ($key==='' || $barcode==='') continue;
+            $c=$costs[$barcode]??null;
+            $args=[$userId,$marketplace,(string)$o['packageNumber'],$key];
+            if ($c) $snapIns->execute(array_merge($args,[$barcode,(float)$c['cost'],(float)$c['purchase_vat'],time()]));
+            $snapGet->execute($args);$snap=$snapGet->fetch();
+            if($snap && $snap['barcode']===$barcode) {
+                $line['cost_snapshot']=(float)$snap['cost'];
+                $line['cost_vat_snapshot']=(float)$snap['cost_vat'];
+                $line['cost_observed_at']=(int)$snap['observed_at'];
+            }
+        }
+        unset($line);
         $ins->execute([
             $userId, $marketplace,
             (string)($o['orderNumber'] ?? ''),
@@ -300,12 +324,17 @@ function sync_orders(int $userId, string $marketplace, int $days = 7): array
             (string)($o['customerName'] ?? ''),
             (float)($o['totalPrice'] ?? 0),
             $ts,
-            json_encode($o['lines'] ?? [], JSON_UNESCAPED_UNICODE),
+            json_encode($lines, JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR),
         ]);
         $count++;
     }
-    db()->prepare("UPDATE integrations SET last_orders_sync = ? WHERE user_id = ? AND marketplace = ?")
+    $db->prepare("UPDATE integrations SET last_orders_sync = ? WHERE user_id = ? AND marketplace = ?")
         ->execute([time(), $userId, $marketplace]);
+    $db->commit();
+    } catch (Throwable $e) {
+        if ($db->inTransaction()) $db->rollBack();
+        return ['ok'=>false,'error'=>'Sipariş verileri kaydedilemedi.'];
+    }
     return ['ok' => true, 'count' => $count];
 }
 
@@ -450,4 +479,46 @@ function sync_trendyol_documents(int $userId, int $days = 30): array
         }
     }
     return ['ok'=>true,'documents'=>$count,'invoices'=>count($invoices),'cargo_items'=>$cargoCount];
+}
+
+/** Fetch one payout page and persist it under the connected seller. */
+function sync_trendyol_payout_page(int $userId,int $page=0): array
+{
+    $int=get_integration($userId,'trendyol');
+    if(!$int)return ['ok'=>false,'error'=>'Trendyol mağazası bağlı değil.'];
+    $res=integration_client($int)->getPaymentOrders($page);
+    if(!$res['ok'])return $res;
+    $st=db()->prepare("INSERT INTO trendyol_payouts(user_id,seller_id,payment_order_id,payout_date,amount,raw_json)
+        VALUES(?,?,?,?,?,?) ON CONFLICT(user_id,seller_id,payment_order_id) DO UPDATE SET
+        payout_date=excluded.payout_date,amount=excluded.amount,raw_json=excluded.raw_json");
+    foreach($res['items'] as $row) $st->execute([$userId,$int['seller_id'],(string)$row['id'],intdiv((int)$row['payoutDate'],1000),
+        (float)$row['amount'],json_encode($row,JSON_THROW_ON_ERROR|JSON_UNESCAPED_UNICODE)]);
+    return ['ok'=>true,'count'=>count($res['items']),'totalPages'=>$res['totalPages']];
+}
+function check_trendyol_payout(int $userId,string $id): array
+{
+    $int=get_integration($userId,'trendyol');
+    if(!$int)return ['ok'=>false,'error'=>'Trendyol mağazası bağlı değil.'];
+    $q=db()->prepare("SELECT * FROM trendyol_payouts WHERE user_id=? AND seller_id=? AND payment_order_id=?");
+    $q->execute([$userId,$int['seller_id'],$id]);$payout=$q->fetch();
+    if(!$payout)return ['ok'=>false,'error'=>'Ödeme emri bulunamadı.'];
+    if (date('Y-m-d',(int)$payout['payout_date'])>=date('Y-m-d'))
+        return ['ok'=>false,'error'=>'Trendyol finans kayıtlarının güncellenmesi için ödeme gününün geçmesi gerekir.'];
+    $client=integration_client($int);$rows=['settlements'=>[],'otherfinancials'=>[]];
+    $types=['settlements'=>['Sale','Return','Discount','DiscountCancel','Coupon','CouponCancel','ProvisionPositive','ProvisionNegative',
+        'ManualRefund','ManualRefundCancel','TyDiscount','TyDiscountCancel','TyCoupon','TyCouponCancel','SellerRevenuePositive','SellerRevenueNegative',
+        'CommissionPositive','CommissionNegative','SellerRevenuePositiveCancel','SellerRevenueNegativeCancel','CommissionPositiveCancel',
+        'CommissionNegativeCancel','DeliveryFee','DeliveryFeeCancel','PayByLink'],
+        'otherfinancials'=>['Stoppage','CashAdvance','WireTransfer','IncomingTransfer','ReturnInvoice','CommissionAgreementInvoice','PaymentOrder','DeductionInvoices','FinancialItem']];
+    foreach($types as $source=>$list) foreach($list as $type) {
+        $res=$client->getSettlements($type,'','',2000,$source,$id);
+        if(!$res['ok'])return ['ok'=>false,'error'=>$type.': '.($res['error']??'Veri eksik')];
+        foreach($res['settlements'] as $r) $rows[$source][]=$r;
+        usleep(650000);
+    }
+    try {$summary=payout_components($rows['settlements'],$rows['otherfinancials'],$id);}
+    catch(InvalidArgumentException $e){return ['ok'=>false,'error'=>$e->getMessage()];}
+    db()->prepare("UPDATE trendyol_payouts SET summary_json=?,checked_at=? WHERE user_id=? AND seller_id=? AND payment_order_id=?")
+        ->execute([json_encode($summary,JSON_THROW_ON_ERROR|JSON_UNESCAPED_UNICODE),time(),$userId,$int['seller_id'],$id]);
+    return ['ok'=>true,'summary'=>$summary];
 }

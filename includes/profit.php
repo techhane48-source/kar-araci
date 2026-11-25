@@ -158,15 +158,15 @@ function calc_order_profit(array $order, array $byBarcode): array
         if ($qty<=0 || !isset($line['price']) || !is_numeric($line['price'])) return $fail('Satır fiyatı/adedi eksik.');
         if (!order_is_active_sale($line)) return $fail('Kısmi iptal/iade: finansal kayıt bekleniyor.');
         $product=$byBarcode[$line['barcode']??'']??null;
-        if (!$product || (float)$product['cost']<=0) return $fail('Ürün maliyeti eksik.');
+        if (!$product || (float)($line['cost_snapshot'] ?? $product['cost'] ?? 0)<=0) return $fail('Ürün maliyeti eksik.');
         // Invoice net is not seller settlement. Platform-funded discounts require reconciliation.
         if (abs((float)($line['platform_discount']??0))>0.005) return $fail('Trendyol katkılı indirim: finansal kayıt bekleniyor.');
         $lineSale=(float)$line['price']*$qty;
         $rate=(float)($line['commission_rate']??$product['rate']??-1);
         $vat=(float)($line['vat_rate']??$product['kdv']??-1);
-        $purchaseVat=(float)($product['cost_vat']??$product['kdv']??-1);
+        $purchaseVat=(float)($line['cost_vat_snapshot']??$product['cost_vat']??$product['kdv']??-1);
         if ($rate<0||$rate>100||$vat<0||$vat>100||$purchaseVat<0||$purchaseVat>100||$lineSale<0) return $fail('Komisyon/KDV verisi geçersiz.');
-        $lineCost=(float)$product['cost']*$qty;
+        $lineCost=(float)($line['cost_snapshot']??$product['cost'])*$qty;
         $sum+=$lineSale; $cost+=$lineCost;
         // Product cargo is a forecast; multi-line package fee allocation is not verified.
         $cargo+=(float)($product['cargo']??0);
@@ -219,4 +219,39 @@ function product_target_price(array $product, float $targetProfit, float $target
     return calc_price((float)$product['cost'],(float)($product['cargo']??0),(float)$product['rate'],
         (float)($product['kdv']??20),(float)($product['extra_fee']??0),(float)($product['service_fee']??0),
         (float)($product['stopaj_rate']??1),(float)($product['return_rate']??0),$targetProfit,$targetMargin,$options);
+}
+
+/** Raw payout components; do not infer a bank balance or net profit from incomplete accounting semantics. */
+function payout_components(array $settlements, array $financials, string $paymentId): array
+{
+    $result=['settlement_rows'=>0,'document_rows'=>0,'settlement_credit'=>0.0,'settlement_debt'=>0.0,
+        'documents_credit'=>0.0,'documents_debt'=>0.0,'reported_payment'=>0.0,'by_type'=>[]];
+    foreach (['settlements'=>$settlements,'otherfinancials'=>$financials] as $source=>$rows) {
+        $seen=[];
+        foreach($rows as $r) {
+            $id=(string)($r['externalId']??'');
+            if ($id==='' || (string)($r['paymentOrderId']??'')!==$paymentId)
+                throw new InvalidArgumentException('Ödeme emriyle eşleşmeyen finansal kayıt.');
+            if(isset($seen[$id])) continue;
+            $seen[$id]=true;
+            $raw=$r['raw']??[];
+            if (!is_numeric($raw['credit']??null)||!is_numeric($raw['debt']??null))
+                throw new InvalidArgumentException('Finansal borç/alacak eksik.');
+            $credit=(float)$raw['credit'];$debt=(float)$raw['debt'];
+            $type=(string)($r['queryType']??'');
+            $key=$source.':'.$type;
+            if (!isset($result['by_type'][$key])) $result['by_type'][$key]=['count'=>0,'credit'=>0.0,'debt'=>0.0];
+            $result['by_type'][$key]['count']++;
+            $result['by_type'][$key]['credit']+=$credit;
+            $result['by_type'][$key]['debt']+=$debt;
+            if($source==='settlements') {
+                $result['settlement_rows']++; $result['settlement_credit']+=$credit; $result['settlement_debt']+=$debt;
+            } else {
+                $result['document_rows']++;
+                if($type==='PaymentOrder') $result['reported_payment']+=$debt-$credit;
+                else {$result['documents_credit']+=$credit;$result['documents_debt']+=$debt;}
+            }
+        }
+    }
+    return $result;
 }

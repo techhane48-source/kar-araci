@@ -45,7 +45,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'save_
 $hakedisResult = null;
 $officialCargo = [];
 $officialPayments = [];
+$payouts=[]; $payoutPage=max(0,(int)($_POST['payout_page']??$_GET['payout_page']??0));
+$payoutMessage=null;
+if ($mp==='trendyol' && $_SERVER['REQUEST_METHOD']==='POST' && in_array($_POST['action']??'',['payout_list','payout_check'],true)) {
+    if (!csrf_verify($_POST['csrf']??'')) $payoutMessage='Oturum süresi doldu.';
+    else {
+        set_time_limit(0);
+        $r=($_POST['action']==='payout_list')?sync_trendyol_payout_page((int)$u['id'],$payoutPage):
+            check_trendyol_payout((int)$u['id'],(string)($_POST['payment_id']??''));
+        $payoutMessage=$r['ok']?'Resmî kayıtlar alındı.':($r['error']??'Sorgu tamamlanmadı.');
+    }
+}
 if ($mp === 'trendyol') {
+    $integration=get_integration((int)$u['id'],'trendyol');
+    if($integration) {
+        $st=db()->prepare("SELECT * FROM trendyol_payouts WHERE user_id=? AND seller_id=? ORDER BY payout_date DESC LIMIT 100");
+        $st->execute([$u['id'],$integration['seller_id']]);$payouts=$st->fetchAll();
+    }
     $cq = db()->prepare("SELECT order_number, shipment_type, COUNT(*) AS kalem, SUM(amount) AS tutar, SUM(desi) AS desi FROM trendyol_cargo_items WHERE user_id=? GROUP BY order_number, shipment_type ORDER BY order_number DESC LIMIT 100");
     $cq->execute([$u['id']]); $officialCargo = $cq->fetchAll();
     $pq = db()->prepare("SELECT payment_order_id, transaction_date, raw_json FROM trendyol_financial_documents WHERE user_id=? AND query_type='PaymentOrder' ORDER BY transaction_date DESC LIMIT 100");
@@ -212,8 +228,20 @@ require __DIR__ . '/../includes/header.php';
 </div>
 <?php if ($mp === 'trendyol'): ?>
 <div class="wrap">
+<div class="card table-card" style="margin:16px 0">
+<h2>Ödeme emri bazlı finans kontrolü</h2>
+<p class="hint">Ödeme emrini seçerek ilgili tüm finansal işlem türlerini sorgulayın. Alacak ve borç kalemleri ayrı gösterilir; bunlar banka mutabakatı veya kesin net kâr değildir.</p>
+<?php if($payoutMessage!==null): ?><p><?= h($payoutMessage) ?></p><?php endif; ?>
+<form method="post"><input type="hidden" name="csrf" value="<?= h(csrf_token()) ?>"><input type="hidden" name="mp" value="trendyol"><input type="hidden" name="tab" value="hakedis"><input type="hidden" name="action" value="payout_list"><label>API sayfası (0'dan başlar) <input type="number" name="payout_page" min="0" value="<?= $payoutPage ?>"></label><button>Ödeme emirlerini çek</button></form>
+<table><tr><th>Ödeme emri</th><th>Ödeme tarihi</th><th>Resmî tutar</th><th>Finansal detay</th></tr>
+<?php foreach($payouts as $po): $summary=json_decode($po['summary_json']??'null',true); ?>
+<tr><td><?= h($po['payment_order_id']) ?></td><td><?= date('d.m.Y',(int)$po['payout_date']) ?></td><td><?= tl((float)$po['amount']) ?></td><td>
+<form method="post"><input type="hidden" name="csrf" value="<?= h(csrf_token()) ?>"><input type="hidden" name="mp" value="trendyol"><input type="hidden" name="tab" value="hakedis"><input type="hidden" name="action" value="payout_check"><input type="hidden" name="payment_id" value="<?= h($po['payment_order_id']) ?>"><button>Kalemleri sorgula</button></form>
+<?php if(is_array($summary)): ?><details><summary><?= (int)$summary['settlement_rows']+(int)$summary['document_rows'] ?> işlem</summary>
+<table><tr><th>İşlem</th><th>Alacak</th><th>Borç</th></tr><?php foreach($summary['by_type'] as $kind=>$v): ?><tr><td><?= h($kind) ?></td><td><?= tl((float)$v['credit']) ?></td><td><?= tl((float)$v['debt']) ?></td></tr><?php endforeach; ?></table></details><?php endif; ?>
+</td></tr><?php endforeach; ?></table></div>
   <div class="card table-card" style="margin:16px 0">
-    <h2>Resmî Trendyol ödeme emirleri</h2>
+    <h2>Resmî Trendyol ödeme kayıtları (cari ekstre)</h2>
     <p class="hint">Mağaza Bağlama ekranındaki cari hesap senkronundan alınır. Bu kayıtlar tek başına net kâr veya kesin banka mutabakatı değildir.</p>
     <table><tr><th>Ödeme emri</th><th>İşlem tarihi</th><th>Ödeme kaydı</th></tr>
     <?php foreach ($officialPayments as $payment): $raw=json_decode($payment['raw_json'],true) ?: []; ?>

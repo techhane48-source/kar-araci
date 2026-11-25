@@ -171,6 +171,17 @@ function migrate(): void
         created_at TEXT NOT NULL DEFAULT (datetime('now'))
     )");
     $pdo->exec("CREATE INDEX IF NOT EXISTS idx_settlements_user ON settlements(user_id, transaction_date)");
+    $pdo->exec("CREATE TABLE IF NOT EXISTS trendyol_payouts (
+        user_id INTEGER NOT NULL, seller_id TEXT NOT NULL, payment_order_id TEXT NOT NULL,
+        payout_date INTEGER NOT NULL, amount REAL NOT NULL, raw_json TEXT NOT NULL,
+        summary_json TEXT DEFAULT NULL, checked_at INTEGER DEFAULT NULL,
+        PRIMARY KEY(user_id,seller_id,payment_order_id)
+    )");
+    $pdo->exec("CREATE TABLE IF NOT EXISTS order_cost_snapshots (
+        user_id INTEGER NOT NULL, marketplace TEXT NOT NULL, package_number TEXT NOT NULL,
+        line_key TEXT NOT NULL, barcode TEXT NOT NULL, cost REAL NOT NULL, cost_vat REAL NOT NULL,
+        observed_at INTEGER NOT NULL, PRIMARY KEY(user_id,marketplace,package_number,line_key)
+    )");
     $pdo->exec("CREATE TABLE IF NOT EXISTS trendyol_price_requests (
         user_id INTEGER NOT NULL, batch_id TEXT NOT NULL, seller_id TEXT NOT NULL,
         barcode TEXT NOT NULL, sale_price REAL NOT NULL, list_price REAL NOT NULL,
