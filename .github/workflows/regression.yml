@@ -27,5 +27,6 @@ jobs:
           php scripts/test-product-profit.php
           php scripts/test-payout.php
           php scripts/test-db-safety.php
+          php scripts/test-api-contract.php
       - name: JavaScript syntax
         run: node --check public_html/assets/app.js

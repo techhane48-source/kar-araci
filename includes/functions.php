@@ -329,8 +329,9 @@ function sync_orders_unlocked(int $userId, string $marketplace, int $days = 7): 
         return ['ok' => false, 'error' => marketplace_label($marketplace) . ' için sipariş senkronu desteklenmiyor.'];
     }
 
-    $start = date('c', time() - $days * 86400);
-    $res = $client->getOrders('', $start, '');
+    $started=time();
+    $start = date('c', $started - max(1,min(89,$days)) * 86400);
+    $res = $client->getOrders('', $start, date('c',$started));
     if (!$res['ok']) return $res;
 
     foreach ($res['orders'] as $o) {
@@ -339,10 +340,12 @@ function sync_orders_unlocked(int $userId, string $marketplace, int $days = 7): 
             return ['ok'=>false,'error'=>'Sipariş kimliği veya tarihi eksik; veri kaydedilmedi.'];
         }
     }
-    $ins = db()->prepare("INSERT INTO orders (user_id, marketplace, order_number, package_number, status, customer_name, total_price, order_date, lines)
-                          VALUES (?,?,?,?,?,?,?,?,?)
+    $ins = db()->prepare("INSERT INTO orders (user_id, marketplace, order_number, package_number, status, customer_name, total_price, order_date, lines, currency_code, country_code, last_modified_ms)
+                          VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
                           ON CONFLICT(user_id, marketplace, package_number) DO UPDATE SET
-                            status = excluded.status, total_price = excluded.total_price, order_date = excluded.order_date, lines = excluded.lines");
+                            status = excluded.status, total_price = excluded.total_price, order_date = excluded.order_date, lines = excluded.lines,
+                            currency_code=excluded.currency_code,country_code=excluded.country_code,last_modified_ms=excluded.last_modified_ms
+                          WHERE excluded.last_modified_ms >= orders.last_modified_ms");
 
     $count = 0;
     $db = db();
@@ -380,10 +383,13 @@ function sync_orders_unlocked(int $userId, string $marketplace, int $days = 7): 
             (string)($o['orderNumber'] ?? ''),
             (string)($o['packageNumber'] ?? ''),
             (string)($o['status'] ?? ''),
-            (string)($o['customerName'] ?? ''),
+            '', // Financial analytics do not require customer names.
             (float)($o['totalPrice'] ?? 0),
             $ts,
             json_encode($lines, JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR),
+            isset($o['currencyCode']) ? strtoupper((string)$o['currencyCode']) : null,
+            isset($o['orderCountryCode']) ? strtoupper((string)$o['orderCountryCode']) : null,
+            (int)($o['lastModifiedDate'] ?? 0),
         ]);
         $count++;
     }

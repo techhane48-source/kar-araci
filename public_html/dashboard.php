@@ -128,6 +128,7 @@ require __DIR__ . '/../includes/header.php';
     <div class="kpi"><div class="k-label">Tahmini Net Kâr / Maliyet</div><div class="k-value <?= $karMaliyet < 0 ? 'neg' : '' ?>">%<?= number_format($karMaliyet, 1, ',', '.') ?></div></div>
   </div>
 
+  <?php $excludedCurrency=count(array_filter($orders,static fn($o)=>!order_is_domestic_try($o))); if($excludedCurrency): ?><p class="hint"><?= $excludedCurrency ?> paket ülke/para birimi doğrulanmadığından TL cirosuna dahil edilmedi. Eski kayıtları tekrar senkronize edin.</p><?php endif; ?>
   <?php if ($maliyetliCiro < $ciro): ?>
     <p class="hint" style="margin:8px 0">
       <?= tl($ciro - $maliyetliCiro) ?> ciro <?= $siparis - $maliyetliSiparis ?> siparişte kâr hesaplanamadı — bu ürünlere <a href="urunler.php">maliyet gir</a>.

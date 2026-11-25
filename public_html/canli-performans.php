@@ -71,7 +71,7 @@ $todayStart = strtotime('today');
 $yesterdayStart = $todayStart - 86400;
 $now = time();
 
-$today = ['sale' => 0.0, 'profit' => 0.0, 'count' => 0, 'profitCount' => 0];
+$today = ['sale' => 0.0, 'profit' => 0.0, 'count' => 0, 'profitCount' => 0, 'profitSale'=>0.0];
 $yesterday = ['sale' => 0.0, 'profit' => 0.0, 'count' => 0];
 $hourly = array_fill(0, 24, ['sale' => 0.0, 'profit' => 0.0, 'count' => 0]);
 $week = []; // dayKey (Y-m-d) => [sale, profit, count]
@@ -99,6 +99,7 @@ foreach ($orders as $o) {
         if ($pr['ok']) {
             $today['profit'] += $profit;
             $today['profitCount']++;
+            $today['profitSale'] += $sale;
             $hourly[$hour]['profit'] += $profit;
         }
     } elseif ($day >= $yesterdayStart) {
@@ -109,7 +110,8 @@ foreach ($orders as $o) {
 }
 
 $deltaSale = $yesterday['sale'] > 0 ? ($today['sale'] - $yesterday['sale']) / $yesterday['sale'] * 100 : null;
-$avgMargin = $today['profitCount'] > 0 && $today['sale'] > 0 ? $today['profit'] / $today['sale'] * 100 : 0.0;
+$avgMargin = $today['profitSale'] > 0 ? $today['profit'] / $today['profitSale'] * 100 : null;
+$excludedCurrency = count(array_filter($orders, static fn($o)=>!order_is_domestic_try($o)));
 
 $pageTitle = 'Canlı Performans — ' . APP_NAME;
 require __DIR__ . '/../includes/header.php';
@@ -134,13 +136,14 @@ require __DIR__ . '/../includes/header.php';
   <p class="hint">Son başarılı sipariş senkronu: <?= $lastOrdersSync > 0 ? date("d.m.Y H:i", $lastOrdersSync) : "Henüz yok" ?><?= $lastOrdersSync > 0 && $lastOrdersSync < time()-900 ? " — veriler eski olabilir" : "" ?>.</p>
   <div class="kpi-row">
     <div class="kpi"><div class="k-label">Bugün Satış</div><div class="k-value"><?= tl($today['sale']) ?></div></div>
-    <div class="kpi"><div class="k-label">Bugün Tahmini Kâr</div><div class="k-value <?= $today['profit'] < 0 ? 'neg' : '' ?>"><?= tl($today['profit']) ?></div></div>
+    <div class="kpi"><div class="k-label">Bugün Tahmini Kâr</div><div class="k-value <?= $today['profit'] < 0 ? 'neg' : '' ?>"><?= $today['profitCount'] > 0 ? tl($today['profit']) : '—' ?></div></div>
     <div class="kpi"><div class="k-label">Sipariş</div><div class="k-value"><?= $today['count'] ?></div></div>
-    <div class="kpi"><div class="k-label">Ort. Kâr Marjı</div><div class="k-value">%<?= number_format($avgMargin, 1, ',', '.') ?></div></div>
+    <div class="kpi"><div class="k-label">Ort. Kâr Marjı</div><div class="k-value"><?= $avgMargin === null ? '—' : '%'.number_format($avgMargin,1,',','.') ?></div></div>
   </div>
 
+  <p class="hint">Kâr kapsamı: <?= $today['profitCount'] ?>/<?= $today['count'] ?> sipariş; <?= tl($today['profitSale']) ?> ciro. <?= $excludedCurrency ?> paket ülke/para birimi doğrulaması dışında. Eski kayıtlar için yeniden senkron gerekir.</p>
   <?php if ($deltaSale !== null): ?>
-    <p class="hint" style="margin:8px 0">Dünün aynı dönemine göre satış <b class="<?= $deltaSale >= 0 ? 'pos' : 'neg' ?>">%<?= number_format($deltaSale, 1, ',', '.') ?></b> (dün <?= tl($yesterday['sale']) ?>).</p>
+    <p class="hint" style="margin:8px 0">Dünün tamamına göre bugünkü satış <b class="<?= $deltaSale >= 0 ? 'pos' : 'neg' ?>">%<?= number_format($deltaSale, 1, ',', '.') ?></b> (dün <?= tl($yesterday['sale']) ?>).</p>
   <?php endif; ?>
 
   <div class="card table-card" style="margin:16px 0">
@@ -239,7 +242,7 @@ require __DIR__ . '/../includes/header.php';
         <tr>
           <td style="font-size:12px"><?= h($o['order_number'] ?: $o['package_number'] ?: '—') ?></td>
           <td style="font-size:12px"><?= date('d.m H:i', (int)$o['order_date']) ?></td>
-          <td><?= tl((float)$o['total_price']) ?></td>
+          <td><?= order_is_domestic_try($o) ? tl((float)$o['total_price']) : h((string)($o['currency_code'] ?? 'Belirsiz')) . ' ' . number_format((float)$o['total_price'],2,',','.') ?></td>
           <td>
             <?php if ($pr['ok']): ?><span class="<?= $pr['profit'] < 0 ? 'neg' : 'pos' ?>"><?= tl($pr['profit']) ?></span>
             <?php else: ?><span class="hint"><?= h($pr['reason'] ?? 'Veri eksik') ?></span><?php endif; ?>

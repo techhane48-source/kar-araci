@@ -128,6 +128,10 @@ function migrate(): void
         UNIQUE(user_id, marketplace, package_number)
     )");
     $pdo->exec("CREATE INDEX IF NOT EXISTS idx_orders_user_date ON orders(user_id, order_date)");
+    $orderCols=array_column($pdo->query("PRAGMA table_info(orders)")->fetchAll(PDO::FETCH_ASSOC),'name');
+    foreach (['currency_code'=>'TEXT DEFAULT NULL','country_code'=>'TEXT DEFAULT NULL','last_modified_ms'=>'INTEGER NOT NULL DEFAULT 0'] as $col=>$definition) {
+        if(!in_array($col,$orderCols,true)) $pdo->exec("ALTER TABLE orders ADD COLUMN $col $definition");
+    }
 
     $pdo->exec("CREATE TABLE IF NOT EXISTS trackers (
         id INTEGER PRIMARY KEY AUTOINCREMENT,

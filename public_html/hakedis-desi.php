@@ -73,7 +73,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'check
     } else {
         $entered = (float)($_POST['hakedis_satis'] ?? 0);
         // Son 30 gün senkron sipariş toplamı
-        $q = db()->prepare("SELECT COALESCE(SUM(total_price),0) FROM orders WHERE user_id = ? AND marketplace = ? AND order_date >= ?");
+        $q = db()->prepare("SELECT COALESCE(SUM(total_price),0) FROM orders WHERE user_id = ? AND marketplace = ? AND order_date >= ? AND (marketplace!='trendyol' OR (currency_code='TRY' AND country_code='TR')) AND LOWER(status) NOT IN ('cancelled','canceled','unsupplied','returned','undelivered','unpacked')");
         $q->execute([$u['id'], $mp, time() - 30 * 86400]);
         $synced = (float)$q->fetchColumn();
 

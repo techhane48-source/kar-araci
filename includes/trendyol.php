@@ -16,14 +16,17 @@ final class TrendyolClient
     private string $apiKey;
     private string $apiSecret;
     private string $base;
+    private ?Closure $testTransport;
 
     // Üretim ortamı (varsayılan). Test için stageapigw kullanılabilir.
     public const PROD = 'https://apigw.trendyol.com';
     public const STAGE = 'https://stageapigw.trendyol.com';
 
-    public function __construct(string $sellerId, string $apiKey, string $apiSecret, bool $stage = false)
+    public function __construct(string $sellerId, string $apiKey, string $apiSecret, bool $stage = false, ?Closure $testTransport = null)
     {
         $this->sellerId = trim($sellerId);
+        if (!ctype_digit($this->sellerId)) throw new InvalidArgumentException('Geçersiz satıcı ID.');
+        $this->testTransport = $testTransport;
         $this->apiKey = trim($apiKey);
         $this->apiSecret = trim($apiSecret);
         $this->base = $stage ? self::STAGE : self::PROD;
@@ -37,31 +40,13 @@ final class TrendyolClient
     {
         // 1 adet ürün isteyip auth'un doğruluğunu sınamak en ucuz yoldur.
         $res = $this->request('GET', "/integration/product/sellers/{$this->sellerId}/products/approved", ['size' => '1']);
-        if (isset($res['http']) && $res['http'] === 200) {
+        if (($res['http'] ?? 0) === 200 && is_array($res['body']['content'] ?? null)) {
             return ['ok' => true, 'sellerName' => null];
         }
 
         if (isset($res['http']) && $res['http'] === 401) {
-            // Ortam uyuşmazlığı olabilir (test kimliği üretimde / üretim kimliği testte).
-            // Diğer ortamı da dene; o tutuyorsa nedeni budur.
-            $otherBase = ($this->base === self::PROD) ? self::STAGE : self::PROD;
-            $saved = $this->base;
-            $this->base = $otherBase;
-            $res2 = $this->request('GET', "/integration/product/sellers/{$this->sellerId}/products/approved", ['size' => '1']);
-            $this->base = $saved;
-
-            if (isset($res2['http']) && $res2['http'] === 200) {
-                if ($otherBase === self::STAGE) {
-                    return ['ok' => false, 'error' => "Kimlik bilgileriniz DOĞRU ama bu bir TEST (stage) kimliği. Bağlantı formundaki \"Test ortamı\" kutusunu İŞARETLEYİN."];
-                }
-                return ['ok' => false, 'error' => "Kimlik bilgileriniz DOĞRU ama bu bir ÜRETİM kimliği. \"Test ortamı\" kutusunu KALDIRIN."];
-            }
-
-            $detail = '';
-            if (!empty($res['raw'])) {
-                $detail = ' Yanıt: ' . mb_substr(trim((string)$res['raw']), 0, 400);
-            }
-            return ['ok' => false, 'error' => 'Kimlik bilgileri hatalı (401). Satıcı ID / API key / API secret değerlerini kontrol edin (her iki ortam da reddetti).' . $detail];
+            // Never submit a credential to another environment without the user's choice.
+            return ['ok'=>false,'error'=>'Kimlik doğrulanamadı. Satıcı ID, API bilgileri ve seçilen ortamı kontrol edin.'];
         }
         return ['ok' => false, 'error' => ($res['error'] ?? 'Bilinmeyen hata') . " (HTTP {$res['http']})"];
     }
@@ -221,8 +206,10 @@ final class TrendyolClient
                 foreach ($items as $it) {
                     $pkg = (string)($it['shipmentPackageId'] ?? ($it['id'] ?? ''));
                     if ($pkg === '') return ['ok' => false, 'error' => 'Sipariş paket kimliği eksik.'];
-                    if (isset($seen[$pkg])) continue; // parça sınırında tekrar etmesin
-                    $seen[$pkg] = true;
+                    $modified = $it['lastModifiedDate'] ?? null;
+                    if (!is_numeric($modified) || (float)$modified <= 0) return ['ok'=>false,'error'=>'Sipariş güncelleme tarihi eksik.'];
+                    if (isset($seen[$pkg]) && $seen[$pkg] >= (int)$modified) continue;
+                    $seen[$pkg] = (int)$modified;
 
                     $lines = [];
                     foreach (($it['lines'] ?? []) as $ol) {
@@ -245,7 +232,7 @@ final class TrendyolClient
                     if (!isset($it['packageTotalPrice']) || !is_numeric($it['packageTotalPrice'])) {
                         return ['ok' => false, 'error' => 'Sipariş V2 paket tutarı eksik.'];
                     }
-                    $all[] = [
+                    $all[$pkg] = [
                         'packageNumber' => $pkg,
                         'orderNumber' => $it['orderNumber'] ?? '',
                         'status' => $it['status'] ?? ($it['shipmentPackageStatus'] ?? ''),
@@ -256,6 +243,7 @@ final class TrendyolClient
                         'orderDate' => $it['orderDate'] ?? null,
                         'lastModifiedDate' => $it['lastModifiedDate'] ?? null,
                         'currencyCode' => $it['currencyCode'] ?? null,
+                        'orderCountryCode' => $it['orderCountryCode'] ?? null,
                     ];
                 }
 
@@ -266,11 +254,11 @@ final class TrendyolClient
                 }
                 $seenCursors[$next] = true;
                 $cursor = $next;
-                sleep(5);
+                if ($this->testTransport === null) sleep(5);
             }
         }
 
-        return ['ok' => true, 'orders' => $all, 'count' => count($all)];
+        return ['ok' => true, 'orders' => array_values($all), 'count' => count($all)];
     }
 
     /**
@@ -434,6 +422,7 @@ final class TrendyolClient
      */
     private function request(string $method, string $path, array $query = [], ?string $body = null): array
     {
+        if ($this->testTransport !== null) return ($this->testTransport)($method,$path,$query,$body);
         $url = $this->base . $path;
         if ($query) {
             $url .= '?' . http_build_query($query);

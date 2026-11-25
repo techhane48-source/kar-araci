@@ -139,8 +139,14 @@ function parse_money_input(string $raw): ?float
 
 
 /** Cancelled packages do not count as sales. Return costs remain a separate financial process. */
+function order_is_domestic_try(array $order): bool
+{
+    if (($order['marketplace'] ?? '') !== 'trendyol') return true;
+    return ($order['currency_code'] ?? null)==='TRY' && ($order['country_code'] ?? null)==='TR';
+}
 function order_is_active_sale(array $order): bool
 {
+    if (!order_is_domestic_try($order)) return false;
     return !in_array(strtolower((string)($order['status'] ?? '')), ['cancelled','canceled','unsupplied','returned','undelivered','unpacked'], true);
 }
 
@@ -149,6 +155,7 @@ function calc_order_profit(array $order, array $byBarcode): array
     $sale = (float)($order['total_price'] ?? 0);
     $fail = static fn(string $reason): array => ['ok'=>false,'missing'=>true,'sale'=>$sale,'profit'=>null,'reason'=>$reason];
     $lines = $order['lines'] ?? [];
+    if (!order_is_domestic_try($order)) return $fail('Para birimi veya ülke doğrulanmadı; yurtiçi TL hesabına alınmadı.');
     if (!order_is_active_sale($order)) return $fail('İptal/iade: finansal kayıt bekleniyor.');
     if (!is_array($lines) || !$lines || $sale <= 0) return $fail('Sipariş verisi eksik.');
     $cost=0.0; $cargo=0.0; $commission=0.0; $saleVat=0.0; $costVat=0.0;
@@ -162,6 +169,15 @@ function calc_order_profit(array $order, array $byBarcode): array
         // Invoice net is not seller settlement. Platform-funded discounts require reconciliation.
         if (abs((float)($line['platform_discount']??0))>0.005) return $fail('Trendyol katkılı indirim: finansal kayıt bekleniyor.');
         $lineSale=(float)$line['price']*$qty;
+        if (isset($line['discount_details']) && is_array($line['discount_details']) && count($line['discount_details'])===$qty) {
+            $itemSum=0.0;
+            foreach($line['discount_details'] as $detail) {
+                if (!is_numeric($detail['lineItemPrice']??null) || (float)$detail['lineItemPrice']<0) return $fail('İndirim detayı eksik.');
+                if (abs((float)($detail['lineItemTyDiscount']??0))>0.005) return $fail('Trendyol katkılı indirim: finansal kayıt bekleniyor.');
+                $itemSum+=(float)$detail['lineItemPrice'];
+            }
+            $lineSale=$itemSum;
+        }
         $rate=(float)($line['commission_rate']??$product['rate']??-1);
         $vat=(float)($line['vat_rate']??$product['kdv']??-1);
         $purchaseVat=(float)($line['cost_vat_snapshot']??$product['cost_vat']??$product['kdv']??-1);
