@@ -271,3 +271,49 @@ function payout_components(array $settlements, array $financials, string $paymen
     }
     return $result;
 }
+
+/** Per-product report inputs: only complete, reconciled package prices; observed cost is not invoice cost. */
+function report_order_lines(array $order,array $products): ?array
+{
+    if (!order_is_active_sale($order) || !is_array($order['lines']??null) || !$order['lines']) return null;
+    $sum=0.0;$out=[];
+    foreach($order['lines'] as $l) {
+        $bc=(string)($l['barcode']??'');$qty=(int)($l['quantity']??0);
+        if ($bc===''||$qty<=0||!order_is_active_sale($l)||!is_numeric($l['price']??null)
+            ||abs((float)($l['platform_discount']??0))>0.005)return null;
+        $sale=(float)$l['price']*$qty;
+        $details=$l['discount_details']??[];
+        if(is_array($details)&&count($details)===$qty){
+            $sale=0.0;
+            foreach($details as $item){
+                if(!is_numeric($item['lineItemPrice']??null)||(float)$item['lineItemPrice']<0||abs((float)($item['lineItemTyDiscount']??0))>0.005)return null;
+                $sale+=(float)$item['lineItemPrice'];
+            }
+        }
+        if(!is_finite($sale)||$sale<0)return null;
+        $product=$products[$bc]??[];
+        // No present-day cost backfill masquerading as historical cost.
+        $cost=is_numeric($l['cost_snapshot']??null)&&(float)$l['cost_snapshot']>0?(float)$l['cost_snapshot']*$qty:null;
+        $out[]=['barcode'=>$bc,'name'=>(string)($l['productName']??$product['name']??$bc),'category'=>(string)($product['category']??'Bilinmeyen'),'qty'=>$qty,'sale'=>$sale,'cost'=>$cost];
+        $sum+=$sale;
+    }
+    return abs($sum-(float)($order['total_price']??0))<=0.05?$out:null;
+}
+function aggregate_report_lines(array $orders,array $products,bool $byCategory=false): array
+{
+    $groups=[];$excluded=0;
+    foreach($orders as $order){
+        if(!order_is_active_sale($order))continue;
+        $lines=report_order_lines($order,$products);
+        if($lines===null){$excluded++;continue;}
+        foreach($lines as $l){
+            $key=$byCategory?$l['category']:$l['barcode'];
+            if(!isset($groups[$key]))$groups[$key]=['name'=>$l['name'],'qty'=>0,'sale'=>0.0,'known_sale'=>0.0,'cost'=>0.0,'missing_qty'=>0];
+            $g=&$groups[$key];$g['qty']+=$l['qty'];$g['sale']+=$l['sale'];
+            if($l['cost']===null)$g['missing_qty']+=$l['qty'];
+            else {$g['cost']+=$l['cost'];$g['known_sale']+=$l['sale'];}
+            unset($g);
+        }
+    }
+    return ['groups'=>$groups,'excluded'=>$excluded];
+}

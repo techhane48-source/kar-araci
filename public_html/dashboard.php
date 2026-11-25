@@ -123,12 +123,13 @@ require __DIR__ . '/../includes/header.php';
     <div class="kpi"><div class="k-label">Toplam Ciro</div><div class="k-value"><?= tl($ciro) ?></div></div>
     <div class="kpi"><div class="k-label">Maliyeti Olan Ciro</div><div class="k-value"><?= tl($maliyetliCiro) ?></div></div>
     <div class="kpi"><div class="k-label">Tahmini Brüt Kâr</div><div class="k-value <?= $brutKar < 0 ? 'neg' : '' ?>"><?= tl($brutKar) ?></div></div>
-    <div class="kpi"><div class="k-label">Tahmini Net Kâr</div><div class="k-value <?= $netKar < 0 ? 'neg' : 'pos' ?>"><?= tl($netKar) ?></div></div>
+    <div class="kpi"><div class="k-label">Tahmini Net Kâr</div><div class="k-value <?= $netKar < 0 ? 'neg' : 'pos' ?>"><?= $maliyetliSiparis > 0 ? tl($netKar) : '—' ?></div></div>
     <div class="kpi"><div class="k-label">Tahmini Net Kâr / Satış</div><div class="k-value <?= $karSatis < 0 ? 'neg' : '' ?>">%<?= number_format($karSatis, 1, ',', '.') ?></div></div>
     <div class="kpi"><div class="k-label">Tahmini Net Kâr / Maliyet</div><div class="k-value <?= $karMaliyet < 0 ? 'neg' : '' ?>">%<?= number_format($karMaliyet, 1, ',', '.') ?></div></div>
   </div>
 
   <?php $excludedCurrency=count(array_filter($orders,static fn($o)=>!order_is_domestic_try($o))); if($excludedCurrency): ?><p class="hint"><?= $excludedCurrency ?> paket ülke/para birimi doğrulanmadığından TL cirosuna dahil edilmedi. Eski kayıtları tekrar senkronize edin.</p><?php endif; ?>
+  <p class="hint">Kâr tahmini <?= $maliyetliSiparis ?>/<?= $siparis ?> paket üzerinden; reklam, ceza ve diğer mağaza giderleri henüz kesin net kâra işlenmiyor.</p>
   <?php if ($maliyetliCiro < $ciro): ?>
     <p class="hint" style="margin:8px 0">
       <?= tl($ciro - $maliyetliCiro) ?> ciro <?= $siparis - $maliyetliSiparis ?> siparişte kâr hesaplanamadı — bu ürünlere <a href="urunler.php">maliyet gir</a>.
