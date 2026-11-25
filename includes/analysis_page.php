@@ -41,12 +41,12 @@ if($_SERVER['REQUEST_METHOD']==='POST'){
                 $q=$db->prepare($sql." ORDER BY row_no");$q->execute($filters);
                 header('Content-Type: text/csv; charset=utf-8');header('Content-Disposition: attachment; filename="karfiyat-analiz.csv"');
                 echo "\xEF\xBB\xBF";$out=fopen('php://output','w');
-                $head=['Barkod','Ürün','Maliyet','Hedef kuralı'];foreach($columns as $def){$label=csv_safe_text($def['label']);array_push($head,$label,$label.' komisyon %',$label.' tahmini kâr',$label.' hedef',$label.' açıklama');}
+                $head=['Barkod','Ürün','Maliyet','Hedef kuralı','Kayıtlı satış fiyatı','Kayıtlı komisyon %','Kayıtlı fiyat tahmini kâr'];foreach($columns as $def){$label=csv_safe_text($def['label']);array_push($head,$label,$label.' komisyon %',$label.' tahmini kâr',$label.' alt uç fiyat',$label.' alt uç tahmini kâr',$label.' mevcut kâra fark',$label.' komisyon kaynağı',$label.' hedef',$label.' açıklama');}
                 fputcsv($out,$head,';','"','');
                 while($item=$q->fetch()){
                     $r=json_decode($item['payload_json'],true);
-                    $line=[csv_safe_text($r['barcode']),csv_safe_text($r['name']),$r['cost'],csv_safe_text($r['rule']??'')];
-                    foreach($columns as $key=>$unused){$t=$r['tiers'][$key];array_push($line,$t['price'],$t['rate'],$t['profit'],isset($t['target_met'])?($t['target_met']?'Evet':'Hayır'):'—',csv_safe_text($t['reason']));}
+                    $line=[csv_safe_text($r['barcode']),csv_safe_text($r['name']),$r['cost'],csv_safe_text($r['rule']??''),$r['baseline_price']??null,$r['baseline_rate']??null,$r['baseline_profit']??null];
+                    foreach($columns as $key=>$unused){$t=$r['tiers'][$key];array_push($line,$t['price'],$t['rate'],$t['profit'],$t['min_price']??null,$t['min_endpoint_profit']??null,$t['profit_delta']??null,$t['rate_source']??null,isset($t['target_met'])?($t['target_met']?'Evet':'Hayır'):'—',csv_safe_text($t['reason']));}
                     fputcsv($out,$line,';','"','');
                 }fclose($out);exit;
             }
@@ -74,20 +74,23 @@ require __DIR__.'/header.php';
 <div class="card"><h2>Dosya yükle</h2><form method="post" enctype="multipart/form-data">
 <input type="hidden" name="csrf" value="<?= h(csrf_token()) ?>"><input type="hidden" name="action" value="analyze">
 <input type="file" name="csv" accept=".xlsx,.csv" required><button class="btn-primary">Analiz et</button></form>
-<p class="hint">Örnek başlıklar: Barkod; Fiyat; 1. Fiyat Aralığı; 1. Komisyon Oranı. Promosyonlarda eşleşen komisyon kolonu yoksa kâr hesaplanmaz. Fiyat aralığı üst ucu yalnızca senaryodur; otomatik seçime girmez. Açık uçlu aralıklar ve bilinmeyen kolonlar hesaplanmaz.</p></div>
+<p class="hint">Örnek başlıklar: Barkod; Fiyat; 1. Fiyat Aralığı; 1. Komisyon Oranı. Promosyonlarda eşleşen komisyon kolonu yoksa kâr hesaplanmaz. Fiyat aralığının alt ve üst uçları ayrı senaryodur; otomatik seçime girmez. Fark, kayıtlı satış fiyatı ve kayıtlı komisyonla hesaplanan tahmini kâra göredir. Açık uçlu aralıklar ve bilinmeyen kolonlar hesaplanmaz.</p></div>
 <?php if($job): ?>
 <div class="card table-card" style="margin-top:16px"><h2>Sonuçlar — <?= (int)$stats['rows'] ?> satır</h2>
-<p><?= (int)$stats['matched'] ?> eşleşen · <?= (int)$stats['unmatched'] ?> eşleşmeyen · <?= (int)$stats['missing_cost'] ?> maliyeti eksik · <?= (int)$stats['profitable'] ?> pozitif senaryo · <?= (int)($stats['meets_target']??0) ?> hedefi karşılayan satır</p>
+<p><?= (int)$stats['matched'] ?> eşleşen · <?= (int)$stats['unmatched'] ?> eşleşmeyen · <?= (int)$stats['missing_cost'] ?> maliyeti eksik · <?= (int)$stats['profitable'] ?> pozitif senaryo · <?= isset($stats['meets_target'])?(int)$stats['meets_target']:'—' ?> hedefi karşılayan satır</p>
 <p class="hint">Analiz tarihi: <?= date('d.m.Y H:i',(int)$job['created_at']) ?>. Ürün ayarları veya <a href="kar-hedefleri.php">kâr kuralları</a> değiştiğinde tekrar analiz edin. Hedef değerlendirmesi yükleme anındaki kurallara dayanır; kampanya katılım garantisi değildir. Barkodlar Excel'de metin olarak içe aktarılmalıdır.</p>
 <form method="post"><input type="hidden" name="csrf" value="<?= h(csrf_token()) ?>"><input type="hidden" name="action" value="download">
 <div style="display:flex;gap:8px;flex-wrap:wrap"><button name="scope" value="all">Tüm raporu indir</button><button name="scope" value="profitable">Pozitif senaryoları indir</button><button name="scope" value="target">Hedefi karşılayanları indir</button><button name="scope" value="selected">Bu sayfanın seçilenlerini indir</button></div>
-<table><tr><th>Seçim</th><th>Barkod</th><th>Ürün</th><th>Maliyet</th><?php foreach($columns as $def): ?><th><?= h($def['label']) ?></th><?php endforeach; ?></tr>
+<table><tr><th>Seçim</th><th>Barkod</th><th>Ürün</th><th>Maliyet</th><th>Kayıtlı fiyat / tahmini kâr</th><?php foreach($columns as $def): ?><th><?= h($def['label']) ?></th><?php endforeach; ?></tr>
 <?php foreach($rows as $row):$r=json_decode($row['payload_json'],true); ?><tr>
-<td><input type="checkbox" name="sel[]" value="<?= (int)$row['row_no'] ?>"></td><td><?= h($r['barcode']) ?></td><td><?= h($r['name']) ?></td><td><?= $r['cost']===null?'—':tl((float)$r['cost']) ?></td>
+<td><input type="checkbox" name="sel[]" value="<?= (int)$row['row_no'] ?>"></td><td><?= h($r['barcode']) ?></td><td><?= h($r['name']) ?></td><td><?= $r['cost']===null?'—':tl((float)$r['cost']) ?></td><td><?= isset($r['baseline_price'])?tl((float)$r['baseline_price']):'—' ?><br><?= isset($r['baseline_profit'])?tl((float)$r['baseline_profit']):'—' ?></td>
 <?php foreach($columns as $key=>$def):$t=$r['tiers'][$key]; ?><td>
 <?= $t['price']===null?'—':tl((float)$t['price']) ?>
 <?php if($t['rate']!==null): ?><br>%<?= number_format((float)$t['rate'],2,',','.') ?> komisyon<?php endif; ?>
 <?php if($t['profit']!==null): ?><br><b class="<?= $t['profit']<0?'neg':'pos' ?>"><?= tl((float)$t['profit']) ?></b><?php endif; ?>
+<?php if(isset($t['min_price'])): ?><br><small>Alt uç <?= tl((float)$t['min_price']) ?> / kâr <?= isset($t['min_endpoint_profit'])?tl((float)$t['min_endpoint_profit']):'—' ?></small><?php endif; ?>
+<?php if(isset($t['profit_delta'])): ?><br><small>Mevcut kâra fark: <?= tl((float)$t['profit_delta']) ?></small><?php endif; ?>
+<?php if(isset($t['rate_source'])): ?><br><small>Komisyon: <?= $t['rate_source']==='file'?'dosya':'kayıtlı ürün' ?></small><?php endif; ?>
 <br><small><?= h($t['reason']) ?></small><?php if(isset($t['target_met'])): ?><br><small><?= $t['target_met']?'Hedef karşılanıyor':'Hedef altında' ?></small><?php endif; ?></td><?php endforeach; ?></tr><?php endforeach; ?>
 </table></form>
 <p>Sayfa <?= $page ?> / <?= $pages ?>

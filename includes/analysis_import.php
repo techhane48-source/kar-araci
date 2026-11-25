@@ -18,10 +18,10 @@ function analysis_header(string $s): string
 function analysis_price(string $raw): ?array
 {
     $v=parse_money_input($raw);
-    if($v!==null&&$v>0)return ['price'=>$v,'range'=>false];
+    if($v!==null&&$v>0&&$v<=100000000)return ['price'=>$v,'range'=>false];
     if(preg_match('/^\s*(.+?)\s*(?:-|–|—)\s*(.+?)\s*$/u',$raw,$m)){
         $lo=parse_money_input($m[1]);$hi=parse_money_input($m[2]);
-        if($lo!==null&&$hi!==null&&$lo>=0&&$hi>0&&$lo<=$hi)return ['price'=>$hi,'range'=>true,'min'=>$lo];
+        if($lo!==null&&$hi!==null&&$lo>=0&&$hi>0&&$lo<=$hi&&$hi<=100000000)return ['price'=>$hi,'range'=>true,'min'=>$lo];
     }
     return null;
 }
@@ -105,18 +105,25 @@ function analysis_row(array $schema,array $row,array $products,string $module,ar
     $name=$p['name']??($schema['name']===null?'':(string)($row[$schema['name']]??''));
     $cost=$p&&is_numeric($p['cost']??null)&&(float)$p['cost']>0?(float)$p['cost']:null;
     $best=null;$tiers=[];$rule=$p?target_for_product($rules,$p):null;$meets=null;
+    $baseline=null;$baselinePrice=null;$baselineRate=null;
+    if($cost!==null&&is_numeric($p['price']??null)&&(float)$p['price']>0&&is_numeric($p['rate']??null)){
+        try{$baseline=product_profit($p);$baselinePrice=(float)$p['price'];$baselineRate=(float)$p['rate'];}catch(InvalidArgumentException $e){}
+    }
     foreach($schema['prices'] as $key=>$def){
         $price=analysis_price((string)($row[$def['index']]??''));
         $explicit=isset($schema['rates'][$key]);
         $rate=$explicit?analysis_rate((string)($row[$schema['rates'][$key]]??'')):($module==='bulk'&&$p? (float)$p['rate']:null);
-        $t=['price'=>$price['price']??null,'range'=>$price['range']??false,'rate'=>$rate,'profit'=>null,'margin'=>null,'reason'=>'','target_met'=>null];
+        $t=['price'=>$price['price']??null,'range'=>$price['range']??false,'rate'=>$rate,'profit'=>null,'margin'=>null,'reason'=>'','target_met'=>null,'min_price'=>$price['min']??null,'min_endpoint_profit'=>null,'profit_delta'=>null,'rate_source'=>$explicit?'file':($module==='bulk'&&$p?'catalog':null)];
         if($cost===null)$t['reason']=$p?'Maliyet eksik':'Barkod eşleşmedi';
         elseif($price===null)$t['reason']='Fiyat veya kapalı aralık okunamadı';
         elseif($rate===null||$rate<0||$rate>100)$t['reason']='Kademe komisyonu eksik';
         else{
             try{$calc=product_profit($p,$price['price'],$rate);$t['profit']=$calc['profit'];$t['margin']=$calc['margin'];
+                if($baseline!==null)$t['profit_delta']=$calc['profit']-$baseline['profit'];
+                if($price['range']&&$price['min']>0)$t['min_endpoint_profit']=product_profit($p,$price['min'],$rate)['profit'];
                 // A range endpoint or unverified campaign is not an automatically eligible selection.
-                $t['reason']=$price['range']?'Aralık üst ucu senaryosu':'Tahmini hesap';
+                $t['reason']=$price['range']?'Aralık uçları: tahmini senaryo; uygunluk doğrulanmadı':'Tahmini hesap; kampanya uygunluğu doğrulanmadı';
+                if($module==='bulk')$t['reason']=$price['range']?'Aralık uçları: tahmini senaryo':'Tahmini hesap';
                 if($rule&&!$price['range']&&($module==='bulk'||in_array($module,['komisyon','plus'],true))){
                     $t['target_met']=target_pass($rule,$calc,$cost,$price['price']);
                     $meets=($meets===true)||$t['target_met'];
@@ -126,7 +133,7 @@ function analysis_row(array $schema,array $row,array $products,string $module,ar
         }
         $tiers[$key]=$t;
     }
-    return ['barcode'=>$barcode,'name'=>$name,'cost'=>$cost,'matched'=>$p!==null,'tiers'=>$tiers,'best'=>$best,'rule'=>$rule?target_label($rule):null,'meets_target'=>$meets];
+    return ['barcode'=>$barcode,'name'=>$name,'cost'=>$cost,'matched'=>$p!==null,'tiers'=>$tiers,'best'=>$best,'rule'=>$rule?target_label($rule):null,'meets_target'=>$meets,'baseline_price'=>$baselinePrice,'baseline_rate'=>$baselineRate,'baseline_profit'=>$baseline['profit']??null];
 }
 
 /** Store one analysis per module/account. A bad upload preserves the prior analysis. */

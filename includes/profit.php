@@ -191,16 +191,22 @@ function calc_order_profit(array $order, array $byBarcode): array
     $lines = $order['lines'] ?? [];
     if (!order_is_domestic_try($order)) return $fail('Para birimi veya ülke doğrulanmadı; yurtiçi TL hesabına alınmadı.');
     if (!order_is_active_sale($order)) return $fail('İptal/iade: finansal kayıt bekleniyor.');
-    if (!is_array($lines) || !$lines || $sale <= 0) return $fail('Sipariş verisi eksik.');
+    if (!is_array($lines) || !$lines || !is_numeric($order['total_price']??null) || !is_finite($sale) || $sale <= 0) return $fail('Sipariş verisi eksik.');
     $cost=0.0; $cargo=0.0; $commission=0.0; $saleVat=0.0; $costVat=0.0;
     $stopaj=0.0; $sum=0.0; $extra=0.0;
+    $seenLines=[];
     foreach ($lines as $line) {
+        if(!is_array($line))return $fail('Satır biçimi geçersiz.');
+        $lineId=(string)($line['line_id']??'');
+        if($lineId!==''&&isset($seenLines[$lineId]))return $fail('Yinelenen sipariş satırı.');
+        if($lineId!=='')$seenLines[$lineId]=true;
         $qty=(int)($line['quantity']??0);
-        if ($qty<=0 || !isset($line['price']) || !is_numeric($line['price'])) return $fail('Satır fiyatı/adedi eksik.');
+        if ($qty<=0 || !is_numeric($line['quantity']??null) || (float)$line['quantity']!==(float)$qty || !isset($line['price']) || !is_numeric($line['price']) || !is_finite((float)$line['price']) || (float)$line['price']<0) return $fail('Satır fiyatı/adedi eksik.');
         if (!order_is_active_sale($line)) return $fail('Kısmi iptal/iade: finansal kayıt bekleniyor.');
         $product=$byBarcode[$line['barcode']??'']??null;
         if (($order['marketplace']??'')==='trendyol' && !isset($line['cost_snapshot'])) return $fail('Sipariş tarihine ait maliyet veya ilk gözlem eksik.');
-        if (!$product || (float)($line['cost_snapshot'] ?? $product['cost'] ?? 0)<=0) return $fail('Ürün maliyeti eksik.');
+        $unitCost=$line['cost_snapshot']??$product['cost']??null;
+        if (!$product || !is_numeric($unitCost)||!is_finite((float)$unitCost)||(float)$unitCost<=0) return $fail('Ürün maliyeti eksik.');
         // Invoice net is not seller settlement. Platform-funded discounts require reconciliation.
         if (abs((float)($line['platform_discount']??0))>0.005) return $fail('Trendyol katkılı indirim: finansal kayıt bekleniyor.');
         $lineSale=(float)$line['price']*$qty;
@@ -213,11 +219,15 @@ function calc_order_profit(array $order, array $byBarcode): array
             }
             $lineSale=$itemSum;
         }
+        foreach([$line['commission_rate']??$product['rate']??null,$line['vat_rate']??$product['kdv']??null,$line['cost_vat_snapshot']??$product['cost_vat']??$product['kdv']??null,$product['cargo']??0] as $value){
+            if(!is_numeric($value)||!is_finite((float)$value)||(float)$value<0)return $fail('Geçersiz komisyon, KDV veya kargo girdisi.');
+        }
         $rate=(float)($line['commission_rate']??$product['rate']??-1);
         $vat=(float)($line['vat_rate']??$product['kdv']??-1);
         $purchaseVat=(float)($line['cost_vat_snapshot']??$product['cost_vat']??$product['kdv']??-1);
         if ($rate<0||$rate>100||$vat<0||$vat>100||$purchaseVat<0||$purchaseVat>100||$lineSale<0) return $fail('Komisyon/KDV verisi geçersiz.');
-        $lineCost=(float)($line['cost_snapshot']??$product['cost'])*$qty;
+        $lineCost=(float)$unitCost*$qty;
+        if(!is_finite($lineCost)||!is_finite($lineSale))return $fail('Satır tutarı geçersiz.');
         $sum+=$lineSale; $cost+=$lineCost;
         // Product cargo is a forecast; multi-line package fee allocation is not verified.
         $cargo+=(float)($product['cargo']??0);
@@ -226,7 +236,7 @@ function calc_order_profit(array $order, array $byBarcode): array
         $costVat+=$lineCost*$purchaseVat/(100+$purchaseVat);
         $stopaj+=auto_stopaj($lineSale,$vat);
     }
-    if (abs($sum-$sale)>0.05) return $fail('Paket ve satır toplamları uyuşmuyor.');
+    if (!is_finite($sum)||!is_finite($cost)||!is_finite($cargo)||abs($sum-$sale)>0.05) return $fail('Paket ve satır toplamları uyuşmuyor.');
     $service=trendyol_service_fee();
     $netVat=max(0.0,$saleVat-$costVat-($commission+$cargo+$service)/6);
     $profit=$sale-$cost-$cargo-$commission-$service-$stopaj-$netVat;
@@ -252,9 +262,26 @@ function product_stopaj(array $product, float $price): float
         return (float)($product['stopaj'] ?? 0);
     return auto_stopaj($price,(float)($product['kdv'] ?? 20),(float)($product['stopaj_rate'] ?? 1));
 }
+/** Validate stored product scenarios before computing. Missing/invalid values are not zero. */
+function product_validate_scenario(array $product,float $price,float $rate): void
+{
+    if(!isset($product['cost'])||!is_numeric($product['cost'])||!is_finite((float)$product['cost'])||(float)$product['cost']<0||
+       !is_finite($price)||$price<0||!is_finite($rate)||$rate<0||$rate>100)
+        throw new InvalidArgumentException('Geçersiz ürün hesap girdisi.');
+    foreach(['cargo','extra_fee','service_fee','stopaj','kdv','cost_vat','stopaj_rate','return_rate'] as $key){
+        if(!isset($product[$key]))continue;
+        $v=$product[$key];$max=in_array($key,['kdv','cost_vat','stopaj_rate','return_rate'],true)?100:100000000;
+        if(!is_numeric($v)||!is_finite((float)$v)||(float)$v<0||(float)$v>$max)
+            throw new InvalidArgumentException('Geçersiz ürün hesap ayarı: '.$key);
+    }
+}
+
 function product_profit(array $product, ?float $price = null, ?float $rate = null): array
 {
+    if($price===null&&!is_numeric($product['price']??null))throw new InvalidArgumentException('Satış fiyatı eksik.');
+    if($rate===null&&!is_numeric($product['rate']??null))throw new InvalidArgumentException('Komisyon oranı eksik.');
     $price = $price ?? (float)$product['price'];
+    product_validate_scenario($product,$price,$rate??(float)$product['rate']);
     $options = product_profit_options($product);
     return calc_profit((float)$product['cost'],$price,(float)($product['cargo']??0),
         $rate ?? (float)$product['rate'],(float)($product['kdv']??20),

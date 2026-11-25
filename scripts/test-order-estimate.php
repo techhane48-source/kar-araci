@@ -13,5 +13,9 @@ $c=$o;$c['status']='Cancelled';$tests['cancelled excluded']=!calc_order_profit($
 $c=$o;$c['lines'][0]['platform_discount']=10;$tests['unreconciled platform subsidy']=!calc_order_profit($c,$products)['ok'];
 $c=$o;$c['total_price']=999;$tests['mismatched totals']=!calc_order_profit($c,$products)['ok'];
 $c=$o;unset($c['lines'][0]['price']);$tests['missing price']=!calc_order_profit($c,$products)['ok'];
+$c=$o;$c['lines'][0]['quantity']=1.5;$tests['fractional quantity rejected']=!calc_order_profit($c,$products)['ok'];
+$c=$o;$c['lines'][0]['commission_rate']='invalid';$tests['malformed commission rejected']=!calc_order_profit($c,$products)['ok'];
+$c=$o;$c['lines'][0]['line_id']='L1';$c['lines'][1]['line_id']='L1';$tests['duplicate line rejected']=!calc_order_profit($c,$products)['ok'];
+$bad=$products;$bad['A']['cargo']=-50;$tests['negative cargo rejected']=!calc_order_profit($o,$bad)['ok'];
 foreach($tests as $n=>$ok)echo ($ok?'PASS':'FAIL')." $n\n";
 exit(in_array(false,$tests,true)?1:0);
