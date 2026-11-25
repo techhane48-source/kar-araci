@@ -1,33 +1,21 @@
 <?php
 declare(strict_types=1);
-
-/**
- * Cron / CLI senkronizasyonu: tüm kullanıcıların bağlı mağazalarındaki ürünleri çeker.
- * Kullanım (cron'a saatlik ekleyin):
- *   php /yol/scripts/sync.php
- */
-
-require_once __DIR__ . '/../includes/functions.php';
-
-$integrations = db()->query("SELECT user_id, marketplace FROM integrations ORDER BY user_id")->fetchAll();
-
-if (!$integrations) {
-    echo "Bağlı mağaza yok.\n";
-    exit(0);
-}
-
-$ok = 0;
-$fail = 0;
-foreach ($integrations as $i) {
-    $res = sync_products((int)$i['user_id'], $i['marketplace']);
-    if ($res['ok']) {
-        $ok++;
-        echo "[OK] u{$i['user_id']} {$i['marketplace']}: +{$res['inserted']} yeni, {$res['updated']} güncellendi, {$res['skipped']} atlandı\n";
-    } else {
-        $fail++;
-        echo "[FAIL] u{$i['user_id']} {$i['marketplace']}: {$res['error']}\n";
+if(PHP_SAPI!=='cli'){http_response_code(403);exit;}
+require_once __DIR__.'/../includes/functions.php';
+$job=$argv[1]??'products';
+if(!in_array($job,['products','orders','finance'],true)){fwrite(STDERR,"Kullanım: php scripts/sync.php products|orders|finance\n");exit(2);}
+set_time_limit(0);
+$rows=db()->query("SELECT user_id FROM integrations WHERE marketplace='trendyol' ORDER BY user_id")->fetchAll();
+$fail=0;
+foreach($rows as $row){
+    $uid=(int)$row['user_id'];
+    if($job==='products')$r=sync_products($uid,'trendyol');
+    elseif($job==='orders')$r=sync_orders($uid,'trendyol',7);
+    else{
+        $r=sync_settlements($uid,'trendyol',30);
+        if($r['ok'])$r=sync_trendyol_documents($uid,30);
     }
+    if(!$r['ok'])$fail++;
+    echo ($r['ok']?'OK':'FAIL')." user=$uid job=$job\n";
 }
-
-echo "Bitti: ok={$ok} fail={$fail}\n";
-exit($fail > 0 ? 1 : 0);
+exit($fail?1:0);

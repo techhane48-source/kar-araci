@@ -49,13 +49,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'sync'
     e_redirect('canli-performans.php?mp=' . $mp);
 }
 
-// --- Otomatik sipariş senkronu (müşteri butona basmadan; son senkron > 10 dk ise) ---
-$autoSyncSt = db()->prepare("SELECT last_orders_sync FROM integrations WHERE user_id = ? AND marketplace = ?");
-$autoSyncSt->execute([$u['id'], $mp]);
-$lastOrdersSync = $autoSyncSt->fetchColumn();
-if (!$lastOrdersSync || (int)$lastOrdersSync < time() - 600) {
-    sync_orders($u['id'], $mp, 7); // hata olsa bile sayfa mevcut (eski) veriyle açılır
-}
+// Network jobs run via explicit POST or CLI, never on GET. Show actual freshness.
+$autoSyncSt=db()->prepare("SELECT last_orders_sync FROM integrations WHERE user_id=? AND marketplace=?");
+$autoSyncSt->execute([$u['id'],$mp]);$lastOrdersSync=(int)$autoSyncSt->fetchColumn();
 
 // Ürünler (barkod -> ürün)
 $ps = db()->prepare("SELECT * FROM products WHERE user_id = ? AND marketplace = ?");
@@ -135,6 +131,7 @@ require __DIR__ . '/../includes/header.php';
 
   <?php $flash = flash_get(); if ($flash): ?><div class="alert alert-<?= $flash['type'] ?>"><?= h($flash['msg']) ?></div><?php endif; ?>
 
+  <p class="hint">Son başarılı sipariş senkronu: <?= $lastOrdersSync > 0 ? date("d.m.Y H:i", $lastOrdersSync) : "Henüz yok" ?><?= $lastOrdersSync > 0 && $lastOrdersSync < time()-900 ? " — veriler eski olabilir" : "" ?>.</p>
   <div class="kpi-row">
     <div class="kpi"><div class="k-label">Bugün Satış</div><div class="k-value"><?= tl($today['sale']) ?></div></div>
     <div class="kpi"><div class="k-label">Bugün Tahmini Kâr</div><div class="k-value <?= $today['profit'] < 0 ? 'neg' : '' ?>"><?= tl($today['profit']) ?></div></div>

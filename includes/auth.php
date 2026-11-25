@@ -12,6 +12,7 @@ function session_boot(): void
         session_name('karfiyat');
         session_set_cookie_params([
             'httponly' => true,
+            'secure' => !empty($_SERVER['HTTPS']) && strtolower((string)$_SERVER['HTTPS']) !== 'off',
             'samesite' => 'Lax',
         ]);
         session_start();
@@ -30,7 +31,8 @@ function csrf_token(): string
 function csrf_verify(?string $token): bool
 {
     session_boot();
-    return is_string($token) && hash_equals($_SESSION['csrf'] ?? '', $token);
+    $expected = $_SESSION['csrf'] ?? null;
+    return is_string($token) && is_string($expected) && $expected !== '' && hash_equals($expected, $token);
 }
 
 function current_user(): ?array

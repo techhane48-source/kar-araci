@@ -39,10 +39,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $supported) {
                 if (!$test['ok']) {
                     $error = 'Bağlantı kurulamadı: ' . ($test['error'] ?? 'Bilinmeyen hata');
                 } else {
-                    save_integration((int)$u['id'], $mp, $sellerId, $apiKey, $apiSecret, $stage);
-                    $ok = 'Mağazanız başarıyla bağlandı!';
-                    $int = get_integration((int)$u['id'], $mp);
-                    $hasConnection = true;
+                    try {
+                        save_integration((int)$u['id'], $mp, $sellerId, $apiKey, $apiSecret, $stage);
+                        $ok = 'Mağazanız başarıyla bağlandı!';
+                        $int = get_integration((int)$u['id'], $mp);
+                        $hasConnection = true;
+                    } catch (RuntimeException $ex) { $error = $ex->getMessage(); }
                 }
             }
         } elseif ($action === 'sync') {
@@ -63,10 +65,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $supported) {
                 $error = 'Cari hesap ekstresi hatası: ' . ($res['error'] ?? 'Bilinmeyen hata');
             }
         } elseif ($action === 'disconnect') {
-            delete_integration((int)$u['id'], $mp);
-            $int = null;
-            $hasConnection = false;
-            $ok = 'Mağaza bağlantısı kaldırıldı.';
+            try { delete_integration((int)$u['id'], $mp); $int = null; $hasConnection = false; $ok = 'Mağaza bağlantısı kaldırıldı.'; }
+            catch (RuntimeException $ex) { $error = $ex->getMessage(); }
         } elseif ($action === 'update_price' && $int) {
             $barcode = trim((string)($_POST['barcode'] ?? ''));
             $sale = parse_money_input((string)($_POST['new_price'] ?? ''));

@@ -11,6 +11,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          extensions: pdo_sqlite, mbstring, openssl, curl, zip, simplexml
+          coverage: none
       - name: PHP syntax
         run: find includes public_html scripts -name '*.php' -print0 | xargs -0 -n1 php -l
       - name: Regression tests
@@ -21,5 +26,6 @@ jobs:
           php scripts/test-order-estimate.php
           php scripts/test-product-profit.php
           php scripts/test-payout.php
+          php scripts/test-db-safety.php
       - name: JavaScript syntax
         run: node --check public_html/assets/app.js

@@ -112,24 +112,73 @@ function get_integration(int $userId, string $marketplace): ?array
     return $r;
 }
 
-function save_integration(int $userId, string $marketplace, string $sellerId, string $apiKey, string $apiSecret, bool $stage = false): void
+/** All syncs and connection changes for one seller share a local nonblocking lock. */
+function with_marketplace_lock(int $userId,string $marketplace,callable $fn): array
 {
-    $encKey = encrypt_string($apiKey);
-    $encSecret = encrypt_string($apiSecret);
-    db()->prepare("INSERT INTO integrations (user_id, marketplace, seller_id, api_key, api_secret, stage)
-                   VALUES (?, ?, ?, ?, ?, ?)
-                   ON CONFLICT(user_id, marketplace) DO UPDATE SET
-                     seller_id = excluded.seller_id,
-                     api_key = excluded.api_key,
-                     api_secret = excluded.api_secret,
-                     stage = excluded.stage")
-        ->execute([$userId, $marketplace, trim($sellerId), $encKey, $encSecret, $stage ? 1 : 0]);
+    $dir=dirname(DB_PATH).DIRECTORY_SEPARATOR.'locks';
+    if(!is_dir($dir)&&!@mkdir($dir,0700,true)&&!is_dir($dir))return ['ok'=>false,'error'=>'Senkron kilidi dizini oluşturulamadı.'];
+    $path=$dir.DIRECTORY_SEPARATOR.hash('sha256',$userId.':'.$marketplace).'.lock';
+    $fh=@fopen($path,'c');
+    if(!$fh)return ['ok'=>false,'error'=>'Senkron kilidi açılamadı.'];
+    if(!flock($fh,LOCK_EX|LOCK_NB)){fclose($fh);return ['ok'=>false,'error'=>'Bu mağazada başka bir işlem devam ediyor.'];}
+    try{return $fn();}finally{flock($fh,LOCK_UN);fclose($fh);}
 }
 
-function delete_integration(int $userId, string $marketplace): void
+function save_integration(int $userId, string $marketplace, string $sellerId, string $apiKey, string $apiSecret, bool $stage = false): void
 {
-    db()->prepare("DELETE FROM integrations WHERE user_id = ? AND marketplace = ?")
-        ->execute([$userId, $marketplace]);
+    $res=with_marketplace_lock($userId,$marketplace,function()use($userId,$marketplace,$sellerId,$apiKey,$apiSecret,$stage){
+        $sellerId=trim($sellerId);$stageInt=(int)$stage;$db=db();
+        $q=$db->prepare("SELECT seller_id,stage FROM integration_bindings WHERE user_id=? AND marketplace=?");
+        $q->execute([$userId,$marketplace]);$binding=$q->fetch();
+        if($binding&&($binding['seller_id']!==$sellerId||(int)$binding['stage']!==$stageInt))
+            return ['ok'=>false,'error'=>'Bu hesaba farklı mağaza veya test/üretim ortamı bağlanamaz. Ayrı hesap kullanın.'];
+        if(!$binding){
+            foreach(['orders','settlements'] as $table){
+                $q=$db->prepare("SELECT 1 FROM $table WHERE user_id=? AND marketplace=? LIMIT 1");
+                $q->execute([$userId,$marketplace]);
+                if($q->fetchColumn())return ['ok'=>false,'error'=>'Eski mağaza verilerinin sahibi doğrulanamadı. Destek ile görüşün.'];
+            }
+            $q=$db->prepare("SELECT 1 FROM products WHERE user_id=? AND marketplace=? AND barcode!='' LIMIT 1");
+            $q->execute([$userId,$marketplace]);
+            if($q->fetchColumn())return ['ok'=>false,'error'=>'Barkodlu eski ürünler mevcut. Mağaza verisi karışmaması için destek ile görüşün.'];
+        }
+        $encKey=encrypt_string($apiKey);$encSecret=encrypt_string($apiSecret);
+        $db->beginTransaction();
+        try {
+            $db->prepare("INSERT OR IGNORE INTO integration_bindings(user_id,marketplace,seller_id,stage) VALUES(?,?,?,?)")
+                ->execute([$userId,$marketplace,$sellerId,$stageInt]);
+            $db->prepare("INSERT INTO integrations(user_id,marketplace,seller_id,api_key,api_secret,stage) VALUES(?,?,?,?,?,?)
+                ON CONFLICT(user_id,marketplace) DO UPDATE SET api_key=excluded.api_key,api_secret=excluded.api_secret")
+                ->execute([$userId,$marketplace,$sellerId,$encKey,$encSecret,$stageInt]);
+            $db->commit();
+        } catch(Throwable $e){if($db->inTransaction())$db->rollBack();throw $e;}
+        return ['ok'=>true];
+    });
+    if(!$res['ok'])throw new RuntimeException($res['error']);
+}
+
+function delete_integration(int $userId,string $marketplace): void
+{
+    $r=with_marketplace_lock($userId,$marketplace,function()use($userId,$marketplace){
+        db()->prepare("DELETE FROM integrations WHERE user_id=? AND marketplace=?")->execute([$userId,$marketplace]);
+        return ['ok'=>true];
+    });
+    if(!$r['ok'])throw new RuntimeException($r['error']);
+}
+
+/** Record success only after a complete job. Failure never advances the success timestamp. */
+function run_sync_job(int $userId,string $marketplace,string $job,callable $fn): array
+{
+    return with_marketplace_lock($userId,$marketplace,function()use($userId,$marketplace,$job,$fn){
+        $db=db();$now=time();
+        $db->prepare("INSERT INTO sync_status(user_id,marketplace,job,last_attempt,state) VALUES(?,?,?,?,'running')
+            ON CONFLICT(user_id,marketplace,job) DO UPDATE SET last_attempt=excluded.last_attempt,state='running'")
+            ->execute([$userId,$marketplace,$job,$now]);
+        try{$r=$fn();}catch(Throwable $e){$r=['ok'=>false,'error'=>'Senkron tamamlanamadı; sunucu yapılandırmasını kontrol edin.'];}
+        if(!empty($r['ok']))$db->prepare("UPDATE sync_status SET state='success',last_success=? WHERE user_id=? AND marketplace=? AND job=?")->execute([time(),$userId,$marketplace,$job]);
+        else $db->prepare("UPDATE sync_status SET state='failed' WHERE user_id=? AND marketplace=? AND job=?")->execute([$userId,$marketplace,$job]);
+        return $r;
+    });
 }
 
 function integration_client(array $int): object
@@ -172,6 +221,11 @@ function integration_client(array $int): object
  *  kullanıcı sonradan girer çünkü API'den maliyet gelmez.)
  */
 function sync_products(int $userId, string $marketplace): array
+{
+    return run_sync_job($userId,$marketplace,'products',static fn()=>sync_products_unlocked($userId,$marketplace));
+}
+
+function sync_products_unlocked(int $userId, string $marketplace): array
 {
     $int = get_integration($userId, $marketplace);
     if (!$int) return ['ok' => false, 'error' => 'Entegrasyon bulunamadı. Önce bağlantı kurun.'];
@@ -262,6 +316,11 @@ function sync_products(int $userId, string $marketplace): array
  * Trendyol orderDate milisaniye döner; saniyeye çevrilir. Çoğu pazaryerinde getOrders() yoksa null döner.
  */
 function sync_orders(int $userId, string $marketplace, int $days = 7): array
+{
+    return run_sync_job($userId,$marketplace,'orders',static fn()=>sync_orders_unlocked($userId,$marketplace,$days));
+}
+
+function sync_orders_unlocked(int $userId, string $marketplace, int $days = 7): array
 {
     $int = get_integration($userId, $marketplace);
     if (!$int) return ['ok' => false, 'error' => 'Entegrasyon bulunamadı. Önce bağlantı kurun.'];
@@ -354,6 +413,11 @@ function sync_orders(int $userId, string $marketplace, int $days = 7): array
  */
 function sync_settlements(int $userId, string $marketplace, int $days = 30): array
 {
+    return run_sync_job($userId,$marketplace,'settlements',static fn()=>sync_settlements_unlocked($userId,$marketplace,$days));
+}
+
+function sync_settlements_unlocked(int $userId, string $marketplace, int $days = 30): array
+{
     $int = get_integration($userId, $marketplace);
     if (!$int) return ['ok' => false, 'error' => 'Entegrasyon bulunamadı. Önce bağlantı kurun.'];
     $client = integration_client($int);
@@ -422,6 +486,11 @@ function sync_settlements(int $userId, string $marketplace, int $days = 30): arr
 /** Separate otherfinancials and invoice data from settlement sales to avoid double counting. */
 function sync_trendyol_documents(int $userId, int $days = 30): array
 {
+    return run_sync_job($userId,'trendyol','documents',static fn()=>sync_trendyol_documents_unlocked($userId,$days));
+}
+
+function sync_trendyol_documents_unlocked(int $userId, int $days = 30): array
+{
     $int = get_integration($userId, 'trendyol');
     if (!$int) return ['ok'=>false,'error'=>'Trendyol mağazası bağlı değil.'];
     $client = integration_client($int);
@@ -484,6 +553,11 @@ function sync_trendyol_documents(int $userId, int $days = 30): array
 /** Fetch one payout page and persist it under the connected seller. */
 function sync_trendyol_payout_page(int $userId,int $page=0): array
 {
+    return run_sync_job($userId,'trendyol','payout_list',static fn()=>sync_trendyol_payout_page_unlocked($userId,$page));
+}
+
+function sync_trendyol_payout_page_unlocked(int $userId,int $page=0): array
+{
     $int=get_integration($userId,'trendyol');
     if(!$int)return ['ok'=>false,'error'=>'Trendyol mağazası bağlı değil.'];
     $res=integration_client($int)->getPaymentOrders($page);
@@ -496,6 +570,11 @@ function sync_trendyol_payout_page(int $userId,int $page=0): array
     return ['ok'=>true,'count'=>count($res['items']),'totalPages'=>$res['totalPages']];
 }
 function check_trendyol_payout(int $userId,string $id): array
+{
+    return run_sync_job($userId,'trendyol','payout_detail',static fn()=>check_trendyol_payout_unlocked($userId,$id));
+}
+
+function check_trendyol_payout_unlocked(int $userId,string $id): array
 {
     $int=get_integration($userId,'trendyol');
     if(!$int)return ['ok'=>false,'error'=>'Trendyol mağazası bağlı değil.'];

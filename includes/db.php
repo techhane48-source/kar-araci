@@ -171,6 +171,18 @@ function migrate(): void
         created_at TEXT NOT NULL DEFAULT (datetime('now'))
     )");
     $pdo->exec("CREATE INDEX IF NOT EXISTS idx_settlements_user ON settlements(user_id, transaction_date)");
+    // A connected seller/environment owns imported data. Disconnect does not erase ownership.
+    $pdo->exec("CREATE TABLE IF NOT EXISTS integration_bindings (
+        user_id INTEGER NOT NULL, marketplace TEXT NOT NULL, seller_id TEXT NOT NULL,
+        stage INTEGER NOT NULL, PRIMARY KEY(user_id,marketplace)
+    )");
+    $pdo->exec("INSERT OR IGNORE INTO integration_bindings(user_id,marketplace,seller_id,stage)
+        SELECT user_id,marketplace,seller_id,stage FROM integrations");
+    $pdo->exec("CREATE TABLE IF NOT EXISTS sync_status (
+        user_id INTEGER NOT NULL, marketplace TEXT NOT NULL, job TEXT NOT NULL,
+        last_attempt INTEGER NOT NULL, last_success INTEGER,
+        state TEXT NOT NULL, PRIMARY KEY(user_id,marketplace,job)
+    )");
     $pdo->exec("CREATE TABLE IF NOT EXISTS trendyol_buybox (
         user_id INTEGER NOT NULL, seller_id TEXT NOT NULL, barcode TEXT NOT NULL,
         buybox_rank INTEGER NOT NULL, buybox_price REAL NOT NULL, multiple_sellers INTEGER NOT NULL,
