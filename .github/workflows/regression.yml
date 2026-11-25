@@ -40,6 +40,7 @@ jobs:
           php scripts/test-buybox-decision.php
           php scripts/test-catalog-alerts.php
           php scripts/test-cargo-audit.php
+          php scripts/test-payout-receipts.php
           php scripts/test-calculator-matrix.php /tmp/karfiyat-calculator-matrix.json
           node scripts/test-calculator-parity.js /tmp/karfiyat-calculator-matrix.json
       - name: Isolated HTTP smoke test

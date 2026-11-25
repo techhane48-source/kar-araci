@@ -29,7 +29,7 @@ function csrf_token(): string
     return $_SESSION['csrf'];
 }
 
-function csrf_verify(?string $token): bool
+function csrf_verify(mixed $token): bool
 {
     session_boot();
     $expected = $_SESSION['csrf'] ?? null;

@@ -73,13 +73,15 @@ if($rapor==='order'){
     $reportNote='Net kâr değildir; komisyon ve paket kargosu ürünlere dağıtılmadı. Tarihli kullanıcı maliyeti varsa önceliklidir; yoksa ilk gözlem kullanılır. Tutarı eşleşmeyen '.$agg['excluded'].' paket dışarıda.';
 }elseif($rapor==='claims'){
     $reportCols=['İade talebi','Sipariş','Barkod','Ürün','Statü','İade sebebi','Son güncelleme','Eşleşme','Gözlemlenen birim maliyet'];
-    $q=db()->prepare("SELECT c.*,o.package_number AS matched_package,o.order_number AS matched_order,o.currency_code,o.country_code,o.lines
+    $q=db()->prepare("SELECT c.*,o.package_number AS matched_package,o.order_number AS matched_order,o.currency_code,o.country_code,o.lines,o.order_date
         FROM trendyol_claim_items c LEFT JOIN orders o ON o.user_id=c.user_id AND o.marketplace='trendyol'
         AND o.package_number=c.outbound_package AND o.order_number=c.order_number
         WHERE c.user_id=? AND c.modified_ms>=? ORDER BY c.modified_ms DESC,c.item_id");
-    $q->execute([$u['id'],$fromTs*1000]);$states=[];$matched=0;$known=0;
-    if($mp==='trendyol')foreach($q->fetchAll() as $row){
-        $order=$row['matched_package']===null?null:['package_number'=>$row['matched_package'],'order_number'=>$row['matched_order'],'currency_code'=>$row['currency_code'],'country_code'=>$row['country_code'],'lines'=>$row['lines']];
+    $q->execute([$u['id'],$fromTs*1000]);$states=[];$matched=0;$known=0;$claimRows=$q->fetchAll();
+    $claimOrders=[];foreach($claimRows as $row)if($row['matched_package']!==null)$claimOrders[$row['matched_package']]=['marketplace'=>'trendyol','package_number'=>$row['matched_package'],'order_number'=>$row['matched_order'],'currency_code'=>$row['currency_code'],'country_code'=>$row['country_code'],'lines'=>$row['lines'],'order_date'=>$row['order_date']];
+    $claimOrders=cost_history_overlay(db(),(int)$u['id'],$claimOrders);
+    if($mp==='trendyol')foreach($claimRows as $row){
+        $order=$claimOrders[$row['matched_package']??'']??null;
         $match=claim_order_match($row,$order);
         $states[$row['status']]=($states[$row['status']]??0)+1;
         if($match['state']==='Paket ve ürün satırı eşleşti')$matched++;
@@ -87,9 +89,9 @@ if($rapor==='order'){
         $reportRows[]=[$row['claim_id'],$row['order_number'],$row['barcode'],$row['product_name'],$row['status'],$row['reason'],date('d.m.Y H:i',intdiv((int)$row['modified_ms'],1000)),$match['state'].' / '.$match['scope'],$match['cost']];
     }
     $summary=['İade kalemi'=>count($reportRows),'Kabul edilmiş'=>$states['Accepted']??0,'Aksiyon bekleyen'=>$states['WaitingInAction']??0,'Eşleşen ürün satırı'=>$matched,'Maliyeti bilinen'=>$known];
-    $reportNote='İade kalemi durumu, finansal geri ödeme değildir. Tarih filtresi son güncelleme tarihine göre uygulanır. Maliyet ilk gözlemlenen tutardır; stok durumu, geri ödeme ve kargo payı doğrulanmadan zarar hesaplanmaz. '.sync_coverage_label(db(),(int)$u['id'],$mp,'claims_query',$fromTs,time());
+    $reportNote='İade kalemi durumu, finansal geri ödeme değildir. Tarih filtresi son güncelleme tarihine göre uygulanır. Tarihli maliyet önceliklidir; yoksa ilk gözlem kullanılır. stok durumu, geri ödeme ve kargo payı doğrulanmadan zarar hesaplanmaz. '.sync_coverage_label(db(),(int)$u['id'],$mp,'claims_query',$fromTs,time());
 }elseif($rapor==='return'||$rapor==='campaign'){
-    $types=$rapor==='return'?['Return','ManualRefund','ManualRefundCancel']:['Discount','DiscountCancel','Coupon','CouponCancel','TyDiscount','TyDiscountCancel','TyCoupon','TyCouponCancel'];
+    $types=$rapor==='return'?['Return','ManualRefund','ManualRefundCancel','ReturnInvoice']:['Discount','DiscountCancel','Coupon','CouponCancel','TyDiscount','TyDiscountCancel','TyCoupon','TyCouponCancel'];
     $reportCols=['Barkod','Ürün','İşlem türü','İşlem kaydı adedi','Alacak','Borç','Borç − alacak'];
     $q=db()->prepare("SELECT barcode,query_type,COUNT(*) AS n,SUM(credit) AS credit,SUM(debt) AS debt FROM settlements
         WHERE user_id=? AND marketplace=? AND external_id IS NOT NULL AND finance_scope='domestic' AND transaction_date>=? AND query_type IN (".implode(',',array_fill(0,count($types),'?')).") GROUP BY barcode,query_type ORDER BY barcode,query_type");
@@ -121,7 +123,7 @@ if($rapor==='order'){
     $q=db()->prepare("SELECT transaction_date,external_id,transaction_type,raw_json FROM trendyol_financial_documents WHERE user_id=? AND transaction_date>=? ORDER BY transaction_date DESC");
     $q->execute([$u['id'],$fromTs]);$credit=0.0;$debt=0.0;
     if($mp==='trendyol')foreach($q->fetchAll() as $row){
-        $raw=json_decode($row['raw_json'],true)?:[];$label=(string)$row['transaction_type'].' '.(string)($raw['description']??'');
+        $raw=json_decode($row['raw_json'],true)?:[];if(!finance_is_domestic($raw))continue;$label=(string)$row['transaction_type'].' '.(string)($raw['description']??'');
         if(!preg_match('/reklam|influencer|advertis/i',$label))continue;
         $c=is_numeric($raw['credit']??null)?(float)$raw['credit']:null;$d=is_numeric($raw['debt']??null)?(float)$raw['debt']:null;
         $reportRows[]=[date('d.m.Y',(int)$row['transaction_date']),(string)$row['external_id'],$label,$c,$d];

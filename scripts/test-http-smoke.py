@@ -56,7 +56,18 @@ with tempfile.TemporaryDirectory(prefix="karfiyat-http-") as tmp:
                 row = con.execute("SELECT cost_vat,kdv,stopaj_mode,stopaj FROM products WHERE name='CI product'").fetchone()
                 assert row == (10.0,20.0,"manual",0.0), row
                 con.execute("UPDATE users SET plan='pro' WHERE email='http-test@example.invalid'")
-            for path in ("urunler.php","dashboard.php","magaza.php","kar-marji.php","canli-performans.php","raporlar.php","pazar-zekasi.php","hakedis-desi.php","promosyon-analiz.php","toplu-analiz.php","maliyet-gecmisi.php","kar-hedefleri.php","uyarilar.php","kargo-kontrol.php"):
+                uid = con.execute("SELECT id FROM users WHERE email='http-test@example.invalid'").fetchone()[0]
+                con.execute("UPDATE products SET barcode='CI001' WHERE user_id=? AND name='CI product'", (uid,))
+                now=int(time.time())
+                lines=json.dumps([{"barcode":"CI001","quantity":1,"price":717.74,"line_id":"L1","commission_rate":19,"vat_rate":20,"cost_snapshot":400,"cost_vat_snapshot":10}])
+                con.execute("INSERT INTO orders(user_id,marketplace,order_number,package_number,status,total_price,order_date,lines,currency_code,country_code,last_modified_ms) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+                            (uid,"trendyol","CI-ORDER","CI-PACKAGE","Delivered",717.74,now,lines,"TRY","TR",now*1000))
+                raw=json.dumps({"id":"CI-INVOICE","affiliate":"TRENDYOLTR","country":"TR","debt":65,"credit":0})
+                con.execute("INSERT INTO trendyol_financial_documents(user_id,external_id,query_type,transaction_type,transaction_date,raw_json) VALUES(?,?,?,?,?,?)",
+                            (uid,"CI-INVOICE","DeductionInvoices","Kargo Faturası",now,raw))
+                con.execute("INSERT INTO trendyol_cargo_items(user_id,invoice_serial,row_number,parcel_id,order_number,shipment_type,amount,desi) VALUES(?,?,?,?,?,?,?,?)",
+                            (uid,"CI-INVOICE",0,"CI-PARCEL","CI-ORDER","Gönderi Kargo Bedeli",65,3))
+            for path in ("urunler.php","dashboard.php","magaza.php","kar-marji.php","canli-performans.php","raporlar.php","pazar-zekasi.php","hakedis-desi.php","promosyon-analiz.php","toplu-analiz.php","maliyet-gecmisi.php","kar-hedefleri.php","uyarilar.php","kargo-kontrol.php","banka-mutabakat.php"):
                 status, page = request(path)
                 assert status == 200 and len(page) > 500 and "<html" in page.lower(), (path, status, page[:150])
                 print("PASS HTTP", path)
@@ -69,6 +80,15 @@ with tempfile.TemporaryDirectory(prefix="karfiyat-http-") as tmp:
             status, csv = request("uyarilar.php?export=csv")
             assert status == 200 and csv.startswith("\ufeff") and "Uyarılar" in csv
             print("PASS alert CSV")
+            status, page = request("dashboard.php")
+            assert status == 200 and "Tahmini Sipariş Kârı" in page and "717,74" in page, "Populated dashboard missing data"
+            status, csv = request("raporlar.php?r=order_finance&export=1")
+            assert status == 200 and "CI-ORDER" in csv, "Populated financial report missing order"
+            status, page = request("kargo-kontrol.php?q=CI-PARCEL")
+            assert status == 200 and "CI-PARCEL" in page, "Populated cargo page missing parcel"
+            status, csv = request("kargo-kontrol.php?q=CI-PARCEL&export=csv")
+            assert status == 200 and "CI-PARCEL" in csv and "Beklenen fatura desisi" in csv, "Cargo CSV missing record"
+            print("PASS populated dashboard, order finance and cargo views")
             print("PASS registration, CSRF rejection, saved VAT and withholding settings")
         finally:
             proc.terminate()

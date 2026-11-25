@@ -241,6 +241,12 @@ function migrate(): void
         summary_json TEXT DEFAULT NULL, checked_at INTEGER DEFAULT NULL,
         PRIMARY KEY(user_id,seller_id,payment_order_id)
     )");
+    $pdo->exec("CREATE TABLE IF NOT EXISTS payout_receipts (
+        user_id INTEGER NOT NULL,seller_id TEXT NOT NULL,payment_order_id TEXT NOT NULL,
+        reference TEXT NOT NULL,received_day TEXT NOT NULL,amount_units INTEGER NOT NULL,created_at INTEGER NOT NULL,
+        PRIMARY KEY(user_id,seller_id,reference)
+    )");
+    $pdo->exec("CREATE INDEX IF NOT EXISTS idx_payout_receipts ON payout_receipts(user_id,seller_id,payment_order_id)");
     $pdo->exec("CREATE TABLE IF NOT EXISTS product_cost_history (
         id INTEGER PRIMARY KEY AUTOINCREMENT,user_id INTEGER NOT NULL,barcode TEXT NOT NULL,
         effective_at INTEGER NOT NULL,cost REAL NOT NULL,cost_vat REAL NOT NULL,source TEXT NOT NULL,recorded_at INTEGER NOT NULL
