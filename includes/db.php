@@ -267,6 +267,8 @@ function migrate(): void
         ON settlements(user_id, marketplace, external_id)");
     $pdo->exec("CREATE INDEX IF NOT EXISTS idx_settlements_scope ON settlements(user_id,marketplace,finance_scope,query_type,transaction_date)");
     $pdo->exec("CREATE INDEX IF NOT EXISTS idx_settlements_package ON settlements(user_id,marketplace,shipment_package_id)");
+    $pdo->exec("CREATE INDEX IF NOT EXISTS idx_settlements_order ON settlements(user_id,marketplace,order_number)");
+    $pdo->exec("CREATE INDEX IF NOT EXISTS idx_orders_number ON orders(user_id,marketplace,order_number)");
 
     $pdo->exec("CREATE TABLE IF NOT EXISTS settings (
         key TEXT PRIMARY KEY,

@@ -9,7 +9,7 @@ $mp = $_GET['mp'] ?? $mps[0];
 if (!in_array($mp, $mps, true)) $mp = $mps[0];
 
 $rapor = $_GET['r'] ?? 'order';
-$allowed = ['order', 'product', 'category', 'return', 'ads', 'campaign', 'buybox', 'claims'];
+$allowed = ['order', 'product', 'category', 'return', 'ads', 'campaign', 'buybox', 'claims', 'order_finance'];
 if (!in_array($rapor, $allowed, true)) $rapor = 'order';
 
 $days = (int)($_GET['days'] ?? 30);
@@ -44,6 +44,19 @@ if($rapor==='order'){
     }
     $summary=['Ciro'=>$money($sale),'Hesaplanan ciro'=>$money($knownSale),'Tahmini kâr'=>$known?$money($profit):'—','Kapsam'=>"$known / $count"];
     $reportNote='Sipariş maliyeti, komisyon ve kargo tahminleri kullanılır. Gerçek finansal mutabakat değildir.';
+}elseif($rapor==='order_finance'){
+    $reportCols=['Sipariş','Paket','Aktif satış tutarı','Gözlemlenen maliyet','Satış komisyonu (ekstre)','Satış satıcı geliri (ekstre)','Finans alacak','Finans borç','Gönderi kargo (fatura)','İade kargo (fatura)','Diğer kargo','İade kalemi','Eşleşen finans','Eşleşmeyen / doğrulanmamış finans','Durum','Eksikler'];
+    $evidence=$mp==='trendyol'?load_order_evidence(db(),(int)$u['id'],array_column($orders,'order_number')):[];
+    $known=0;$matched=0;$unmatched=0;
+    foreach($evidence as $e){
+        if(!$e['issues'])$known++;
+        $matched+=$e['matched_finance'];$unmatched+=$e['unmatched_finance']+$e['unverified_finance'];
+        $reportRows[]=[$e['order_number'],$e['packages'],$e['invoice'],$e['observed_cost'],$e['sale_commission'],$e['sale_revenue'],
+            $e['credit'],$e['debt'],$e['outbound_cargo'],$e['return_cargo'],$e['other_cargo'],$e['claim_items'],$e['matched_finance'],
+            $e['unmatched_finance']+$e['unverified_finance'],$e['state'],implode('; ',$e['issues'])];
+    }
+    $summary=['Sipariş'=>count($evidence),'Temel kalemler eşleşen'=>$known,'Eşleşen finans kaydı'=>$matched,'Eşleşmeyen / doğrulanmamış'=>$unmatched];
+    $reportNote='Sipariş oluşturulma tarihine göre seçilir; aynı siparişin bütün paketleri ve mevcut tüm tarihli finans/kargo kayıtları getirilir. Kargo sipariş seviyesindedir, paketlere dağıtılmaz. Satış komisyonu yalnızca tutarı doğrulanan Sale satırlarından gelir; komisyon düzeltmeleri alacak/borç içinde ayrı hareketlerdir. Eksik değerler sıfır değildir. Bu rapor kesin kâr veya banka mutabakatı değildir. '.sync_coverage_label(db(),(int)$u['id'],$mp,'settlements_transaction',$fromTs,time());
 }elseif(in_array($rapor,['product','category'],true)){
     $category=$rapor==='category';
     $reportCols=$category?['Kategori','Adet','Ciro','Maliyeti bilinen ciro','Gözlemlenen maliyet','Kesintiler öncesi fark','Maliyeti eksik adet']:
@@ -136,6 +149,7 @@ if (isset($_GET['export'])) {
 
 $raporLabels = [
     'order' => 'Sipariş Kârlılık Analizi',
+    'order_finance' => 'Sipariş Finansal Eşleştirme',
     'product' => 'Ürün Kârlılık Analizi',
     'category' => 'Kategori Kârlılık Analizi',
     'claims' => 'İade Talepleri ve Durumları',

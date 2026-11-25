@@ -60,7 +60,7 @@ with tempfile.TemporaryDirectory(prefix="karfiyat-http-") as tmp:
                 status, page = request(path)
                 assert status == 200 and len(page) > 500 and "<html" in page.lower(), (path, status, page[:150])
                 print("PASS HTTP", path)
-            for kind in ("order","product","category","return","ads","campaign","buybox","claims"):
+            for kind in ("order","product","category","return","ads","campaign","buybox","claims","order_finance"):
                 status, page = request("raporlar.php?r=" + kind)
                 assert status == 200 and "<html" in page.lower(), (kind, status)
                 status, csv = request("raporlar.php?r=" + kind + "&export=1")
