@@ -40,13 +40,13 @@ function settlement_signed_components(array $raw,string $type): array
     return ['revenue'=>$r*$rs,'commission'=>$c*$cs,'candidate'=>$rs===0?finance_units($raw['credit']??null)-finance_units($raw['debt']??null):$r*$rs];
 }
 
-function finance_payout_candidate(array $settlements,array $documents,string $paymentId,float $officialAmount): array
+function finance_payout_candidate(array $settlements,array $documents,string $paymentId,float $officialAmount,string $seller): array
 {
     $revenue=0;$commission=0;$settlement=0;$other=0;$payment=0;$paymentRows=0;$seen=[];$issues=[];
     foreach(['settlements'=>$settlements,'otherfinancials'=>$documents] as $source=>$rows){
         foreach($rows as $row){
             $id=(string)($row['externalId']??'');$key=$source.':'.$id;$raw=$row['raw']??[];$type=(string)($row['queryType']??'');
-            if($id===''||(string)($row['paymentOrderId']??'')!==$paymentId){$issues[]='Ödeme emri eşleşmeyen kayıt';continue;}
+            if($id===''||$paymentId===''||$seller===''||!is_array($raw)||(string)($row['paymentOrderId']??'')!==$paymentId||(string)($raw['paymentOrderId']??'')!==$paymentId||(string)($raw['id']??'')!==$id||(string)($raw['sellerId']??'')!==$seller){$issues[]='Ödeme emri, işlem veya satıcı kimliği uyuşmuyor';continue;}
             if(isset($seen[$key])){
                 if($seen[$key]!==[$type,$raw])$issues[]='Çelişkili işlem kimliği';
                 continue;
@@ -54,27 +54,40 @@ function finance_payout_candidate(array $settlements,array $documents,string $pa
             $seen[$key]=[$type,$raw];
             if(!finance_is_domestic($raw)){$issues[]='Yurtiçi kapsamı doğrulanamayan kayıt';continue;}
             try {
+                $credit=finance_units($raw['credit']??null);$debt=finance_units($raw['debt']??null);
+                if($credit<0||$debt<0||($credit>0&&$debt>0))throw new InvalidArgumentException('Çelişkili borç/alacak');
                 if($source==='settlements'){
                     $c=settlement_signed_components($raw,$type);
+                    if($type==='Sale'&&($credit<=0||$debt!==0||abs($credit-$c['revenue']+$c['commission'])>100))
+                        throw new InvalidArgumentException('Satış alacağı, komisyon ve hakediş uyuşmuyor');
+                    if($type==='Return'&&($debt<=0||$credit!==0||abs($debt+$c['revenue']-$c['commission'])>100))
+                        throw new InvalidArgumentException('İade borcu, komisyon ve hakediş uyuşmuyor');
                     $revenue+=$c['revenue'];$commission+=$c['commission'];$settlement+=$c['candidate'];
                 }else{
-                    $net=finance_units($raw['credit']??null)-finance_units($raw['debt']??null);
-                    if($type==='PaymentOrder'){$payment-=$net;$paymentRows++;}
-                    else $other+=$net;
+                    if(!in_array($type,['Stoppage','CashAdvance','WireTransfer','IncomingTransfer','ReturnInvoice','CommissionAgreementInvoice','PaymentOrder','DeductionInvoices','FinancialItem'],true))
+                        throw new InvalidArgumentException('Bilinmeyen belge türü');
+                    $net=$credit-$debt;
+                    if($type==='PaymentOrder'){
+                        if($credit!==0||$debt<=0)throw new InvalidArgumentException('Ödeme kaydı borç işareti geçersiz');
+                        $payment-=$net;$paymentRows++;
+                    }else $other+=$net;
                 }
             }catch(InvalidArgumentException $e){$issues[]=$e->getMessage();}
         }
     }
     if(!$paymentRows)$issues[]='Cari hesap ödeme kaydı yok';
     $official=finance_units($officialAmount);
+    if($official<0)$issues[]='Ödeme emri tutarı geçersiz';
     $candidate=$settlement+$other;
-    // Explicit candidate only: do not declare bank settlement even if amounts match.
-    return ['complete_inputs'=>!$issues,'issues'=>array_values(array_unique($issues)),
+    $matched=!$issues&&abs($official-$candidate)<=100&&abs($official-$payment)<=100;
+    // Three-way arithmetic agreement is not independent bank confirmation.
+    return ['version'=>2,'complete_inputs'=>!$issues,'three_way_match'=>$matched,
+       'state'=>$issues?'incomplete':($matched?'matched':'difference'),'issues'=>array_values(array_unique($issues)),
        'seller_revenue'=>$revenue/10000,'signed_commission'=>$commission/10000,
        'settlement_candidate'=>$settlement/10000,'other_net'=>$other/10000,
        'candidate'=>$issues?null:$candidate/10000,'official'=>$official/10000,
-       'statement_payment'=>$paymentRows?$payment/10000:null,
+       'statement_payment'=>!$issues&&$paymentRows?$payment/10000:null,
        'candidate_difference'=>$issues?null:($official-$candidate)/10000,
-       'statement_difference'=>$paymentRows?($official-$payment)/10000:null,
+       'statement_difference'=>!$issues&&$paymentRows?($official-$payment)/10000:null,
        'bank_verified'=>false];
 }

@@ -245,13 +245,16 @@ require __DIR__ . '/../includes/header.php';
 <tr><td><?= h($po['payment_order_id']) ?></td><td><?= date('d.m.Y',(int)$po['payout_date']) ?></td><td><?= tl((float)$po['amount']) ?></td><td>
 <form method="post"><input type="hidden" name="csrf" value="<?= h(csrf_token()) ?>"><input type="hidden" name="mp" value="trendyol"><input type="hidden" name="tab" value="hakedis"><input type="hidden" name="action" value="payout_check"><input type="hidden" name="payment_id" value="<?= h($po['payment_order_id']) ?>"><button>Kalemleri sorgula</button></form>
 <?php if(is_array($summary)): ?><details><summary><?= (int)$summary['settlement_rows']+(int)$summary['document_rows'] ?> işlem</summary>
-<?php if(is_array($summary['candidate_check']??null)): $check=$summary['candidate_check']; ?>
+<?php if(is_array($summary['candidate_check']??null)&&($summary['candidate_check']['version']??0)===2): $check=$summary['candidate_check']; ?>
+<p><b><?=h(['matched'=>'Üç Trendyol tutarı aritmetik olarak eşleşiyor','difference'=>'Hakediş farkı var','incomplete'=>'Finans kanıtı eksik / çelişkili'][$check['state']]??'Kontrol gerekli')?></b> · <?=!empty($po['checked_at'])?date('d.m.Y H:i',(int)$po['checked_at']):'—'?></p>
 <p>Ekstre ödeme tutarı: <?= $check['statement_payment']===null?'—':tl((float)$check['statement_payment']) ?> · Ekstre / ödeme emri farkı: <?= $check['statement_difference']===null?'—':tl((float)$check['statement_difference']) ?></p>
 <p>İşlem işaretlerinden hesaplanan ön kontrol: <?= $check['candidate']===null?'—':tl((float)$check['candidate']) ?> · Ön kontrol farkı: <?= $check['candidate_difference']===null?'—':tl((float)$check['candidate_difference']) ?></p>
 <?php if($check['issues']): ?><p class="hint"><?= h(implode('; ',$check['issues'])) ?></p><?php endif; ?>
 <p class="hint">Banka hareketi eşleştirilmedi. İşlem kalemlerinden hesaplanan ön kontrol henüz kesin hakediş değildir.</p>
-<?php endif; ?>
-<table><tr><th>İşlem</th><th>Alacak</th><th>Borç</th></tr><?php foreach($summary['by_type'] as $kind=>$v): ?><tr><td><?= h($kind) ?></td><td><?= tl((float)$v['credit']) ?></td><td><?= tl((float)$v['debt']) ?></td></tr><?php endforeach; ?></table></details><?php endif; ?>
+<?php if(!empty($check['complete_inputs'])): ?>
+<table><tr><th>İşlem</th><th>Alacak</th><th>Borç</th></tr><?php foreach($summary['by_type'] as $kind=>$v): ?><tr><td><?= h($kind) ?></td><td><?= tl((float)$v['credit']) ?></td><td><?= tl((float)$v['debt']) ?></td></tr><?php endforeach; ?></table>
+<?php else: ?><p class="hint">Doğrulanmayan kayıtların toplu tutarları gösterilmez.</p><?php endif; ?>
+<?php else: ?><p class="hint">Eski kontrol sürümü; otomatik yeniden sorgu gerekli.</p><?php endif; ?></details><?php endif; ?>
 </td></tr><?php endforeach; ?></table></div>
   <div class="card table-card" style="margin:16px 0">
     <h2>Resmî Trendyol ödeme kayıtları (cari ekstre)</h2>

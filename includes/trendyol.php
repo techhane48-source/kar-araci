@@ -332,7 +332,13 @@ final class TrendyolClient
             if (!is_array($res['body']['content'] ?? null) || !is_numeric($res['body']['totalPages']??null) || !is_numeric($res['body']['totalElements']??null)) {
                 return ['ok' => false, 'error' => 'Cari hesap ekstresi yanıtı eksik.'];
             }
+            foreach(['totalElements','totalPages'] as $field){
+                $v=$res['body'][$field];
+                if(!is_finite((float)$v)||(float)$v<0||(float)$v!==(float)(int)$v)return ['ok'=>false,'error'=>'Finansal sayfa sayısı geçersiz.'];
+            }
+            if(count($res['body']['content'])>$size)return ['ok'=>false,'error'=>'Finansal sayfa boyutu geçersiz.'];
             $expected=$expected??(int)$res['body']['totalElements'];$pages=$pages??(int)$res['body']['totalPages'];
+            if(($pages===0&&$expected!==0)||($pages>0&&$expected===0)||($expected>$pages*$size))return ['ok'=>false,'error'=>'Finansal sayfa kapsamı tutarsız.'];
             if($expected!==(int)$res['body']['totalElements']||$pages!==(int)$res['body']['totalPages'])return ['ok'=>false,'error'=>'Finansal kayıtlar sorgu sırasında değişti.'];
             if ((int)$res['body']['totalPages'] > $maxPage) {
                 return ['ok' => false, 'error' => 'Finansal kayıt sayfa sınırı aşıldı.'];
@@ -349,7 +355,7 @@ final class TrendyolClient
                 if(isset($seen[$id]))return ['ok'=>false,'error'=>'Yinelenen finansal işlem sayfası.'];
                 $seen[$id]=true;
                 if((string)($it['sellerId']??'')!==$this->sellerId || !is_numeric($it['transactionDate']??null)
-                    || (float)$it['transactionDate']<=0 || !is_numeric($it['credit']??null) || !is_numeric($it['debt']??null))
+                    || !is_finite((float)$it['transactionDate']) || (float)$it['transactionDate']<=0 || (float)$it['transactionDate']!==(float)(int)$it['transactionDate'] || !is_numeric($it['credit']??null) || !is_numeric($it['debt']??null) || !is_finite((float)$it['credit']) || !is_finite((float)$it['debt']))
                     return ['ok'=>false,'error'=>'Finansal işlem satıcısı, tarihi veya borç/alacağı eksik.'];
                 if($paymentOrderId!==null && (string)($it['paymentOrderId']??'')!==$paymentOrderId)
                     return ['ok'=>false,'error'=>'Finansal işlem ödeme emri uyuşmuyor.'];

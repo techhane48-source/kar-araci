@@ -654,10 +654,11 @@ function check_trendyol_payout_unlocked(int $userId,string $id): array
         usleep(650000);
     }
     try {$summary=payout_components($rows['settlements'],$rows['otherfinancials'],$id);
-        $summary['candidate_check']=finance_payout_candidate($rows['settlements'],$rows['otherfinancials'],$id,(float)$payout['amount']);}
+        $summary['candidate_check']=finance_payout_candidate($rows['settlements'],$rows['otherfinancials'],$id,(float)$payout['amount'],(string)$int['seller_id']);}
     catch(InvalidArgumentException $e){return ['ok'=>false,'error'=>$e->getMessage()];}
-    db()->prepare("UPDATE trendyol_payouts SET summary_json=?,checked_at=? WHERE user_id=? AND seller_id=? AND payment_order_id=?")
-        ->execute([json_encode($summary,JSON_THROW_ON_ERROR|JSON_UNESCAPED_UNICODE),time(),$userId,$int['seller_id'],$id]);
+    $save=db()->prepare("UPDATE trendyol_payouts SET summary_json=?,checked_at=? WHERE user_id=? AND seller_id=? AND payment_order_id=? AND amount=? AND payout_date=?");
+    $save->execute([json_encode($summary,JSON_THROW_ON_ERROR|JSON_UNESCAPED_UNICODE),time(),$userId,$int['seller_id'],$id,$payout['amount'],$payout['payout_date']]);
+    if(!$save->rowCount())return ['ok'=>false,'error'=>'Ödeme emri sorgu sırasında değişti.'];
     return ['ok'=>true,'summary'=>$summary];
 }
 
