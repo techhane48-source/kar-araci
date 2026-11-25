@@ -35,56 +35,7 @@ $rows = db()->prepare("SELECT * FROM products WHERE $where ORDER BY (cost IS NUL
 $rows->execute($params);
 $products = $rows->fetchAll();
 
-// Toplu yeniden fiyatlama
-$rep = null;
-$repApplied = false;
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['repricing'])) {
-    $tip = $_POST['tip'] ?? 'marj';
-    $deger = (float)($_POST['deger'] ?? 0);
-    $apply = isset($_POST['apply']);
-    $rep = ['tip' => $tip, 'deger' => $deger, 'uygulandi' => false, 'sayi' => 0, 'rows' => []];
-
-    $targets = db()->prepare("SELECT * FROM products WHERE user_id = {$u['id']} AND marketplace = " . db()->quote($mp) . " AND cost > 0 AND price > 0");
-    $targets->execute();
-    foreach ($targets->fetchAll() as $p) {
-        $cost = (float)$p['cost'];
-        $cargo = (float)$p['cargo'];
-        $rate = (float)$p['rate'];
-        $kdv = (float)($p['kdv'] ?? 20.0);
-        $extra = (float)$p['extra_fee'];
-        $service = (float)($p['service_fee'] ?? trendyol_service_fee());
-        $ret = (float)$p['return_rate'];
-        $tp = 0.0; $tm = 0.0;
-        if ($tip === 'tutar') $tp = $deger;
-        elseif ($tip === 'oran') $tp = $cost * $deger / 100.0;   // kâr oranı = kâr/maliyet
-        else $tm = $deger;                                        // kâr marjı = kâr/satış
-        $r = product_target_price($p, $tp, $tm);
-        if ($r['price'] <= 0) continue;
-        if ($apply) {
-            db()->prepare("UPDATE products SET price = ? WHERE id = ?")->execute([$r['price'], $p['id']]);
-        }
-        $rep['rows'][] = [
-            'barcode' => $p['barcode'], 'name' => $p['name'],
-            'old' => (float)$p['price'], 'new' => round($r['price'], 2),
-            'kar' => round($r['profit'], 2),
-        ];
-    }
-    $rep['sayi'] = count($rep['rows']);
-    if ($apply) { $rep['uygulandi'] = true; flash_set('success', $rep['sayi'] . ' ürünün fiyatı güncellendi.'); header('Location: kar-marji.php?mp=' . urlencode($mp)); exit; }
-}
-
-// CSV indir (yeniden fiyatlama önizleme)
-if (isset($_GET['export']) && $_GET['export'] === 'repricing' && $rep) {
-    header('Content-Type: text/csv; charset=utf-8');
-    header('Content-Disposition: attachment; filename="yeniden-fiyatlama.csv"');
-    echo "\xEF\xBB\xBF";
-    $out = fopen('php://output', 'w');
-    fputcsv($out, ['Barkod', 'Ürün', 'Eski Fiyat', 'Yeni Fiyat', 'Tahmini Kâr']);
-    foreach ($rep['rows'] as $r) fputcsv($out, [$r['barcode'], $r['name'], $r['old'], $r['new'], $r['kar']]);
-    fclose($out);
-    exit;
-}
-
+// Price proposals are read-only; the former bulk local overwrite is retired.
 // Ürün kârlılık hesabı (tek ürün)
 function urun_kar(array $p): array {
     $cost = (float)$p['cost'];
@@ -109,44 +60,7 @@ require __DIR__ . '/../includes/header.php';
   <p class="muted">TSF satış fiyatı üzerinden kârlılık; hedef kâra göre toplu yeniden fiyatlama.</p>
 </div>
 
-<div class="card">
-  <h2>Toplu Yeniden Fiyatlama</h2>
-  <p class="hint" style="margin:4px 0 10px">Maliyeti girilmiş ürünlerde hedef kâra göre yeni satış fiyatı çözülür (geri alınamaz — önce raporu indir).</p>
-  <form method="post" style="display:flex;flex-wrap:wrap;gap:10px;align-items:end">
-    <input type="hidden" name="repricing" value="1">
-    <label style="display:flex;flex-direction:column;gap:4px;font-size:13px">Hedef
-      <select name="tip" style="padding:8px">
-        <option value="marj">Kâr Marjı (%) = kâr/satış</option>
-        <option value="oran">Kâr Oranı (%) = kâr/maliyet</option>
-        <option value="tutar">Kâr Tutarı (₺)</option>
-      </select>
-    </label>
-    <label style="display:flex;flex-direction:column;gap:4px;font-size:13px">Değer
-      <input type="number" name="deger" step="0.01" value="30" style="padding:8px;width:120px">
-    </label>
-    <button type="submit" class="btn-primary" style="padding:8px 14px">Hesapla / Önizle</button>
-  </form>
-
-  <?php if ($rep && !$rep['uygulandi']): ?>
-    <div class="flash flash-info" style="margin-top:12px">
-      <strong><?= $rep['sayi'] ?> ürün</strong> hedefe göre fiyatlanacak.
-      <a href="kar-marji.php?export=repricing&mp=<?= urlencode($mp) ?>" class="btn-ghost" style="margin-left:8px">⬇ Raporu İndir (CSV)</a>
-      <form method="post" style="display:inline">
-        <input type="hidden" name="repricing" value="1">
-        <input type="hidden" name="tip" value="<?= h($rep['tip']) ?>">
-        <input type="hidden" name="deger" value="<?= h((string)$rep['deger']) ?>">
-        <button type="submit" name="apply" value="1" class="btn-primary" style="margin-left:8px" onclick="return confirm('<?= $rep['sayi'] ?> ürünün fiyatı geri alınamaz şekilde güncellenecek. Emin misin?')">Uygula</button>
-      </form>
-    </div>
-    <table style="margin-top:10px">
-      <tr><th>Barkod</th><th>Ürün</th><th class="tar">Eski Fiyat</th><th class="tar">Yeni Fiyat</th><th class="tar">Tahmini Kâr</th></tr>
-      <?php foreach (array_slice($rep['rows'], 0, 20) as $r): ?>
-        <tr><td><?= h($r['barcode']) ?></td><td><?= h($r['name']) ?></td><td class="tar"><?= tl($r['old']) ?></td><td class="tar" style="color:var(--accent)"><?= tl($r['new']) ?></td><td class="tar"><?= tl($r['kar']) ?></td></tr>
-      <?php endforeach; ?>
-    </table>
-    <?php if ($rep['sayi'] > 20): ?><p class="hint">İlk 20 gösteriliyor (toplam <?= $rep['sayi'] ?>).</p><?php endif; ?>
-  <?php endif; ?>
-</div>
+<div class="card"><h2>Hedef kâra göre fiyat önerileri</h2><p class="hint">Mağaza, kategori ve ürün hedefleriyle önerileri hesapla ve CSV indir. Satış fiyatları değiştirilmez.</p><a class="btn-primary" href="kar-hedefleri.php">Kâr hedefleri ve fiyat önerileri</a></div>
 
 <?php
 // ---- Nasıl Hesapladık? kırılımı ----

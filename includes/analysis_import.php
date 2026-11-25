@@ -1,6 +1,7 @@
 <?php
 declare(strict_types=1);
 require_once __DIR__.'/profit.php';
+require_once __DIR__.'/profit_targets.php';
 require_once __DIR__.'/xlsx.php';
 
 const ANALYSIS_MAX_ROWS=20000;
@@ -97,18 +98,18 @@ function analysis_read_upload(array $upload): array
     return [$header,$rows];
 }
 
-function analysis_row(array $schema,array $row,array $products,string $module): array
+function analysis_row(array $schema,array $row,array $products,string $module,array $rules=[]): array
 {
     $barcode=trim((string)($row[$schema['barcode']]??''));
     $p=$products[$barcode]??null;
     $name=$p['name']??($schema['name']===null?'':(string)($row[$schema['name']]??''));
     $cost=$p&&is_numeric($p['cost']??null)&&(float)$p['cost']>0?(float)$p['cost']:null;
-    $best=null;$tiers=[];
+    $best=null;$tiers=[];$rule=$p?target_for_product($rules,$p):null;$meets=null;
     foreach($schema['prices'] as $key=>$def){
         $price=analysis_price((string)($row[$def['index']]??''));
         $explicit=isset($schema['rates'][$key]);
         $rate=$explicit?analysis_rate((string)($row[$schema['rates'][$key]]??'')):($module==='bulk'&&$p? (float)$p['rate']:null);
-        $t=['price'=>$price['price']??null,'range'=>$price['range']??false,'rate'=>$rate,'profit'=>null,'margin'=>null,'reason'=>''];
+        $t=['price'=>$price['price']??null,'range'=>$price['range']??false,'rate'=>$rate,'profit'=>null,'margin'=>null,'reason'=>'','target_met'=>null];
         if($cost===null)$t['reason']=$p?'Maliyet eksik':'Barkod eşleşmedi';
         elseif($price===null)$t['reason']='Fiyat veya kapalı aralık okunamadı';
         elseif($rate===null||$rate<0||$rate>100)$t['reason']='Kademe komisyonu eksik';
@@ -116,32 +117,37 @@ function analysis_row(array $schema,array $row,array $products,string $module): 
             try{$calc=product_profit($p,$price['price'],$rate);$t['profit']=$calc['profit'];$t['margin']=$calc['margin'];
                 // A range endpoint or unverified campaign is not an automatically eligible selection.
                 $t['reason']=$price['range']?'Aralık üst ucu senaryosu':'Tahmini hesap';
+                if($rule&&!$price['range']&&($module==='bulk'||in_array($module,['komisyon','plus'],true))){
+                    $t['target_met']=target_pass($rule,$calc,$cost,$price['price']);
+                    $meets=($meets===true)||$t['target_met'];
+                }
                 if(!$price['range']&&($module==='bulk'||in_array($module,['komisyon','plus'],true))&&($best===null||$calc['profit']>$best))$best=$calc['profit'];
             }catch(InvalidArgumentException $e){$t['reason']='Ürün hesap ayarları geçersiz';}
         }
         $tiers[$key]=$t;
     }
-    return ['barcode'=>$barcode,'name'=>$name,'cost'=>$cost,'matched'=>$p!==null,'tiers'=>$tiers,'best'=>$best];
+    return ['barcode'=>$barcode,'name'=>$name,'cost'=>$cost,'matched'=>$p!==null,'tiers'=>$tiers,'best'=>$best,'rule'=>$rule?target_label($rule):null,'meets_target'=>$meets];
 }
 
 /** Store one analysis per module/account. A bad upload preserves the prior analysis. */
-function analysis_save(PDO $db,int $uid,string $kind,string $module,array $schema,iterable $rows,array $products): array
+function analysis_save(PDO $db,int $uid,string $kind,string $module,array $schema,iterable $rows,array $products,array $rules=[]): array
 {
     $db->beginTransaction();
     try{
         $args=[$uid,$kind,$module];
         $db->prepare("DELETE FROM analysis_rows WHERE user_id=? AND kind=? AND module=?")->execute($args);
-        $insert=$db->prepare("INSERT INTO analysis_rows(user_id,kind,module,row_no,payload_json,best_profit) VALUES(?,?,?,?,?,?)");
-        $stats=['rows'=>0,'matched'=>0,'profitable'=>0,'unmatched'=>0,'missing_cost'=>0];$seen=0;
+        $insert=$db->prepare("INSERT INTO analysis_rows(user_id,kind,module,row_no,payload_json,best_profit,meets_target) VALUES(?,?,?,?,?,?,?)");
+        $stats=['rows'=>0,'matched'=>0,'profitable'=>0,'unmatched'=>0,'missing_cost'=>0,'meets_target'=>0];$seen=0;
         foreach($rows as $row){
             if(++$seen>ANALYSIS_MAX_ROWS||count($row)>ANALYSIS_MAX_COLS)throw new RuntimeException('Satır veya kolon sınırı aşıldı.');
             if(!array_filter($row,static fn($v)=>trim((string)$v)!==''))continue;
-            $r=analysis_row($schema,$row,$products,$module);
+            $r=analysis_row($schema,$row,$products,$module,$rules);
             if($r['barcode']==='')continue;
             $stats['rows']++;$stats[$r['matched']?'matched':'unmatched']++;
             if($r['matched']&&$r['cost']===null)$stats['missing_cost']++;
             if($r['best']!==null&&$r['best']>0)$stats['profitable']++;
-            $insert->execute(array_merge($args,[$stats['rows'],json_encode($r,JSON_THROW_ON_ERROR|JSON_UNESCAPED_UNICODE),$r['best']]));
+            if($r['meets_target']===true)$stats['meets_target']++;
+            $insert->execute(array_merge($args,[$stats['rows'],json_encode($r,JSON_THROW_ON_ERROR|JSON_UNESCAPED_UNICODE),$r['best'],$r['meets_target']===null?null:(int)$r['meets_target']]));
         }
         if(!$stats['rows'])throw new RuntimeException('Geçerli barkod satırı bulunamadı.');
         $db->prepare("INSERT INTO analysis_jobs(user_id,kind,module,headers_json,stats_json,created_at) VALUES(?,?,?,?,?,?)

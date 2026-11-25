@@ -210,6 +210,11 @@ function migrate(): void
         merchant_fingerprint TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'pending',
         provider_payment_key TEXT UNIQUE, created_at INTEGER NOT NULL, approved_at INTEGER
     )");
+    $pdo->exec("CREATE TABLE IF NOT EXISTS profit_targets (
+        user_id INTEGER NOT NULL,scope TEXT NOT NULL,scope_key TEXT NOT NULL,
+        kind TEXT NOT NULL,value REAL NOT NULL,updated_at INTEGER NOT NULL,
+        PRIMARY KEY(user_id,scope,scope_key)
+    )");
     $pdo->exec("CREATE TABLE IF NOT EXISTS analysis_jobs (
         user_id INTEGER NOT NULL, kind TEXT NOT NULL, module TEXT NOT NULL,
         headers_json TEXT NOT NULL, stats_json TEXT NOT NULL, created_at INTEGER NOT NULL,
@@ -221,6 +226,9 @@ function migrate(): void
         PRIMARY KEY(user_id,kind,module,row_no)
     )");
     $pdo->exec("CREATE INDEX IF NOT EXISTS idx_analysis_profit ON analysis_rows(user_id,kind,module,best_profit)");
+    $cols=array_column($pdo->query("PRAGMA table_info(analysis_rows)")->fetchAll(PDO::FETCH_ASSOC),'name');
+    if(!in_array('meets_target',$cols,true))$pdo->exec("ALTER TABLE analysis_rows ADD COLUMN meets_target INTEGER DEFAULT NULL");
+    $pdo->exec("CREATE INDEX IF NOT EXISTS idx_analysis_target ON analysis_rows(user_id,kind,module,meets_target)");
     $pdo->exec("CREATE TABLE IF NOT EXISTS trendyol_buybox (
         user_id INTEGER NOT NULL, seller_id TEXT NOT NULL, barcode TEXT NOT NULL,
         buybox_rank INTEGER NOT NULL, buybox_price REAL NOT NULL, multiple_sellers INTEGER NOT NULL,
