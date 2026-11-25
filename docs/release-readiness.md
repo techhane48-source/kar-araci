@@ -25,3 +25,7 @@ This is a draft development branch, not a production release. The eight workstre
 8. Obtain explicit approval before merging, production deployment, cron activation or marketplace writes.
 
 No production deployment, bank integration or actual seller-data verification is represented as complete.
+
+
+## Scope freeze and final gates
+No new marketplaces or feature expansion. The development branch now has automated payout history and three-way statement checks, estimated-to-observed commission, three-stage cargo lifecycle with dated local tariff repricing, and store-level deduction evidence. Synthetic regressions are not proof of current marketplace tariffs or realized net profit. Closing gate: all financial reports require matching domestic seller identity and reject malformed/duplicate/fractional order lines; old records without seller evidence need a successful refresh. Remaining hard acceptance blockers: complete official current tariff and service-fee basis; verified real store payloads and invoice VAT; actual returns/campaign exports and physical inventory evidence; payout/bank reconciliation; authenticated Melontik comparison; load/security/migration checks; final interface. No estimate of completion date until real-data access is established. Do not merge or deploy without explicit approval.

@@ -11,5 +11,9 @@ $tests=['partial coverage'=>$g['sale']===300.0&&$g['known_sale']===200.0&&$g['mi
 $bad=$order;$bad['total_price']=299;$r=aggregate_report_lines([$bad],$products);$tests['mismatched package excluded']=$r['excluded']===1&&!$r['groups'];
 $bad=$order;$bad['lines'][0]['platform_discount']=10;$tests['unreconciled platform discount excluded']=report_order_lines($bad,$products)===null;
 $bad=$order;$bad['status']='Returned';$tests['return excluded']=report_order_lines($bad,$products)===null;
+$bad=$order;$bad['lines'][0]['quantity']=2.5;$tests['fractional quantity rejected']=report_order_lines($bad,$products)===null;
+$bad=$order;$bad['lines'][]='invalid';$tests['malformed row rejected']=report_order_lines($bad,$products)===null;
+$bad=$order;$bad['lines'][0]['line_id']='L';$bad['lines'][1]['line_id']='L';$tests['duplicate line rejected']=report_order_lines($bad,$products)===null;
+$bad=$order;$bad['total_price']=INF;$tests['nonfinite total rejected']=report_order_lines($bad,$products)===null;
 foreach($tests as $k=>$ok)echo ($ok?'PASS':'FAIL')." $k\n";
 exit(in_array(false,$tests,true)?1:0);

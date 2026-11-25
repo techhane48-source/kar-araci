@@ -57,17 +57,18 @@ with tempfile.TemporaryDirectory(prefix="karfiyat-http-") as tmp:
                 assert row == (10.0,20.0,"manual",0.0), row
                 con.execute("UPDATE users SET plan='pro' WHERE email='http-test@example.invalid'")
                 uid = con.execute("SELECT id FROM users WHERE email='http-test@example.invalid'").fetchone()[0]
+                con.execute("INSERT INTO integration_bindings(user_id,marketplace,seller_id,stage) VALUES(?,?,?,?)", (uid,"trendyol","123",1))
                 con.execute("UPDATE products SET barcode='CI001' WHERE user_id=? AND name='CI product'", (uid,))
                 now=int(time.time())
                 lines=json.dumps([{"barcode":"CI001","quantity":1,"price":717.74,"line_id":"L1","commission_rate":19,"vat_rate":20,"cost_snapshot":400,"cost_vat_snapshot":10}])
                 con.execute("INSERT INTO orders(user_id,marketplace,order_number,package_number,status,total_price,order_date,lines,currency_code,country_code,last_modified_ms) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
                             (uid,"trendyol","CI-ORDER","CI-PACKAGE","Delivered",717.74,now,lines,"TRY","TR",now*1000))
-                raw=json.dumps({"id":"CI-INVOICE","affiliate":"TRENDYOLTR","country":"TR","debt":65,"credit":0})
+                raw=json.dumps({"id":"CI-INVOICE","sellerId":123,"affiliate":"TRENDYOLTR","country":"TR","debt":65,"credit":0})
                 con.execute("INSERT INTO trendyol_financial_documents(user_id,external_id,query_type,transaction_type,transaction_date,raw_json) VALUES(?,?,?,?,?,?)",
                             (uid,"CI-INVOICE","DeductionInvoices","Kargo Faturası",now,raw))
                 con.execute("INSERT INTO trendyol_cargo_items(user_id,invoice_serial,row_number,parcel_id,order_number,shipment_type,amount,desi) VALUES(?,?,?,?,?,?,?,?)",
                             (uid,"CI-INVOICE",0,"CI-PARCEL","CI-ORDER","Gönderi Kargo Bedeli",65,3))
-                sale=json.dumps({"id":"CI-SALE","barcode":"CI001","orderNumber":"CI-ORDER","shipmentPackageId":"CI-PACKAGE","affiliate":"TRENDYOLTR","country":"TR","credit":717.74,"debt":0,"commissionAmount":136.3706,"sellerRevenue":581.3694})
+                sale=json.dumps({"id":"CI-SALE","sellerId":123,"barcode":"CI001","orderNumber":"CI-ORDER","shipmentPackageId":"CI-PACKAGE","affiliate":"TRENDYOLTR","country":"TR","credit":717.74,"debt":0,"commissionAmount":136.3706,"sellerRevenue":581.3694})
                 con.execute("INSERT INTO settlements(user_id,marketplace,external_id,order_number,shipment_package_id,query_type,raw_json,finance_scope) VALUES(?,?,?,?,?,?,?,?)",
                             (uid,"trendyol","CI-SALE","CI-ORDER","CI-PACKAGE","Sale",sale,"domestic"))
             for path in ("urunler.php","dashboard.php","magaza.php","kar-marji.php","canli-performans.php","raporlar.php","pazar-zekasi.php","hakedis-desi.php","promosyon-analiz.php","toplu-analiz.php","maliyet-gecmisi.php","kar-hedefleri.php","uyarilar.php","kargo-kontrol.php","banka-mutabakat.php","iade-kontrol.php"):

@@ -9,9 +9,9 @@ require_once __DIR__.'/cost_history.php';
  * identifiers. Cargo invoice parcelUniqueId is NOT shipmentPackageId.
  * No account-level fee is allocated to an order; no claim is treated as a refund.
  */
-function order_evidence(array $packages,array $settlements,array $cargo,array $claims): array
+function order_evidence(array $packages,array $settlements,array $cargo,array $claims,string $seller=''): array
 {
-    $issues=[];$byPackage=[];$invoice=0;$cost=0;$missingCost=0;$units=0;$active=0;$datedUnits=0;$observedUnits=0;
+    $issues=$seller===''?['Mağaza satıcı kimliği doğrulanamadı']:[];$byPackage=[];$invoice=0;$cost=0;$missingCost=0;$units=0;$active=0;$datedUnits=0;$observedUnits=0;
     $orderNo=(string)($packages[0]['order_number']??'');$expectedByBarcode=[];$financeByBarcode=[];$invoiceValid=true;$costByBarcode=[];$salePartsByBarcode=[];
     foreach($packages as $p){
         $id=(string)($p['package_number']??'');
@@ -32,6 +32,7 @@ function order_evidence(array $packages,array $settlements,array $cargo,array $c
         else foreach($reconciled as $r){$bc=$r['barcode'];$expectedByBarcode[$id][$bc]=($expectedByBarcode[$id][$bc]??0)+finance_units($r['sale']);}
         $seenLine=[];
         foreach($lines as $l){
+            if(!is_array($l)){$issues[]='Ürün satırı biçimi geçersiz';$missingCost++;continue;}
             $qty=(int)($l['quantity']??0);$key=(string)($l['line_id']??'');$bc=(string)($l['barcode']??'');
             if($bc===''||$qty<=0||!is_numeric($l['quantity']??null)||(float)$l['quantity']!==(float)$qty||$key===''||isset($seenLine[$key])){$issues[]='Ürün satırı kimliği/adedi çelişkili';$missingCost++;continue;}
             $seenLine[$key]=true;$units+=$qty;
@@ -53,13 +54,13 @@ function order_evidence(array $packages,array $settlements,array $cargo,array $c
         if($id===''||isset($seen[$id])){$unverified++;$issues[]='Finansal işlem kimliği eksik/tekrar';continue;}
         $seen[$id]=true;
         if((string)($row['order_number']??'')!==$orderNo||!isset($byPackage[$pid])){$unmatched++;continue;}
-        if(!is_array($raw)||!finance_is_domestic($raw)||!order_is_domestic_try($byPackage[$pid])
+        if(!is_array($raw)||!finance_is_domestic($raw)||$seller===''||(string)($raw['sellerId']??'')!==$seller||!order_is_domestic_try($byPackage[$pid])
             ||(string)($raw['orderNumber']??'')!==$orderNo||(string)($raw['shipmentPackageId']??'')!==$pid
             ||(string)($raw['id']??'')!==$id){$unverified++;continue;}
         $type=(string)($row['query_type']??'');
         try{
             $c=finance_units($raw['credit']??null);$d=finance_units($raw['debt']??null);
-            if($c<0||$d<0||$type==='')throw new InvalidArgumentException('Geçersiz hareket');
+            if($c<0||$d<0||($c>0&&$d>0)||$type==='')throw new InvalidArgumentException('Geçersiz hareket');
         }catch(InvalidArgumentException $e){$unverified++;continue;}
         $matched++;$credit+=$c;$debt+=$d;
         if(!isset($byType[$type]))$byType[$type]=['credit'=>0,'debt'=>0,'count'=>0];
@@ -103,7 +104,7 @@ function order_evidence(array $packages,array $settlements,array $cargo,array $c
         $cargoSeen[$key]=true;
         // Invoice document must be scoped to domestic trade.
         $raw=$row['invoice_raw']??null;if(is_string($raw))$raw=json_decode($raw,true);
-        if(!is_array($raw)||!finance_is_domestic($raw)||(string)($raw['id']??'')!==(string)$row['invoice_serial']){$cargoBad++;continue;}
+        if(!is_array($raw)||!finance_is_domestic($raw)||$seller===''||(string)($raw['sellerId']??'')!==$seller||(string)($raw['id']??'')!==(string)$row['invoice_serial']){$cargoBad++;continue;}
         try{$amount=finance_units($row['amount']??null);if($amount<0)throw new InvalidArgumentException('Kargo işareti');}
         catch(InvalidArgumentException $e){$cargoBad++;continue;}
         $cargoN++;
@@ -151,6 +152,7 @@ function order_evidence(array $packages,array $settlements,array $cargo,array $c
 function load_order_evidence(PDO $db,int $uid,array $orderNumbers): array
 {
     $out=[];
+    $q=$db->prepare("SELECT seller_id FROM integration_bindings WHERE user_id=? AND marketplace='trendyol'");$q->execute([$uid]);$seller=(string)($q->fetchColumn()?:'');
     $orderNumbers=array_values(array_unique(array_filter(array_map('strval',$orderNumbers),static fn($n)=>$n!=='')));
     foreach(array_chunk($orderNumbers,200) as $chunk){
         $in=implode(',',array_fill(0,count($chunk),'?'));$args=array_merge([$uid],$chunk);
@@ -171,7 +173,7 @@ function load_order_evidence(PDO $db,int $uid,array $orderNumbers): array
         foreach(cost_history_overlay($db,$uid,$packages) as $p)$overlaid[(string)$p['order_number']][]=$p;
         foreach($chunk as $n){
             $g=$groups[$n]??[];
-            if(!empty($overlaid[$n]))$out[$n]=order_evidence($overlaid[$n],$g['settlements']??[],$g['cargo']??[],$g['claims']??[]);
+            if(!empty($overlaid[$n]))$out[$n]=order_evidence($overlaid[$n],$g['settlements']??[],$g['cargo']??[],$g['claims']??[],$seller);
         }
     }
     return $out;

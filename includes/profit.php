@@ -346,24 +346,27 @@ function payout_components(array $settlements, array $financials, string $paymen
 function report_order_lines(array $order,array $products): ?array
 {
     if (!order_is_active_sale($order) || !is_array($order['lines']??null) || !$order['lines']) return null;
-    $sum=0.0;$out=[];
+    if(!is_numeric($order['total_price']??null)||!is_finite((float)$order['total_price'])||(float)$order['total_price']<=0)return null;
+    $sum=0.0;$out=[];$seen=[];
     foreach($order['lines'] as $l) {
+        if(!is_array($l))return null;
+        $id=(string)($l['line_id']??'');if($id!==''&&isset($seen[$id]))return null;if($id!=='')$seen[$id]=true;
         $bc=(string)($l['barcode']??'');$qty=(int)($l['quantity']??0);
-        if ($bc===''||$qty<=0||!order_is_active_sale($l)||!is_numeric($l['price']??null)
+        if ($bc===''||$qty<=0||!is_numeric($l['quantity']??null)||!is_finite((float)$l['quantity'])||(float)$l['quantity']!==(float)$qty||!order_is_active_sale($l)||!is_numeric($l['price']??null)||!is_finite((float)$l['price'])||(float)$l['price']<0
             ||abs((float)($l['platform_discount']??0))>0.005)return null;
         $sale=(float)$l['price']*$qty;
         $details=$l['discount_details']??[];
         if(is_array($details)&&count($details)===$qty){
             $sale=0.0;
             foreach($details as $item){
-                if(!is_numeric($item['lineItemPrice']??null)||(float)$item['lineItemPrice']<0||abs((float)($item['lineItemTyDiscount']??0))>0.005)return null;
+                if(!is_array($item)||!is_numeric($item['lineItemPrice']??null)||!is_finite((float)$item['lineItemPrice'])||(float)$item['lineItemPrice']<0||abs((float)($item['lineItemTyDiscount']??0))>0.005)return null;
                 $sale+=(float)$item['lineItemPrice'];
             }
         }
         if(!is_finite($sale)||$sale<0)return null;
         $product=$products[$bc]??[];
         // No present-day cost backfill masquerading as historical cost.
-        $cost=is_numeric($l['cost_snapshot']??null)&&(float)$l['cost_snapshot']>0?(float)$l['cost_snapshot']*$qty:null;
+        $cost=is_numeric($l['cost_snapshot']??null)&&is_finite((float)$l['cost_snapshot'])&&is_finite((float)$l['cost_snapshot']*$qty)&&(float)$l['cost_snapshot']>0?(float)$l['cost_snapshot']*$qty:null;
         $out[]=['barcode'=>$bc,'name'=>(string)($l['productName']??$product['name']??$bc),'category'=>(string)($product['category']??'Bilinmeyen'),'qty'=>$qty,'sale'=>$sale,'cost'=>$cost];
         $sum+=$sale;
     }

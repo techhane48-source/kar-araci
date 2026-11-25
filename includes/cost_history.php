@@ -92,14 +92,15 @@ function cost_history_overlay(PDO $db,int $uid,array $orders): array
         if(is_string($o['lines']??null))$o['lines']=json_decode($o['lines'],true);
         if(!is_array($o['lines']??null))$o['lines']=[];
         $maxTs=max($maxTs,(int)$o['order_date']);
-        $o['lines']=array_values(array_filter($o['lines'],'is_array'));
-        foreach($o['lines'] as $l)$barcodes[]=(string)($l['barcode']??'');
+        // Preserve malformed rows so downstream reconciliation cannot mistake a partial package for a complete one.
+        foreach($o['lines'] as $l)if(is_array($l))$barcodes[]=(string)($l['barcode']??'');
     }
     unset($o);
     $map=cost_history_map($db,$uid,$barcodes,$maxTs);
     foreach($orders as &$o){
         if(($o['marketplace']??'')!=='trendyol')continue;
         foreach($o['lines'] as &$l){
+            if(!is_array($l))continue;
             $v=cost_history_at($map[$l['barcode']??'']??[],(int)$o['order_date']);
             if($v){
                 $l['cost_snapshot']=(float)$v['cost'];$l['cost_vat_snapshot']=(float)$v['cost_vat'];
