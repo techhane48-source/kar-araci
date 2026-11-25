@@ -171,6 +171,15 @@ function migrate(): void
         created_at TEXT NOT NULL DEFAULT (datetime('now'))
     )");
     $pdo->exec("CREATE INDEX IF NOT EXISTS idx_settlements_user ON settlements(user_id, transaction_date)");
+    // Legacy rows have no authoritative ID; keep them but do not count as verified finance.
+    $settlementCols = array_column($pdo->query("PRAGMA table_info(settlements)")->fetchAll(PDO::FETCH_ASSOC), 'name');
+    foreach (['external_id', 'query_type', 'payment_order_id'] as $col) {
+        if (!in_array($col, $settlementCols, true)) {
+            $pdo->exec("ALTER TABLE settlements ADD COLUMN $col TEXT DEFAULT NULL");
+        }
+    }
+    $pdo->exec("CREATE UNIQUE INDEX IF NOT EXISTS uq_settlements_external
+        ON settlements(user_id, marketplace, external_id)");
 
     $pdo->exec("CREATE TABLE IF NOT EXISTS settings (
         key TEXT PRIMARY KEY,

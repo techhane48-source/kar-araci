@@ -232,19 +232,30 @@ final class TrendyolClient
                     $lines = [];
                     foreach (($it['lines'] ?? []) as $ol) {
                         $lines[] = [
-                            'barcode' => $ol['sku'] ?? '',
+                            'barcode' => (string)($ol['barcode'] ?? $ol['sku'] ?? ''),
                             'productName' => $ol['productName'] ?? '',
                             'quantity' => (int)($ol['quantity'] ?? 0),
-                            'price' => (float)($ol['amount'] ?? ($ol['lineGrossAmount'] ?? 0)) - (float)($ol['lineTotalDiscount'] ?? ($ol['discount'] ?? 0)),
+                            'price' => isset($ol['lineUnitPrice']) ? (float)$ol['lineUnitPrice'] : null,
+                            'gross_unit_price' => isset($ol['lineGrossAmount']) ? (float)$ol['lineGrossAmount'] : null,
+                            'seller_discount' => isset($ol['lineSellerDiscount']) ? (float)$ol['lineSellerDiscount'] : null,
+                            'platform_discount' => isset($ol['lineTyDiscount']) ? (float)$ol['lineTyDiscount'] : null,
+                            'discount_details' => $ol['discountDetails'] ?? [],
+                            'line_id' => (string)($ol['lineId'] ?? ''),
+                            'vat_rate' => isset($ol['vatRate']) ? (float)$ol['vatRate'] : null,
+                            'commission_rate' => isset($ol['commission']) ? (float)$ol['commission'] : null,
+                            'status' => (string)($ol['orderLineItemStatusName'] ?? ''),
                             'merchantSku' => $ol['merchantSku'] ?? '',
                         ];
+                    }
+                    if (!isset($it['packageTotalPrice']) || !is_numeric($it['packageTotalPrice'])) {
+                        return ['ok' => false, 'error' => 'Sipariş V2 paket tutarı eksik.'];
                     }
                     $all[] = [
                         'packageNumber' => $pkg,
                         'orderNumber' => $it['orderNumber'] ?? '',
                         'status' => $it['status'] ?? ($it['shipmentPackageStatus'] ?? ''),
                         'customerName' => trim(($it['customerFirstName'] ?? '') . ' ' . ($it['customerLastName'] ?? '')),
-                        'totalPrice' => (float)($it['totalPrice'] ?? ($it['grossAmount'] ?? 0)),
+                        'totalPrice' => (float)($it['packageTotalPrice'] ?? $it['totalPrice'] ?? 0),
                         'cargoCompany' => $it['cargoProviderName'] ?? '',
                         'lines' => $lines,
                         'orderDate' => $it['orderDate'] ?? null,
@@ -285,7 +296,7 @@ final class TrendyolClient
      * @param string $startDate      Y-m-d (işlem tarihi; paymentDate yoksa zorunlu, aralık ≤15 gün)
      * @param string $endDate        Y-m-d
      */
-    public function getSettlements(string $transactionType, string $startDate = '', string $endDate = '', int $maxPage = 10): array
+    public function getSettlements(string $transactionType, string $startDate = '', string $endDate = '', int $maxPage = 2000): array
     {
         $all = [];
         $page = 0;
@@ -294,7 +305,7 @@ final class TrendyolClient
         while (true) {
             $params = ['page' => (string)$page, 'size' => (string)$size, 'transactionType' => $transactionType];
             if ($startDate !== '') $params['startDate'] = strtotime($startDate) * 1000;
-            if ($endDate !== '') $params['endDate'] = strtotime($endDate) * 1000;
+            if ($endDate !== '') $params['endDate'] = strtotime($endDate) * 1000 + 999;
 
             $res = $this->request('GET', "/integration/finance/che/sellers/{$this->sellerId}/settlements", $params);
 
@@ -302,9 +313,24 @@ final class TrendyolClient
                 return ['ok' => false, 'error' => ($res['error'] ?? 'Cari hesap ekstresi çekilemedi') . " (HTTP {$res['http']})"];
             }
 
-            $items = $res['body']['content'] ?? [];
+            if (!is_array($res['body']['content'] ?? null) || !isset($res['body']['totalPages'])) {
+                return ['ok' => false, 'error' => 'Cari hesap ekstresi yanıtı eksik.'];
+            }
+            if ((int)$res['body']['totalPages'] > $maxPage) {
+                return ['ok' => false, 'error' => 'Finansal kayıt sayfa sınırı aşıldı.'];
+            }
+            $items = $res['body']['content'];
+            if (!$items && $page < (int)$res['body']['totalPages']) {
+                return ['ok' => false, 'error' => 'Cari hesap ekstresinde eksik sayfa.'];
+            }
             foreach ($items as $it) {
+                if (trim((string)($it['id'] ?? '')) === '') {
+                    return ['ok' => false, 'error' => 'Finansal işlem kimliği eksik.'];
+                }
                 $all[] = [
+                    'externalId' => (string)$it['id'],
+                    'queryType' => $transactionType,
+                    'paymentOrderId' => isset($it['paymentOrderId']) ? (string)$it['paymentOrderId'] : null,
                     'barcode' => (string)($it['barcode'] ?? ''),
                     'transactionType' => (string)($it['transactionType'] ?? ''),
                     'commissionRate' => (float)($it['commissionRate'] ?? 0),

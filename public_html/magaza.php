@@ -55,7 +55,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $supported) {
         } elseif ($action === 'settlements') {
             $res = sync_settlements((int)$u['id'], $mp);
             if ($res['ok']) {
-                $ok = "Cari hesap ekstresi (resmi komisyon/kargo/hakediş) çekildi: {$res['records']} kayıt, {$res['rates_updated']} ürünün komisyon oranı resmi değerle güncellendi.";
+                $ok = "Cari hesap ekstresi (resmi komisyon/kargo/hakediş) çekildi: {$res['records']} işlem işlendi (tekrar gelen kayıtlar güncellendi). Geçmiş komisyonlar ürün ayarlarını değiştirmez.";
                 if (!empty($res['errors'])) $ok .= ' (' . count($res['errors']) . ' tip/dilim atlandı.)';
             } else {
                 $error = 'Cari hesap ekstresi hatası: ' . ($res['error'] ?? 'Bilinmeyen hata');

@@ -107,7 +107,7 @@ if ($rapor === 'order') {
         }
     }
     $agg = [];
-    $rows = db()->query("SELECT barcode, COUNT(*) c, SUM(debt) tutar FROM settlements WHERE user_id = {$u['id']} AND marketplace = " . db()->quote($mp) . " AND transaction_type = 'İade' AND transaction_date >= $fromTs GROUP BY barcode")->fetchAll();
+    $rows = db()->query("SELECT barcode, COUNT(*) c, SUM(debt) tutar FROM settlements WHERE external_id IS NOT NULL AND user_id = {$u['id']} AND marketplace = " . db()->quote($mp) . " AND transaction_type = 'İade' AND transaction_date >= $fromTs GROUP BY barcode")->fetchAll();
     foreach ($rows as $r) {
         $bc = $r['barcode'];
         $p = $byBarcode[$bc] ?? null;
@@ -139,7 +139,7 @@ if ($rapor === 'order') {
         }
     }
     // Reklam harcaması: settlements'ta reklam ile ilgili transaction_type'lar
-    $adRows = db()->query("SELECT barcode, transaction_type, SUM(debt) tutar FROM settlements WHERE user_id = {$u['id']} AND marketplace = " . db()->quote($mp) . " AND (transaction_type = 'Reklam' OR transaction_type = 'Ads' OR transaction_type LIKE '%reklam%' OR transaction_type LIKE '%influencer%') AND transaction_date >= $fromTs GROUP BY barcode, transaction_type")->fetchAll();
+    $adRows = db()->query("SELECT barcode, transaction_type, SUM(debt) tutar FROM settlements WHERE external_id IS NOT NULL AND user_id = {$u['id']} AND marketplace = " . db()->quote($mp) . " AND (transaction_type = 'Reklam' OR transaction_type = 'Ads' OR transaction_type LIKE '%reklam%' OR transaction_type LIKE '%influencer%') AND transaction_date >= $fromTs GROUP BY barcode, transaction_type")->fetchAll();
     $adMap = [];
     foreach ($adRows as $r) {
         $bc = $r['barcode'];
@@ -195,7 +195,7 @@ if ($rapor === 'order') {
 } elseif ($rapor === 'campaign') {
     $reportCols = ['Barkod', 'Ürün', 'Kupon', 'İndirim', 'Toplam Kampanya', 'Satış', 'Kampanya/Satış %'];
     $aggMap = [];
-    $rows = db()->query("SELECT barcode, transaction_type, SUM(debt) tutar FROM settlements WHERE user_id = {$u['id']} AND marketplace = " . db()->quote($mp) . " AND transaction_type IN ('Kupon','İndirim') AND transaction_date >= $fromTs GROUP BY barcode, transaction_type")->fetchAll();
+    $rows = db()->query("SELECT barcode, transaction_type, SUM(debt) tutar FROM settlements WHERE external_id IS NOT NULL AND user_id = {$u['id']} AND marketplace = " . db()->quote($mp) . " AND transaction_type IN ('Kupon','İndirim') AND transaction_date >= $fromTs GROUP BY barcode, transaction_type")->fetchAll();
     foreach ($rows as $r) {
         $bc = $r['barcode'];
         if (!isset($aggMap[$bc])) $aggMap[$bc] = ['kupon' => 0.0, 'indirim' => 0.0];

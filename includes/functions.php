@@ -378,49 +378,60 @@ function sync_settlements(int $userId, string $marketplace, int $days = 30): arr
         return ['ok' => false, 'error' => marketplace_label($marketplace) . ' için cari hesap ekstresi desteklenmiyor.'];
     }
 
-    $chunks = [];
+    if ($marketplace !== 'trendyol') return ['ok' => false, 'error' => 'Finansal senkron yalnızca Trendyol için desteklenir.'];
     $end = time();
     $start = $end - max(1, $days) * 86400;
-    for ($s = $start; $s < $end; $s += 15 * 86400) {
-        $chunks[] = [date('Y-m-d', $s), date('Y-m-d', min($s + 15 * 86400, $end))];
-    }
+    $types = ['Sale','Return','Discount','DiscountCancel','Coupon','CouponCancel',
+        'ProvisionPositive','ProvisionNegative','ManualRefund','ManualRefundCancel',
+        'TyDiscount','TyDiscountCancel','TyCoupon','TyCouponCancel',
+        'SellerRevenuePositive','SellerRevenueNegative','CommissionPositive','CommissionNegative',
+        'SellerRevenuePositiveCancel','SellerRevenueNegativeCancel','CommissionPositiveCancel',
+        'CommissionNegativeCancel','DeliveryFee','DeliveryFeeCancel','PayByLink'];
 
-    $ins = db()->prepare("INSERT INTO settlements (user_id, marketplace, barcode, transaction_type, commission_rate, commission_amount, seller_revenue, debt, credit, order_number, shipment_package_id, payment_period, transaction_date, order_date)
-                          VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)");
-    $updRate = db()->prepare("UPDATE products SET rate = ? WHERE user_id = ? AND marketplace = ? AND barcode = ? AND barcode != ''");
-
+    // Each time slice is complete before any writes for that slice.
+    $db = db();
+    $ins = $db->prepare("INSERT INTO settlements
+        (user_id, marketplace, external_id, query_type, payment_order_id, barcode, transaction_type,
+         commission_rate, commission_amount, seller_revenue, debt, credit, order_number,
+         shipment_package_id, payment_period, transaction_date, order_date)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+         ON CONFLICT(user_id, marketplace, external_id) DO UPDATE SET
+           query_type=excluded.query_type, payment_order_id=excluded.payment_order_id,
+           barcode=excluded.barcode, transaction_type=excluded.transaction_type,
+           commission_rate=excluded.commission_rate, commission_amount=excluded.commission_amount,
+           seller_revenue=excluded.seller_revenue, debt=excluded.debt, credit=excluded.credit,
+           order_number=excluded.order_number, shipment_package_id=excluded.shipment_package_id,
+           payment_period=excluded.payment_period, transaction_date=excluded.transaction_date,
+           order_date=excluded.order_date");
     $total = 0;
-    $ratesUpdated = 0;
-    $errors = [];
-
-    foreach (['Sale', 'DeliveryFee', 'Return', 'Discount', 'Coupon'] as $type) {
-        foreach ($chunks as [$s, $e]) {
-            $res = $client->getSettlements($type, $s, $e);
+    foreach ($types as $type) {
+        for ($s = $start; $s <= $end; $s += 14 * 86400) {
+            $e = min($s + 14 * 86400 - 1, $end);
+            $res = $client->getSettlements($type, date('c', $s), date('c', $e));
             if (!$res['ok']) {
-                if (isset($res['error'])) $errors[] = $res['error'];
-                continue;
+                return ['ok' => false, 'records' => $total, 'error' => "$type: " . ($res['error'] ?? 'Eksik finansal senkron')];
             }
-            foreach ($res['settlements'] as $st) {
-                $td = (int)($st['transactionDate'] ?? 0);
-                $od = (int)($st['orderDate'] ?? 0);
-                if ($td > 100000000000) $td = (int)($td / 1000);
-                if ($od > 100000000000) $od = (int)($od / 1000);
-                $ins->execute([
-                    $userId, $marketplace,
-                    $st['barcode'], $st['transactionType'],
-                    $st['commissionRate'], $st['commissionAmount'], $st['sellerRevenue'],
-                    $st['debt'], $st['credit'],
-                    $st['orderNumber'], $st['shipmentPackageId'],
-                    $st['paymentPeriod'], $td, $od,
-                ]);
-                $total++;
-                if ($type === 'Sale' && $st['barcode'] !== '' && $st['commissionRate'] > 0) {
-                    $updRate->execute([$st['commissionRate'], $userId, $marketplace, $st['barcode']]);
-                    $ratesUpdated++;
+            $db->beginTransaction();
+            try {
+                foreach ($res['settlements'] as $st) {
+                    $td = (int)($st['transactionDate'] ?? 0);
+                    $od = (int)($st['orderDate'] ?? 0);
+                    if ($td > 100000000000) $td = intdiv($td, 1000);
+                    if ($od > 100000000000) $od = intdiv($od, 1000);
+                    $ins->execute([$userId, $marketplace, $st['externalId'], $st['queryType'],
+                        $st['paymentOrderId'], $st['barcode'], $st['transactionType'],
+                        $st['commissionRate'], $st['commissionAmount'], $st['sellerRevenue'],
+                        $st['debt'], $st['credit'], $st['orderNumber'], $st['shipmentPackageId'],
+                        $st['paymentPeriod'], $td, $od]);
+                    $total++;
                 }
+                $db->commit();
+            } catch (Throwable $ex) {
+                if ($db->inTransaction()) $db->rollBack();
+                return ['ok' => false, 'records' => $total, 'error' => 'Finansal kayıtlar veritabanına yazılamadı.'];
             }
         }
     }
-
-    return ['ok' => true, 'records' => $total, 'rates_updated' => $ratesUpdated, 'errors' => $errors];
+    // Historical transaction rates are not current product commission settings.
+    return ['ok' => true, 'records' => $total, 'rates_updated' => 0, 'errors' => []];
 }
