@@ -74,7 +74,7 @@ with tempfile.TemporaryDirectory(prefix="karfiyat-http-") as tmp:
                 status, page = request(path)
                 assert status == 200 and len(page) > 500 and "<html" in page.lower(), (path, status, page[:150])
                 print("PASS HTTP", path)
-            for kind in ("order","product","category","return","ads","campaign","buybox","claims","order_finance","period_finance","product_finance"):
+            for kind in ("order","product","category","return","ads","campaign","buybox","claims","order_finance","period_finance","product_finance","product_cost_evidence"):
                 status, page = request("raporlar.php?r=" + kind)
                 assert status == 200 and "<html" in page.lower(), (kind, status)
                 status, csv = request("raporlar.php?r=" + kind + "&export=1")
@@ -87,6 +87,8 @@ with tempfile.TemporaryDirectory(prefix="karfiyat-http-") as tmp:
             assert status == 200 and "Tahmini Sipariş Kârı" in page and "717,74" in page, "Populated dashboard missing data"
             status, csv = request("raporlar.php?r=order_finance&export=1")
             assert status == 200 and "CI-ORDER" in csv and "116.37" in csv, "Populated financial report missing known subtotal"
+            status, csv = request("raporlar.php?r=product_cost_evidence&export=1")
+            assert status == 200 and "CI001" in csv and "116.37" in csv, "Product cost evidence missing single-barcode subtotal"
             status, page = request("kargo-kontrol.php?q=CI-PARCEL")
             assert status == 200 and "CI-PARCEL" in page, "Populated cargo page missing parcel"
             status, csv = request("kargo-kontrol.php?q=CI-PARCEL&export=csv")

@@ -12,7 +12,7 @@ require_once __DIR__.'/cost_history.php';
 function order_evidence(array $packages,array $settlements,array $cargo,array $claims): array
 {
     $issues=[];$byPackage=[];$invoice=0;$cost=0;$missingCost=0;$units=0;$active=0;$datedUnits=0;$observedUnits=0;
-    $orderNo=(string)($packages[0]['order_number']??'');$expectedByBarcode=[];$financeByBarcode=[];$invoiceValid=true;
+    $orderNo=(string)($packages[0]['order_number']??'');$expectedByBarcode=[];$financeByBarcode=[];$invoiceValid=true;$costByBarcode=[];$salePartsByBarcode=[];
     foreach($packages as $p){
         $id=(string)($p['package_number']??'');
         if($id===''||$orderNo===''||(string)($p['order_number']??'')!==$orderNo||isset($byPackage[$id])){
@@ -32,13 +32,15 @@ function order_evidence(array $packages,array $settlements,array $cargo,array $c
         else foreach($reconciled as $r){$bc=$r['barcode'];$expectedByBarcode[$id][$bc]=($expectedByBarcode[$id][$bc]??0)+finance_units($r['sale']);}
         $seenLine=[];
         foreach($lines as $l){
-            $qty=(int)($l['quantity']??0);$key=(string)($l['line_id']??'');
-            if($qty<=0||!is_numeric($l['quantity']??null)||(float)$l['quantity']!==(float)$qty||$key===''||isset($seenLine[$key])){$issues[]='Ürün satırı kimliği/adedi çelişkili';$missingCost++;continue;}
+            $qty=(int)($l['quantity']??0);$key=(string)($l['line_id']??'');$bc=(string)($l['barcode']??'');
+            if($bc===''||$qty<=0||!is_numeric($l['quantity']??null)||(float)$l['quantity']!==(float)$qty||$key===''||isset($seenLine[$key])){$issues[]='Ürün satırı kimliği/adedi çelişkili';$missingCost++;continue;}
             $seenLine[$key]=true;$units+=$qty;
             try{
                 $v=finance_units($l['cost_snapshot']??null);
                 if($v<=0)throw new InvalidArgumentException('Maliyet yok');
                 $cost+=$v*$qty;
+                if(!isset($costByBarcode[$bc]))$costByBarcode[$bc]=['units'=>0,'cost'=>0];
+                $costByBarcode[$bc]['units']+=$qty;$costByBarcode[$bc]['cost']+=$v*$qty;
                 if(($l['cost_source']??'')==='dated_user')$datedUnits+=$qty;else $observedUnits+=$qty;
             }catch(InvalidArgumentException $e){$missingCost+=$qty;}
         }
@@ -70,7 +72,11 @@ function order_evidence(array $packages,array $settlements,array $cargo,array $c
                 $salePackages[$pid]=($salePackages[$pid]??0)+$c;
                 $bc=(string)($raw['barcode']??'');
                 if($bc==='')$issues[]='Satış ekstresi barkodu eksik';
-                else $financeByBarcode[$pid][$bc]=($financeByBarcode[$pid][$bc]??0)+$c;
+                else {
+                    $financeByBarcode[$pid][$bc]=($financeByBarcode[$pid][$bc]??0)+$c;
+                    if(!isset($salePartsByBarcode[$bc]))$salePartsByBarcode[$bc]=['credit'=>0,'commission'=>0,'revenue'=>0];
+                    $salePartsByBarcode[$bc]['credit']+=$c;$salePartsByBarcode[$bc]['commission']+=$comm;$salePartsByBarcode[$bc]['revenue']+=$rev;
+                }
             }catch(InvalidArgumentException $e){$issues[]='Satış komisyonu ve geliri uyuşmuyor';}
         }
     }
@@ -116,6 +122,19 @@ function order_evidence(array $packages,array $settlements,array $cargo,array $c
     // Sale revenue is already net of commission. Subtract only known costs and observed outbound freight once.
     // This subtotal is deliberately NOT realized or accounting profit, and excludes unobserved charges.
     $subtotal=!$issues&&$active&&$invoiceValid&&$units>0&&!$missingCost&&$sales&&$outboundN?($saleRevenue-$cost-$outbound)/10000.0:null;
+    $productComponents=[];$unallocatedCargo=null;
+    // Only reuse a fully matched order subtotal. A shared shipment is not assigned by guessed weights.
+    if($subtotal!==null){
+        $single=count($costByBarcode)===1;
+        foreach($costByBarcode as $bc=>$v){
+            $sp=$salePartsByBarcode[$bc];
+            $productComponents[$bc]=['units'=>$v['units'],'sale'=>$sp['credit']/10000.0,'commission'=>$sp['commission']/10000.0,
+              'revenue'=>$sp['revenue']/10000.0,'cost'=>$v['cost']/10000.0,'cargo'=>$single?$outbound/10000.0:null,
+              'before_shared_cargo'=>($sp['revenue']-$v['cost'])/10000.0,
+              'after_cargo'=>$single?($sp['revenue']-$v['cost']-$outbound)/10000.0:null];
+        }
+        if(!$single)$unallocatedCargo=$outbound/10000.0;
+    }
     // Deliberately not a net-profit result: invoices, VAT, withholding, service,
     // merchant shipping, returns and future adjustments are not fully reconciled.
     return ['order_number'=>$orderNo,'packages'=>count($byPackage),'active_packages'=>$active,
@@ -125,7 +144,7 @@ function order_evidence(array $packages,array $settlements,array $cargo,array $c
         'sale_credit'=>$sales?$saleCredit/10000.0:null,'sale_commission'=>$sales?$saleCommission/10000.0:null,'sale_revenue'=>$sales?$saleRevenue/10000.0:null,
         'cargo_rows'=>$cargoN,'outbound_cargo'=>$outboundN?$outbound/10000.0:null,'return_cargo'=>$returnN?$returnCargo/10000.0:null,'other_cargo'=>$cargoN?$otherCargo/10000.0:null,
         'claim_items'=>count($claims),'issues'=>array_values(array_unique($issues)),
-        'known_subtotal'=>$subtotal,'profit'=>null,'state'=>$issues?'Eksik / inceleme gerekli':'Temel kalemler eşleşti; kesin kâr değil'];
+        'known_subtotal'=>$subtotal,'product_components'=>$productComponents,'unallocated_product_cargo'=>$unallocatedCargo,'profit'=>null,'state'=>$issues?'Eksik / inceleme gerekli':'Temel kalemler eşleşti; kesin kâr değil'];
 }
 
 /** Batched retrieval by exact order number. All order packages included, even outside selected order dates. */

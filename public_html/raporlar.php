@@ -9,7 +9,7 @@ $mp = $_GET['mp'] ?? $mps[0];
 if (!in_array($mp, $mps, true)) $mp = $mps[0];
 
 $rapor = $_GET['r'] ?? 'order';
-$allowed = ['order', 'product', 'category', 'return', 'ads', 'campaign', 'buybox', 'claims', 'order_finance', 'period_finance', 'product_finance'];
+$allowed = ['order', 'product', 'category', 'return', 'ads', 'campaign', 'buybox', 'claims', 'order_finance', 'period_finance', 'product_finance', 'product_cost_evidence'];
 if (!in_array($rapor, $allowed, true)) $rapor = 'order';
 
 $days = (int)($_GET['days'] ?? 30);
@@ -105,6 +105,12 @@ if($rapor==='order'){
         $reportRows[]=[$bc,$byBarcode[$bc]['name']??$bc,(string)$row['query_type'],$count,$c,$d,$d-$c];$credit+=$c;$debt+=$d;$n+=$count;}
     $summary=['Finansal işlem kaydı'=>$n,'Alacak'=>$money($credit),'Borç'=>$money($debt),'Borç − alacak'=>$money($debt-$credit)];
     $reportNote=$rapor==='return'?'Finansal işlem adedi ürün iade adedi değildir. İade tutarı, yeniden satılabilirlik ve gerçek kargo maliyeti eşleşmeden iade zararı hesaplanmaz.':'Satıcı ve Trendyol kaynaklı indirim/kuponlar ayrı işlem türleridir; iptaller dahil. Tarih finansal işlem tarihidir; kampanya kârlılığı değildir.';
+}elseif($rapor==='product_cost_evidence'){
+    $reportCols=['Barkod','Ürün','Eşleşen sipariş','Adet','Satış alacağı','Satış komisyonu','Satıcı geliri','Kayıtlı alış maliyeti','Kargo öncesi fark','Kargosu doğrudan eşleşen sipariş','Bu siparişlerin kargosu','Yalnız bu siparişlerin kargo sonrası farkı'];
+    $data=$mp==='trendyol'?product_cost_evidence(db(),(int)$u['id'],array_column($orders,'order_number')):['groups'=>[],'orders'=>0,'matched'=>0,'shared_orders'=>0,'shared_cargo'=>null];
+    foreach($data['groups'] as $bc=>$g)$reportRows[]=[(string)$bc,$byBarcode[$bc]['name']??'Katalogda yok',$g['orders'],$g['units'],$g['sale']/10000.0,$g['commission']/10000.0,$g['revenue']/10000.0,$g['cost']/10000.0,$g['before_shared_cargo']/10000.0,$g['cargo_orders'],$g['cargo_orders']?$g['cargo']/10000.0:null,$g['cargo_orders']?$g['after_cargo']/10000.0:null];
+    $summary=['Sipariş kapsamı'=>$data['matched'].' / '.$data['orders'],'Ortak kargolu sipariş'=>$data['shared_orders'],'Dağıtılmayan ortak kargo'=>$data['shared_cargo']===null?'—':$money($data['shared_cargo']),'Kesin ürün net kârı'=>'—'];
+    $reportNote='Sipariş oluşturulma tarihi bazında seçilen, paket/barkod/finans/maliyet ve gözlemlenen gönderi kargosu eşleşen siparişler. İade ve düzeltme içeren veya eksik siparişler dışarıda. İlk gözlem maliyeti gerçek alış tarihini kanıtlamaz. Tek barkodlu siparişte kargo bir kez düşülür; çok barkodlu siparişte ortak kargo dağıtılmaz. Kargo sonrası sütun yalnız doğrudan eşleşen alt kümeyi kapsar, tüm satışları değil. KDV, stopaj, hizmet ve reklam giderleri dahil değildir. Kesin net kâr değildir. '.sync_coverage_label(db(),(int)$u['id'],$mp,'settlements_transaction',$fromTs,time());
 }elseif($rapor==='product_finance'){
     $reportCols=['Barkod','Ürün','Satış hareketi','Satış alacağı','Satış komisyonu','Satıcı satış geliri','İade hareketi','İade borcu','İade komisyonu','İade satıcı geliri azalması','Kampanya hareketi','Kampanya satıcı geliri farkı (işaretli)','Diğer hareket','Toplam hareket'];
     $data=$mp==='trendyol'?product_finance_period(db(),(int)$u['id'],$fromTs,time()+1):['groups'=>[],'excluded'=>0,'gaps'=>[]];
@@ -179,6 +185,7 @@ $raporLabels = [
     'order_finance' => 'Sipariş Finansal Eşleştirme',
     'period_finance' => 'Dönem Finans Hareketleri',
     'product_finance' => 'Ürün Finansal Hareketleri',
+    'product_cost_evidence' => 'Ürün Satış / Maliyet Eşleştirmesi',
     'product' => 'Ürün Kârlılık Analizi',
     'category' => 'Kategori Kârlılık Analizi',
     'claims' => 'İade Talepleri ve Durumları',
