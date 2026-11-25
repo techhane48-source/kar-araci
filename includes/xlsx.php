@@ -174,7 +174,7 @@ function xlsx_write_maliyet(array $products, string $path): void {
             (float)($p['price'] ?? 0),
             (int)($p['quantity'] ?? 0),
             (float)($p['cost'] ?? 0) > 0 ? (float)$p['cost'] : null,
-            (float)($p['kdv'] ?? 0) > 0 ? (float)$p['kdv'] : 20,
+            (float)($p['cost_vat'] ?? $p['kdv'] ?? 20),
             'TRY',
             $desi > 0 ? (float)round($desi, 2) : null,
             $cargoType,

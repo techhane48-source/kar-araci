@@ -106,7 +106,7 @@ $r = req('GET', "$base/index.php", ['headers' => ["Cookie: $jar"]]);
 check($r['status'] === 200, "Giriş yapılmış ana sayfa 200");
 
 $r = req('POST', "$base/api-save.php", [
-    'body' => json_encode(['marketplace' => 'trendyol', 'category' => 'Giyim', 'name' => 'Kadın Bot', 'cost' => 200, 'price' => 400, 'cargo' => 50, 'rate' => 21.36]),
+    'body' => json_encode(['csrf' => $csrf, 'marketplace' => 'trendyol', 'category' => 'Giyim', 'name' => 'Kadın Bot', 'cost' => 200, 'price' => 400, 'cargo' => 50, 'rate' => 21.36]),
     'headers' => ["Cookie: $jar", 'Content-Type: application/json'],
 ]);
 check($r['status'] === 200, "api-save 200");
@@ -203,12 +203,12 @@ check((int)$still === 1, "IDOR engellendi (başkasının ürünü silinemedi)");
 // 9. Ücretsiz plan 5 ürün limiti (other@example.com)
 for ($i = 0; $i < 5; $i++) {
     req('POST', "$base/api-save.php", [
-        'body' => json_encode(['marketplace' => 'trendyol', 'category' => 'Giyim', 'name' => "Ürün $i", 'cost' => 10, 'price' => 20, 'cargo' => 5, 'service_fee' => 1, 'stopaj' => 0, 'return_rate' => 1]),
+        'body' => json_encode(['csrf' => $csrf, 'marketplace' => 'trendyol', 'category' => 'Giyim', 'name' => "Ürün $i", 'cost' => 10, 'price' => 20, 'cargo' => 5, 'service_fee' => 1, 'stopaj' => 0, 'return_rate' => 1]),
         'headers' => ["Cookie: $jar2", 'Content-Type: application/json'],
     ]);
 }
 $r = req('POST', "$base/api-save.php", [
-    'body' => json_encode(['marketplace' => 'trendyol', 'category' => 'Giyim', 'name' => '6. ürün', 'cost' => 10, 'price' => 20, 'cargo' => 5, 'service_fee' => 1, 'stopaj' => 0, 'return_rate' => 1]),
+    'body' => json_encode(['csrf' => $csrf, 'marketplace' => 'trendyol', 'category' => 'Giyim', 'name' => '6. ürün', 'cost' => 10, 'price' => 20, 'cargo' => 5, 'service_fee' => 1, 'stopaj' => 0, 'return_rate' => 1]),
     'headers' => ["Cookie: $jar2", 'Content-Type: application/json'],
 ]);
 $j = json_decode($r['body'], true);

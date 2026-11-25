@@ -262,6 +262,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const extraBlock = $("extra-fee-block");
     const showExtra = cargoType !== "seller";
     extraBlock.style.display = showExtra ? "block":"none";
+    if (!showExtra) $("extra-fee").value = "0";
     if(showExtra){
       $("extra-fee-label").textContent = cargoType === "export" ? "İhracat Bedeli (₺)" : "Aynı Gün Teslimat Bedeli (₺)";
     }

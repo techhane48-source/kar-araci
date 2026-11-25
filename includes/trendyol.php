@@ -507,6 +507,15 @@ final class TrendyolClient
         if (isset($res['http']) && $res['http'] !== 200) {
             return ['ok' => false, 'error' => ($res['error'] ?? 'Fiyat güncellenemedi') . " (HTTP {$res['http']})"];
         }
-        return ['ok' => true];
+        $batch = trim((string)($res['body']['batchRequestId'] ?? ''));
+        if ($batch === '') return ['ok'=>false,'error'=>'İşlem kimliği dönmedi; sonucu doğrulamadan tekrar göndermeyin.'];
+        return ['ok'=>true,'batch_id'=>$batch];
+    }
+
+    public function getBatchRequestResult(string $id): array
+    {
+        $res=$this->request('GET', "/integration/product/sellers/{$this->sellerId}/products/batch-requests/".rawurlencode($id));
+        if (($res['http']??0)!==200 || !is_array($res['body']['items']??null)) return ['ok'=>false,'error'=>'İşlem sonucu henüz alınamadı veya sorgu süresi doldu.'];
+        return ['ok'=>true,'items'=>$res['body']['items']];
     }
 }

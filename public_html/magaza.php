@@ -67,29 +67,49 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $supported) {
             $int = null;
             $hasConnection = false;
             $ok = 'Mağaza bağlantısı kaldırıldı.';
-        } elseif ($action === 'update_price') {
-            // Fiyat yönetimi: tek ürünün fiyatını Trendyol'a gönder.
-            $barcode = trim($_POST['barcode'] ?? '');
-            $rawPrice = str_replace(',', '.', trim($_POST['new_price'] ?? ''));
-            $quantity = (int)($_POST['quantity'] ?? 0);
-            $curList = (float) str_replace(',', '.', trim($_POST['list_price'] ?? '0'));
-
-            if ($barcode === '' || $rawPrice === '' || !is_numeric($rawPrice)) {
-                $error = 'Geçerli bir ürün ve fiyat girin.';
+        } elseif ($action === 'update_price' && $int) {
+            $barcode = trim((string)($_POST['barcode'] ?? ''));
+            $sale = parse_money_input((string)($_POST['new_price'] ?? ''));
+            $q = db()->prepare("SELECT id FROM products WHERE user_id=? AND marketplace='trendyol' AND barcode=?");
+            $q->execute([$u['id'],$barcode]);
+            if ($sale === null || $sale <= 0 || !$q->fetchColumn()) {
+                $error = 'Geçerli bir ürün ve pozitif fiyat girin.';
             } else {
-                $salePrice = (float)$rawPrice;
-                $listPrice = $curList > $salePrice ? $curList : $salePrice;
                 $client = integration_client($int);
-                $res = $client->updatePriceAndInventory([[
-                    'barcode' => $barcode,
-                    'quantity' => $quantity,
-                    'salePrice' => $salePrice,
-                    'listPrice' => $listPrice,
-                ]]);
-                if ($res['ok']) {
-                    $ok = 'Fiyat Trendyol\'a gönderildi (' . $barcode . ' → ' . tl($salePrice) . ').';
+                $current = $client->getProduct($barcode);
+                if (!$current['ok'] || !isset($current['product']['listPrice'],$current['product']['salePrice'])) {
+                    $error = 'Güncel Trendyol fiyatı doğrulanamadı. Değişiklik gönderilmedi.';
+                } elseif (abs((float)$current['product']['salePrice']-$sale)<0.005) {
+                    $ok = 'Fiyat zaten güncel; yeni istek gönderilmedi.';
                 } else {
-                    $error = 'Fiyat gönderilemedi: ' . ($res['error'] ?? 'Bilinmeyen hata');
+                    $list = max($sale,(float)$current['product']['listPrice']);
+                    $res=$client->updatePriceAndInventory([['barcode'=>$barcode,'salePrice'=>$sale,'listPrice'=>$list]]);
+                    if (!$res['ok']) $error=$res['error'];
+                    else {
+                        db()->prepare("INSERT INTO trendyol_price_requests(user_id,batch_id,seller_id,barcode,sale_price,list_price,created_at)
+                            VALUES(?,?,?,?,?,?,?)")->execute([$u['id'],$res['batch_id'],$int['seller_id'],$barcode,$sale,$list,time()]);
+                        $ok='Fiyat talebi sıraya alındı. Trendyol sonucu doğrulanana kadar başarılı sayılmaz.';
+                    }
+                }
+            }
+        } elseif ($action === 'check_price' && $int) {
+            $id=(string)($_POST['batch_id']??'');
+            $q=db()->prepare("SELECT * FROM trendyol_price_requests WHERE user_id=? AND seller_id=? AND batch_id=?");
+            $q->execute([$u['id'],$int['seller_id'],$id]);$job=$q->fetch();
+            if (!$job) $error='İşlem bulunamadı.';
+            elseif ((int)$job['created_at'] < time()-14400) $error='Sorgu süresi doldu. Güncel ürün fiyatını kontrol edin.';
+            else {
+                $res=integration_client($int)->getBatchRequestResult($id);
+                if (!$res['ok']) $error=$res['error'];
+                else {
+                    $item=null;
+                    foreach($res['items'] as $v) if (($v['requestItem']['barcode']??'')===$job['barcode']) $item=$v;
+                    $status=(string)($item['status']??'PENDING');
+                    if (!in_array($status,['SUCCESS','FAILED'],true)) $status='PENDING';
+                    $reason=implode('; ',array_map('strval',(array)($item['failureReasons']??[])));
+                    db()->prepare("UPDATE trendyol_price_requests SET status=?,reason=? WHERE user_id=? AND batch_id=?")->execute([$status,$reason,$u['id'],$id]);
+                    if ($status==='FAILED') $error='İşlem reddedildi: '.$reason;
+                    else $ok=$status==='SUCCESS'?'Trendyol fiyat güncellemesini onayladı. Ürünleri senkronize edin.':'İşlem henüz bekliyor.';
                 }
             }
         }
@@ -129,6 +149,11 @@ if ($supported && $hasConnection) {
     }
 }
 
+$priceJobs=[];
+if ($supported && $int) {
+    $st=db()->prepare("SELECT * FROM trendyol_price_requests WHERE user_id=? AND seller_id=? ORDER BY created_at DESC LIMIT 30");
+    $st->execute([$u['id'],$int['seller_id']]);$priceJobs=$st->fetchAll();
+}
 require __DIR__ . '/../includes/header.php';
 ?>
 <div class="wrap">
@@ -248,4 +273,13 @@ require __DIR__ . '/../includes/header.php';
     </div>
   <?php endif; ?>
 </div>
+<?php if ($priceJobs): ?>
+<div class="wrap"><div class="card table-card"><h2>Fiyat güncelleme talepleri</h2>
+<table><tr><th>Barkod</th><th>Fiyat</th><th>Durum</th><th>Kontrol</th></tr>
+<?php foreach($priceJobs as $job): ?><tr><td><?= h($job['barcode']) ?></td><td><?= tl((float)$job['sale_price']) ?></td>
+<td><?= h($job['status'].' '.$job['reason']) ?></td><td>
+<?php if ($job['status']==='PENDING' && (int)$job['created_at']>=time()-14400): ?>
+<form method="post"><input type="hidden" name="csrf" value="<?= h(csrf_token()) ?>"><input type="hidden" name="action" value="check_price"><input type="hidden" name="batch_id" value="<?= h($job['batch_id']) ?>"><button type="submit">Sonucu kontrol et</button></form>
+<?php endif; ?></td></tr><?php endforeach; ?></table></div></div>
+<?php endif; ?>
 <?php require __DIR__ . '/../includes/footer.php'; ?>

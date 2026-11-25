@@ -212,11 +212,11 @@ function sync_products(int $userId, string $marketplace): array
         $existing['n:' . $r['name']] = (int)$r['id'];
     }
 
-    $ins = $db->prepare("INSERT INTO products (user_id, name, barcode, marketplace, category, rate, cost, price, quantity, cargo, service_fee, stopaj, return_rate)
-                          VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?, 0, 0, 0, 0)");
+    $ins = $db->prepare("INSERT INTO products (user_id, name, barcode, marketplace, category, rate, cost, price, quantity, cargo, service_fee, stopaj, return_rate, kdv)
+                          VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?, 0, ?, 0, 0, ?)");
 
     // Only refresh marketplace fields; never overwrite user costs, cargo or commission settings.
-    $upd = $db->prepare("UPDATE products SET price = COALESCE(?, price), quantity = COALESCE(?, quantity), kdv = COALESCE(?, kdv)
+    $upd = $db->prepare("UPDATE products SET price = COALESCE(?, price), quantity = COALESCE(?, quantity), cost_vat = COALESCE(cost_vat, kdv), kdv = COALESCE(?, kdv)
                           WHERE id = ? AND user_id = ? AND marketplace = ?");
     $db->beginTransaction();
     try {
@@ -224,22 +224,23 @@ function sync_products(int $userId, string $marketplace): array
             $barcode = (string)($p['barcode'] ?? '');
             $name = $p['title'] ?: ($barcode ?: 'Ürün');
             $cat = $p['category'] ?: 'Diğer';
-            $rate = category_rate($cat, $marketplace);
+            $rate = isset($p['commission']) && is_numeric($p['commission']) && $p['commission']>=0 && $p['commission']<=100
+                ? (float)$p['commission'] : category_rate($cat, $marketplace);
             $price = ($p['salePrice'] ?? 0) > 0 ? (float)$p['salePrice'] : (isset($p['listPrice']) && $p['listPrice'] > 0 ? (float)$p['listPrice'] : null);
             $quantity = isset($p['quantity']) ? (int)$p['quantity'] : null;
+            $vat = isset($p['vatRate']) && is_numeric($p['vatRate']) && $p['vatRate'] >= 0 && $p['vatRate'] <= 100 ? (float)$p['vatRate'] : null;
 
             // Tekil anahtar: barkod (Trendyol'da benzersiz). Barkod yoksa isim'e düş.
             $key = ($barcode !== '') ? ('b:' . $barcode) : ('n:' . $name);
             if (isset($existing[$key])) {
-                if ($barcode !== '' && ($price !== null || $quantity !== null)) {
-                    $vat = isset($p['vatRate']) && is_numeric($p['vatRate']) && $p['vatRate'] >= 0 && $p['vatRate'] <= 100 ? (float)$p['vatRate'] : null;
+                if ($barcode !== '' && ($price !== null || $quantity !== null || $vat !== null)) {
                     $upd->execute([$price, $quantity, $vat, $existing[$key], $userId, $marketplace]);
                     $updated++;
                 } else $skipped++;
                 continue;
             }
 
-            $ins->execute([$userId, $name, $barcode, $marketplace, $cat, $rate, $price ?? 0.0, $quantity ?? 0]);
+            $ins->execute([$userId, $name, $barcode, $marketplace, $cat, $rate, $price ?? 0.0, $quantity ?? 0, $marketplace === 'trendyol' ? trendyol_service_fee() : 0.0, $vat ?? 20.0]);
             $existing[$key] = (int)$db->lastInsertId();
             $inserted++;
         }
