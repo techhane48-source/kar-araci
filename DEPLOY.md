@@ -61,11 +61,13 @@ kaybolursa kullanıcıların bağlantıları çözülemez).
 ## Otomatik senkron (cron)
 
 `scripts/sync.php` tüm kullanıcıların bağlı mağazalarını senkronize eder. Hostinger'da
-**Cron Jobs**'tan saatlik şunu ekleyin:
+**Cron Jobs**'tan beş dakikada bir şunu ekleyin (yalnızca canlıya geçiş onayından sonra):
 
 ```
-php /home/KULLANICI_ADI/scripts/sync.php
+*/5 * * * * php /home/KULLANICI_ADI/scripts/sync.php auto
 ```
+
+Hostinger arayüzünde zamanlama alanı ayrıysa komut kısmına yalnızca `php /home/KULLANICI_ADI/scripts/sync.php auto` girin. Web ve CLI aynı veritabanı, şifreleme anahtarı ve dosya izinlerini kullanmalı. Uygulama otomatik olarak uygun işleri seçer: sipariş 15 dk, iade 30 dk, ürün 60 dk, finans/belge/son ödeme sayfası 6 saat. İlk sorgu geçmiş 30 günü hedefler; kesinti sonrası sınırlı örtüşen tarih aralığı kullanır. Bunlar hedef aralıklardır, sağlayıcı garantisi değildir. Kullanıcıların her biri için cron kurulmaz. Sunucu çalıştırıcısı gerçek kurulana kadar mağaza ekranı etkin olduğunu iddia etmez. Manuel komutlar korunur; otomasyon fiyat veya iade onayı göndermez.
 
 (Yol hesap kökünüzdeki `scripts/sync.php` olmalı; `public_html` içinde değil.)
 

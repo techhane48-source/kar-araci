@@ -41,7 +41,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $supported) {
                 } else {
                     try {
                         save_integration((int)$u['id'], $mp, $sellerId, $apiKey, $apiSecret, $stage);
-                        $ok = 'Mağazanız başarıyla bağlandı!';
+                        $ok = 'Mağazanız başarıyla bağlandı! Otomatik senkron çalıştırıcısı sunucuda etkinse veriler sırayla güncellenir.';
                         $int = get_integration((int)$u['id'], $mp);
                         $hasConnection = true;
                     } catch (RuntimeException $ex) { $error = $ex->getMessage(); }
@@ -165,6 +165,14 @@ if ($supported && $int) {
 require __DIR__ . '/../includes/header.php';
 ?>
 <?php if($supported && $int): ?>
+<div class="wrap"><div class="card"><h2>Otomatik veri güncelleme</h2>
+<?php $heartbeat=(int)setting('auto_sync_heartbeat');$now=time();$active=$heartbeat>0&&$heartbeat<=$now&&$now-$heartbeat<=1800;
+$labels=['orders'=>'Siparişler','products'=>'Ürün / fiyat / stok','claims'=>'İadeler','settlements'=>'Cari ekstre','documents'=>'Finans / kargo belgeleri','payout_list'=>'Son ödeme emri sayfası'];
+$q=db()->prepare("SELECT job,state,last_success,last_attempt FROM sync_status WHERE user_id=? AND marketplace='trendyol'");$q->execute([$u['id']]);$status=[];foreach($q->fetchAll() as $row)$status[$row['job']]=$row; ?>
+<p><?= $active?'Sunucu çalıştırıcısı yakın zamanda sinyal verdi.':'Otomatik çalıştırıcının güncel sinyali yok; sunucu zamanlaması doğrulanmadı.' ?> <?= $heartbeat?date('d.m.Y H:i',$heartbeat):'' ?></p>
+<table><tr><th>Veri</th><th>Hedef kontrol aralığı</th><th>Son başarılı sorgu</th><th>Son durum</th></tr>
+<?php foreach(auto_sync_intervals() as $job=>$seconds):$st=$status[$job]??[]; ?><tr><td><?=h($labels[$job])?></td><td><?=$seconds/60?> dk</td><td><?=!empty($st['last_success'])?date('d.m.Y H:i',(int)$st['last_success']):'—'?></td><td><?=h(['success'=>'Başarılı','running'=>'Son deneme başladı','failed'=>'Başarısız'][$st['state']??'']??'Bekliyor')?></td></tr><?php endforeach;?></table>
+<p class="hint">Aralıklar hedef değerlerdir; API ve sunucu yoğunluğu nedeniyle gecikebilir. Otomasyon yalnızca veri okur; fiyat değiştirme veya iade onayı yapmaz. Son ödeme emri sayfası dışındaki geçmiş emirler ve ayrıntılı mutabakat ayrıca sorgulanabilir.</p></div></div>
 <div class="wrap"><div class="card"><h2>İade talepleri (salt okunur)</h2>
 <form method="post"><input type="hidden" name="csrf" value="<?= h(csrf_token()) ?>"><input type="hidden" name="action" value="claims">
 <select name="claim_days"><option value="7">7 gün</option><option value="30" selected>30 gün</option><option value="89">89 gün</option></select>
