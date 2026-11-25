@@ -66,6 +66,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $supported) {
             } else {
                 $error = 'Cari hesap ekstresi hatası: ' . ($res['error'] ?? 'Bilinmeyen hata');
             }
+        } elseif ($action === 'claims') {
+            $days=(int)($_POST['claim_days']??30);
+            if(!in_array($days,[7,30,89],true))$days=30;
+            $res=sync_trendyol_claims((int)$u['id'],$days);
+            if($res['ok'])$ok=$res['count'].' iade kalemi işlendi. İade onayı verilmedi.';
+            else $error=$res['error'];
         } elseif ($action === 'disconnect') {
             try { delete_integration((int)$u['id'], $mp); $int = null; $hasConnection = false; $ok = 'Mağaza bağlantısı kaldırıldı.'; }
             catch (RuntimeException $ex) { $error = $ex->getMessage(); }
@@ -158,6 +164,14 @@ if ($supported && $int) {
 }
 require __DIR__ . '/../includes/header.php';
 ?>
+<?php if($supported && $int): ?>
+<div class="wrap"><div class="card"><h2>İade talepleri (salt okunur)</h2>
+<form method="post"><input type="hidden" name="csrf" value="<?= h(csrf_token()) ?>"><input type="hidden" name="action" value="claims">
+<select name="claim_days"><option value="7">7 gün</option><option value="30" selected>30 gün</option><option value="89">89 gün</option></select>
+<button type="submit">İade taleplerini sorgula</button> <a href="raporlar.php?r=claims&amp;mp=trendyol">İade kayıtları</a></form>
+<p class="hint">Sadece veri okur; iade kabul, ret veya ücret iadesi yapmaz.</p></div></div>
+<?php endif; ?>
+
 <div class="wrap">
   <h1>Mağaza Bağlama</h1>
   <p class="hint">Pazar yerinizi bağlayın; ürünleriniz, siparişleriniz ve kârlılığınız otomatik işlensin. API bilgileriniz yalnızca size aittir ve şifreli saklanır.</p>

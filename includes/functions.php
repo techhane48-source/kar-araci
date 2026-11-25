@@ -6,6 +6,7 @@ require_once __DIR__ . '/crypto.php';
 require_once __DIR__ . '/profit.php';
 require_once __DIR__ . '/finance.php';
 require_once __DIR__ . '/sync_coverage.php';
+require_once __DIR__ . '/claims.php';
 
 // ---- İş mantığı: komisyon oranları + kâr hesabı ----
 
@@ -620,4 +621,34 @@ function check_trendyol_payout_unlocked(int $userId,string $id): array
     db()->prepare("UPDATE trendyol_payouts SET summary_json=?,checked_at=? WHERE user_id=? AND seller_id=? AND payment_order_id=?")
         ->execute([json_encode($summary,JSON_THROW_ON_ERROR|JSON_UNESCAPED_UNICODE),time(),$userId,$int['seller_id'],$id]);
     return ['ok'=>true,'summary'=>$summary];
+}
+
+/** Full read-only slice imports; no automatic acceptance or refund. */
+function sync_trendyol_claims(int $uid,int $days=30): array
+{
+    return run_sync_job($uid,'trendyol','claims',static function()use($uid,$days){
+        $int=get_integration($uid,'trendyol');
+        if(!$int)return ['ok'=>false,'error'=>'Trendyol mağazası bağlı değil.'];
+        $client=integration_client($int);$db=db();$end=time()-1;
+        $start=$end-max(1,min(89,$days))*86400+1;
+        $ranges=sync_read_ranges($db,$uid,'trendyol','claims_query');
+        if($ranges){
+            $last=max(array_column($ranges,1));
+            if($last<$end-89*86400)return ['ok'=>false,'error'=>'İade sorgu boşluğu uygulama sınırını aşıyor; destek kontrolü gerekli.'];
+            $start=min($start,max($end-89*86400,$last-300));
+        }
+        $count=0;
+        for($a=$start;$a<=$end;$a+=14*86400){
+            $b=min($a+14*86400-1,$end);
+            $res=$client->getClaims($a,$b);
+            if(!$res['ok'])return $res;
+            $db->beginTransaction();
+            try{
+                $count+=persist_claims($db,$uid,$res['items']);
+                sync_record_range($db,$uid,'trendyol','claims_query',$a,$b+1);
+                $db->commit();
+            }catch(Throwable $e){if($db->inTransaction())$db->rollBack();return ['ok'=>false,'error'=>'İade kayıtları yazılamadı.'];}
+        }
+        return ['ok'=>true,'count'=>$count];
+    });
 }

@@ -33,6 +33,7 @@ jobs:
           php scripts/test-analysis-import.php
           php scripts/test-billing.php
           php scripts/test-sync-coverage.php
+          php scripts/test-claims.php
       - name: Isolated HTTP smoke test
         run: python3 scripts/test-http-smoke.py
       - name: JavaScript syntax

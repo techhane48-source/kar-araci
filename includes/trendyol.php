@@ -10,6 +10,8 @@ declare(strict_types=1);
  * kullanıcı hesabına şifreli kaydedilir ve istek anında kullanılır.
  */
 
+require_once __DIR__.'/claims.php';
+
 final class TrendyolClient
 {
     private string $sellerId;
@@ -375,6 +377,36 @@ final class TrendyolClient
 
         if(count($all)!==$expected)return ['ok'=>false,'error'=>'Finansal toplam kayıt sayısı uyuşmuyor.'];
         return ['ok' => true, 'settlements' => $all, 'count' => count($all)];
+    }
+
+    /** Read-only claim list. Do not invoke approve/reject services. */
+    public function getClaims(int $start,int $end,int $maxPages=500): array
+    {
+        if($start<=0||$end<$start||$end-$start>=14*86400)return ['ok'=>false,'error'=>'İade sorgu aralığı geçersiz.'];
+        $all=[];$items=[];$seen=[];$expected=null;$pages=null;
+        for($page=0;$page<max(1,min(2000,$maxPages));$page++){
+            $res=$this->request('GET',"/integration/order/sellers/{$this->sellerId}/claims",
+                ['startDate'=>(string)($start*1000),'endDate'=>(string)($end*1000+999),'page'=>(string)$page,'size'=>'100']);
+            $body=$res['body']??null;
+            if(($res['http']??0)!==200||!is_array($body['content']??null)||!is_numeric($body['totalPages']??null)||!is_numeric($body['totalElements']??null))
+                return ['ok'=>false,'error'=>'İade sayfası alınamadı (HTTP '.($res['http']??0).').'];
+            $expected=$expected??(int)$body['totalElements'];$pages=$pages??(int)$body['totalPages'];
+            if($expected!==(int)$body['totalElements']||$pages!==(int)$body['totalPages']||$pages>$maxPages)
+                return ['ok'=>false,'error'=>'İade sayfalaması değişti veya sınırı aştı.'];
+            if(!$body['content']&&$page<$pages)return ['ok'=>false,'error'=>'İade sayfası eksik.'];
+            foreach($body['content'] as $claim){
+                $id=(string)($claim['id']??$claim['claimId']??'');
+                if($id===''||isset($seen[$id]))return ['ok'=>false,'error'=>'Tekrarlanan veya eksik iade paketi.'];
+                $seen[$id]=true;
+                try{$normalized=normalize_claim($claim);}catch(InvalidArgumentException $e){return ['ok'=>false,'error'=>$e->getMessage()];}
+                foreach($normalized as $row){
+                    if(isset($items[$row['item_id']]))return ['ok'=>false,'error'=>'Tekrarlanan iade kalemi.'];
+                    $items[$row['item_id']]=true;$all[]=$row;
+                }
+            }
+            if($page+1>=$pages)return count($seen)===$expected?['ok'=>true,'items'=>$all,'claims'=>count($seen)]:['ok'=>false,'error'=>'İade paket sayısı uyuşmuyor.'];
+        }
+        return ['ok'=>false,'error'=>'İade sayfalaması tamamlanamadı.'];
     }
 
     /** Official PAID payment orders. Caller selects an ID, not an order date. */

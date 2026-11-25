@@ -9,7 +9,7 @@ $mp = $_GET['mp'] ?? $mps[0];
 if (!in_array($mp, $mps, true)) $mp = $mps[0];
 
 $rapor = $_GET['r'] ?? 'order';
-$allowed = ['order', 'product', 'category', 'return', 'ads', 'campaign', 'buybox'];
+$allowed = ['order', 'product', 'category', 'return', 'ads', 'campaign', 'buybox', 'claims'];
 if (!in_array($rapor, $allowed, true)) $rapor = 'order';
 
 $days = (int)($_GET['days'] ?? 30);
@@ -57,6 +57,23 @@ if($rapor==='order'){
     }
     $summary=['Eşleşen ciro'=>$money($total),'Maliyeti bilinen ciro'=>$money($covered),'Gözlemlenen maliyet'=>$money($cost),'Eksik maliyet adedi'=>$missing];
     $reportNote='Net kâr değildir; komisyon ve paket kargosu ürünlere dağıtılmadı. İlk gözlemlenen maliyet kullanılır. Tutarı eşleşmeyen '.$agg['excluded'].' paket dışarıda.';
+}elseif($rapor==='claims'){
+    $reportCols=['İade talebi','Sipariş','Barkod','Ürün','Statü','İade sebebi','Son güncelleme','Eşleşme','Gözlemlenen birim maliyet'];
+    $q=db()->prepare("SELECT c.*,o.package_number AS matched_package,o.order_number AS matched_order,o.currency_code,o.country_code,o.lines
+        FROM trendyol_claim_items c LEFT JOIN orders o ON o.user_id=c.user_id AND o.marketplace='trendyol'
+        AND o.package_number=c.outbound_package AND o.order_number=c.order_number
+        WHERE c.user_id=? AND c.modified_ms>=? ORDER BY c.modified_ms DESC,c.item_id");
+    $q->execute([$u['id'],$fromTs*1000]);$states=[];$matched=0;$known=0;
+    if($mp==='trendyol')foreach($q->fetchAll() as $row){
+        $order=$row['matched_package']===null?null:['package_number'=>$row['matched_package'],'order_number'=>$row['matched_order'],'currency_code'=>$row['currency_code'],'country_code'=>$row['country_code'],'lines'=>$row['lines']];
+        $match=claim_order_match($row,$order);
+        $states[$row['status']]=($states[$row['status']]??0)+1;
+        if($match['state']==='Paket ve ürün satırı eşleşti')$matched++;
+        if($match['cost']!==null)$known++;
+        $reportRows[]=[$row['claim_id'],$row['order_number'],$row['barcode'],$row['product_name'],$row['status'],$row['reason'],date('d.m.Y H:i',intdiv((int)$row['modified_ms'],1000)),$match['state'].' / '.$match['scope'],$match['cost']];
+    }
+    $summary=['İade kalemi'=>count($reportRows),'Kabul edilmiş'=>$states['Accepted']??0,'Aksiyon bekleyen'=>$states['WaitingInAction']??0,'Eşleşen ürün satırı'=>$matched,'Maliyeti bilinen'=>$known];
+    $reportNote='İade kalemi durumu, finansal geri ödeme değildir. Tarih filtresi son güncelleme tarihine göre uygulanır. Maliyet ilk gözlemlenen tutardır; stok durumu, geri ödeme ve kargo payı doğrulanmadan zarar hesaplanmaz. '.sync_coverage_label(db(),(int)$u['id'],$mp,'claims_query',$fromTs,time());
 }elseif($rapor==='return'||$rapor==='campaign'){
     $types=$rapor==='return'?['Return','ManualRefund','ManualRefundCancel']:['Discount','DiscountCancel','Coupon','CouponCancel','TyDiscount','TyDiscountCancel','TyCoupon','TyCouponCancel'];
     $reportCols=['Barkod','Ürün','İşlem türü','İşlem kaydı adedi','Alacak','Borç','Borç − alacak'];
@@ -121,6 +138,7 @@ $raporLabels = [
     'order' => 'Sipariş Kârlılık Analizi',
     'product' => 'Ürün Kârlılık Analizi',
     'category' => 'Kategori Kârlılık Analizi',
+    'claims' => 'İade Talepleri ve Durumları',
     'return' => 'İade Finansal Hareketleri',
     'ads' => 'Reklam Finansal Belgeleri',
     'campaign' => 'Kampanya Finansal Hareketleri',

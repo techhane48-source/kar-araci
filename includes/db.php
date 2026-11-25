@@ -187,6 +187,15 @@ function migrate(): void
         last_attempt INTEGER NOT NULL, last_success INTEGER,
         state TEXT NOT NULL, PRIMARY KEY(user_id,marketplace,job)
     )");
+    $pdo->exec("CREATE TABLE IF NOT EXISTS trendyol_claim_items (
+        user_id INTEGER NOT NULL,claim_id TEXT NOT NULL,item_id TEXT NOT NULL,order_number TEXT NOT NULL,
+        outbound_package TEXT NOT NULL,return_package TEXT NOT NULL,line_id TEXT NOT NULL,barcode TEXT NOT NULL,
+        product_name TEXT NOT NULL,status TEXT NOT NULL,reason TEXT NOT NULL,platform_reason TEXT NOT NULL,
+        auto_accepted INTEGER,seller_accepted INTEGER,created_ms INTEGER NOT NULL,modified_ms INTEGER NOT NULL,
+        PRIMARY KEY(user_id,item_id)
+    )");
+    $pdo->exec("CREATE INDEX IF NOT EXISTS idx_claim_order ON trendyol_claim_items(user_id,order_number,outbound_package)");
+    $pdo->exec("CREATE INDEX IF NOT EXISTS idx_claim_modified ON trendyol_claim_items(user_id,modified_ms,status)");
     $pdo->exec("CREATE TABLE IF NOT EXISTS sync_ranges (
         user_id INTEGER NOT NULL, marketplace TEXT NOT NULL, job TEXT NOT NULL,
         range_start INTEGER NOT NULL, range_end INTEGER NOT NULL,
