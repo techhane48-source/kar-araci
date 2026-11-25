@@ -37,6 +37,7 @@ jobs:
           php scripts/test-claims.php
           php scripts/test-return-inventory.php
           php scripts/test-auto-sync.php
+          php scripts/test-auto-market-checks.php
           php scripts/test-order-evidence.php
           php scripts/test-cost-history.php
           php scripts/test-profit-targets.php

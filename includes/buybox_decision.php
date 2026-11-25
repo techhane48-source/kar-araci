@@ -72,8 +72,10 @@ function buybox_refresh_page(PDO $db,int $uid,string $seller,array $barcodes,obj
     foreach(array_chunk($barcodes,10) as $chunk){
         $res=$client->getBuybox($chunk);
         if(!$res['ok'])return $res;
-        foreach($res['items'] as $r)$items[]=$r;
-        foreach($res['missing'] as $bc)$missing[]=$bc;
+        $observed=time();$returned=[];
+        foreach($res['items'] as $r){$bc=(string)($r['barcode']??'');if(!in_array($bc,$chunk,true)||isset($returned[$bc]))return ['ok'=>false,'error'=>'Buybox yanıtı barkodla uyuşmuyor.'];$returned[$bc]=true;$r['observed_at']=$observed;$items[]=$r;}
+        foreach($res['missing'] as $bc){$bc=(string)$bc;if(!in_array($bc,$chunk,true)||isset($returned[$bc]))return ['ok'=>false,'error'=>'Buybox eksik barkod listesi uyuşmuyor.'];$returned[$bc]=true;$missing[]=$bc;}
+        if(count($returned)!==count($chunk))return ['ok'=>false,'error'=>'Buybox yanıtı tamamlanmadı.'];
     }
     $db->beginTransaction();
     try{
@@ -83,7 +85,7 @@ function buybox_refresh_page(PDO $db,int $uid,string $seller,array $barcodes,obj
           second_price=excluded.second_price,third_price=excluded.third_price,checked_at=excluded.checked_at");
         $del=$db->prepare("DELETE FROM trendyol_buybox WHERE user_id=? AND seller_id=? AND barcode=?");
         $now=time();
-        foreach($items as $r)$up->execute([$uid,$seller,$r['barcode'],$r['rank'],$r['price'],(int)$r['multiple'],$r['second'],$r['third'],$now]);
+        foreach($items as $r)$up->execute([$uid,$seller,$r['barcode'],$r['rank'],$r['price'],(int)$r['multiple'],$r['second'],$r['third'],$r['observed_at']]);
         foreach($missing as $bc)$del->execute([$uid,$seller,$bc]);
         $db->commit();return ['ok'=>true,'count'=>count($items),'missing'=>count($missing)];
     }catch(Throwable $e){if($db->inTransaction())$db->rollBack();return ['ok'=>false,'error'=>'Buybox kayıtları güncellenemedi.'];}

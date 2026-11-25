@@ -4,7 +4,7 @@ declare(strict_types=1);
 /** Application defaults, not provider rate limits or guaranteed refresh times. */
 function auto_sync_intervals(): array
 {
-    return ['orders'=>900,'products'=>3600,'claims'=>1800,'settlements'=>21600,'documents'=>21600,'payout_list'=>21600];
+    return ['orders'=>900,'products'=>3600,'claims'=>1800,'settlements'=>21600,'documents'=>21600,'payout_list'=>21600,'buybox'=>300,'payout_detail'=>1800];
 }
 function auto_sync_due(array $statuses,int $now,int $limit=6): array
 {
@@ -50,6 +50,8 @@ function auto_sync_execute(array $task,int $now): array
       'settlements'=>sync_settlements($uid,'trendyol',auto_sync_days($last,$now)),
       'documents'=>sync_trendyol_documents($uid,auto_sync_days($last,$now)),
       'payout_list'=>sync_trendyol_payout_page($uid,0),
+      'buybox'=>auto_buybox_sync($uid),
+      'payout_detail'=>auto_payout_detail_sync($uid),
       default=>['ok'=>false,'error'=>'Bilinmeyen otomatik iş']
     };
 }

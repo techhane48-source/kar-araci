@@ -77,3 +77,8 @@ Hostinger arayüzünde zamanlama alanı ayrıysa komut kısmına yalnızca `php 
 - **Demo hesabı**: ana sayfadaki "Demo Hesabını Gör" butonu.
 - **Partner programı**: Hesabım'daki yönlendirme linkiyle gelen her Pro abonelikte %15 hakediş.
 - **Chrome eklentisi**: `chrome-eklenti/` klasörünü `chrome://extensions` → "Paketlenmemiş öğe yükle" ile kur.
+
+
+## Buybox and payout detail automation
+Buybox scans one 50-barcode chunk every target five minutes, using a durable per-seller keyset cursor. Duplicate catalog barcodes are excluded; failed requests do not advance the cursor. Each chunk has its own actual observation time and full response coverage check. Missing results are not a fresh price. A 20,000-product store needs at least 400 chunks (roughly 33 hours at ideal cadence), so the one-hour freshness threshold still blocks stale price recommendations. This is not a real-time full-catalog guarantee. No prices are changed.
+One previously fetched, completed payment order is checked per 30-minute target tick. Unchecked orders come first; recent checked orders are revisited after 24 hours. Historical list pages not yet fetched are not covered, and a failed old payment may block following details until resolved. No bank verification. Cron deployment and provider quota/load validation remain prerequisites.

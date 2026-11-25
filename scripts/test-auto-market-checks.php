@@ -1,0 +1,25 @@
+<?php
+declare(strict_types=1);
+$dir=sys_get_temp_dir().'/karfiyat-auto-market-'.bin2hex(random_bytes(8));mkdir($dir,0700);define('DB_PATH',$dir.'/test.sqlite');
+register_shutdown_function(static function()use($dir){foreach(glob($dir.'/*')as$f)unlink($f);rmdir($dir);});
+require_once __DIR__.'/../includes/functions.php';
+$db=db();$now=time();$t=[];
+$ins=$db->prepare("INSERT INTO products(user_id,marketplace,name,barcode,category,rate) VALUES(?,?,?,?,?,?)");
+foreach(['001','002','003','004','004'] as $bc)$ins->execute([1,'trendyol','Synthetic',$bc,'Ev',19]);
+$ins->execute([2,'trendyol','Other','005','Ev',19]);
+$client=new class{public array $calls=[];public bool $fail=false;function getBuybox(array $bc):array{$this->calls[]=$bc;if($this->fail)return ['ok'=>false];return ['ok'=>true,'items'=>array_map(static fn($b)=>['barcode'=>$b,'rank'=>1,'price'=>100,'multiple'=>false,'second'=>null,'third'=>null],$bc),'missing'=>[]];}};
+$r=auto_buybox_batch($db,1,'123',$client,$now,2);
+$t['first exact batch']=$r['attempted']===2&&$client->calls[0]===['001','002'];
+$client->fail=true;$r=auto_buybox_batch($db,1,'123',$client,$now,2);
+$t['failure preserves cursor']=!$r['ok']&&$db->query("SELECT cursor FROM auto_buybox_progress")->fetchColumn()==='002';
+$client->fail=false;$r=auto_buybox_batch($db,1,'123',$client,$now,2);
+$t['resume and ambiguous barcode skipped']=$r['attempted']===1&&end($client->calls)===['003'];
+$r=auto_buybox_batch($db,1,'123',$client,$now,2);$t['cycle wraps']=$r['wrapped']&&end($client->calls)===['001','002'];
+$t['other store untouched']=(int)$db->query("SELECT COUNT(*) FROM trendyol_buybox WHERE user_id=2")->fetchColumn()===0;
+$today=strtotime('today');
+$p=$db->prepare("INSERT INTO trendyol_payouts(user_id,seller_id,payment_order_id,payout_date,amount,raw_json,checked_at) VALUES(?,?,?,?,?,?,?)");
+$p->execute([1,'123','A',$today-86400,100,'{}',null]);$p->execute([1,'123','B',$today,100,'{}',null]);$p->execute([1,'123','C',$today-2*86400,100,'{}',$now]);$p->execute([2,'123','D',$today-86400,100,'{}',null]);
+$t['payout eligible exact store']=auto_payout_choice($db,1,'123',$now)==='A';
+$db->exec("UPDATE trendyol_payouts SET checked_at=".$now." WHERE payment_order_id='A'");
+$t['no current eligible payout']=auto_payout_choice($db,1,'123',$now)===null;
+foreach($t as $name=>$ok)echo ($ok?'PASS':'FAIL')." $name\n";exit(in_array(false,$t,true)?1:0);

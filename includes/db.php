@@ -30,7 +30,7 @@ function migrate(): void
 {
     $pdo = db();
     // Versioned, serialized and atomic; normal reads avoid schema writes.
-    $version=3;
+    $version=4;
     if((int)$pdo->query('PRAGMA user_version')->fetchColumn()>=$version)return;
     $pdo->exec('BEGIN IMMEDIATE');
     try{
@@ -247,6 +247,10 @@ function migrate(): void
         buybox_rank INTEGER NOT NULL, buybox_price REAL NOT NULL, multiple_sellers INTEGER NOT NULL,
         second_price REAL, third_price REAL, checked_at INTEGER NOT NULL,
         PRIMARY KEY(user_id,seller_id,barcode)
+    )");
+    $pdo->exec("CREATE TABLE IF NOT EXISTS auto_buybox_progress (
+        user_id INTEGER NOT NULL,seller_id TEXT NOT NULL,cursor TEXT NOT NULL,last_batch_at INTEGER NOT NULL,cycles INTEGER NOT NULL DEFAULT 0,
+        PRIMARY KEY(user_id,seller_id)
     )");
     $pdo->exec("CREATE TABLE IF NOT EXISTS trendyol_payouts (
         user_id INTEGER NOT NULL, seller_id TEXT NOT NULL, payment_order_id TEXT NOT NULL,

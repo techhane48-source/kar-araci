@@ -18,6 +18,7 @@ require_once __DIR__ . '/catalog_cost_import.php';
 require_once __DIR__ . '/period_finance.php';
 require_once __DIR__ . '/return_inventory.php';
 require_once __DIR__ . '/auto_sync.php';
+require_once __DIR__ . '/auto_market_checks.php';
 
 // ---- İş mantığı: komisyon oranları + kâr hesabı ----
 
