@@ -22,6 +22,7 @@ require_once __DIR__ . '/auto_market_checks.php';
 require_once __DIR__ . '/product_finance.php';
 require_once __DIR__ . '/product_cost_evidence.php';
 require_once __DIR__ . '/cargo_estimate.php';
+require_once __DIR__ . '/commission_evidence.php';
 
 // ---- İş mantığı: komisyon oranları + kâr hesabı ----
 

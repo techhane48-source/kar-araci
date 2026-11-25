@@ -24,6 +24,7 @@ jobs:
           php scripts/test-trendyol-v2.php
           php scripts/test-money-input.php
           php scripts/test-order-estimate.php
+          php scripts/test-commission-evidence.php
           php scripts/test-product-profit.php
           php scripts/test-payout.php
           php scripts/test-db-safety.php

@@ -33,8 +33,8 @@ $reportRows=[];$reportCols=[];$summary=[];$reportNote='';
 $excludedCurrency=count(array_filter($orders,static fn($o)=>!order_is_domestic_try($o)));
 $money=static fn(float $n):string=>tl($n);
 if($rapor==='order'){
-    $orders=cargo_profit_overlay(db(),(int)$u['id'],$orders);
-    $reportCols=['Sipariş No','Tarih','Tutar','Tahmini Kâr','Kâr Oranı %','Kâr Marjı %','Kargo (KDV dahil tahmin)','Kargo kaynağı','Durum'];
+    $orders=commission_profit_overlay(db(),(int)$u['id'],cargo_profit_overlay(db(),(int)$u['id'],$orders));
+    $reportCols=['Sipariş No','Tarih','Tutar','Tahmini Kâr','Kâr Oranı %','Kâr Marjı %','Kargo (KDV dahil tahmin)','Kargo kaynağı','Komisyon','Komisyon kaynağı','Durum'];
     $sale=0.0;$knownSale=0.0;$profit=0.0;$count=0;$known=0;
     foreach($orders as $o){
         if(!order_is_active_sale($o))continue;
@@ -42,10 +42,10 @@ if($rapor==='order'){
         if($pr['ok']){$known++;$knownSale+=$amount;$profit+=$pr['profit'];}
         $reportRows[]=[$o['order_number'],date('d.m.Y',(int)$o['order_date']),$amount,
             $pr['ok']?$pr['profit']:null,$pr['ok']?$pr['ratio']:null,$pr['ok']?$pr['margin']:null,
-            $pr['ok']?$pr['cargo']:null,$pr['ok']?$pr['cargo_source']:($o['cargo_source']??null),$pr['ok']?'Tahmini':($pr['reason']??'Veri eksik')];
+            $pr['ok']?$pr['cargo']:null,$pr['ok']?$pr['cargo_source']:($o['cargo_source']??null),$pr['ok']?$pr['commission']:null,$pr['ok']?$pr['commission_source']:($o['commission_source']??null),$pr['ok']?'Tahmini':($pr['reason']??'Veri eksik')];
     }
     $summary=['Ciro'=>$money($sale),'Hesaplanan ciro'=>$money($knownSale),'Tahmini kâr'=>$known?$money($profit):'—','Kapsam'=>"$known / $count"];
-    $reportNote='Tarihli kullanıcı maliyeti veya ilk gözlem ile komisyon ve kargo tahminleri kullanılır. Güncel maliyet geçmişe uygulanmaz. Gerçek finansal mutabakat değildir.';
+    $reportNote='Tarihli kullanıcı maliyeti veya ilk gözlem kullanılır. Ekstre yokken komisyon tahmini, eşleşen Sale ekstresi geldiğinde gerçek satış komisyonu kullanılır. İade ve düzeltme kayıtları otomatik olarak kesin kâr sayılmaz. Platform hizmet bedeli halen tahminidir; fatura mağaza düzeyinde ayrıca raporlanır. Güncel maliyet geçmişe uygulanmaz. Gerçek finansal mutabakat değildir.';
 }elseif($rapor==='order_finance'){
     $reportCols=['Sipariş','Paket','Aktif satış tutarı','Tarihli / gözlemlenen maliyet','Tarihli maliyet adedi','İlk gözlem adedi','Satış komisyonu (ekstre)','Satış satıcı geliri (ekstre)','Finans alacak','Finans borç','Gönderi kargo (fatura)','İade kargo (fatura)','Diğer kargo','Bilinen kalemler sonrası fark (net kâr değil)','İade kalemi','Eşleşen finans','Eşleşmeyen / doğrulanmamış finans','Durum','Eksikler'];
     $evidence=$mp==='trendyol'?load_order_evidence(db(),(int)$u['id'],array_column($orders,'order_number')):[];

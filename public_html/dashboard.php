@@ -35,7 +35,7 @@ foreach ($catalogProducts as $p) {
 // Siparişler
 $q = db()->prepare("SELECT * FROM orders WHERE user_id = ? AND marketplace = ? AND order_date >= ? ORDER BY order_date DESC");
 $q->execute([$u['id'], $mp, $fromTs]);
-$orders = cargo_profit_overlay(db(),(int)$u['id'],cost_history_overlay(db(),(int)$u['id'],$q->fetchAll()));
+$orders = commission_profit_overlay(db(),(int)$u['id'],cargo_profit_overlay(db(),(int)$u['id'],cost_history_overlay(db(),(int)$u['id'],$q->fetchAll())));
 
 // Aggregasyon
 $ciro = 0.0; $maliyetliCiro = 0.0;

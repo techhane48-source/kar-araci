@@ -67,7 +67,7 @@ foreach ($ps->fetchAll() as $p) {
 $weekStart = strtotime('today') - 6 * 86400;
 $q = db()->prepare("SELECT * FROM orders WHERE user_id = ? AND marketplace = ? AND order_date >= ? ORDER BY order_date DESC");
 $q->execute([$u['id'], $mp, $weekStart]);
-$orders = cargo_profit_overlay(db(),(int)$u['id'],cost_history_overlay(db(),(int)$u['id'],$q->fetchAll()));
+$orders = commission_profit_overlay(db(),(int)$u['id'],cargo_profit_overlay(db(),(int)$u['id'],cost_history_overlay(db(),(int)$u['id'],$q->fetchAll())));
 
 $todayStart = strtotime('today');
 $yesterdayStart = $todayStart - 86400;
@@ -248,7 +248,7 @@ require __DIR__ . '/../includes/header.php';
           <td style="font-size:12px"><?= date('d.m H:i', (int)$o['order_date']) ?></td>
           <td><?= order_is_domestic_try($o) ? tl((float)$o['total_price']) : h((string)($o['currency_code'] ?? 'Belirsiz')) . ' ' . number_format((float)$o['total_price'],2,',','.') ?></td>
           <td>
-            <?php if ($pr['ok']): ?><span class="<?= $pr['profit'] < 0 ? 'neg' : 'pos' ?>"><?= tl($pr['profit']) ?></span><br><small><?=h((string)$pr['cargo_source'])?></small>
+            <?php if ($pr['ok']): ?><span class="<?= $pr['profit'] < 0 ? 'neg' : 'pos' ?>"><?= tl($pr['profit']) ?></span><br><small><?=h((string)$pr['cargo_source'])?> · <?=h((string)$pr['commission_source'])?></small>
             <?php else: ?><span class="hint"><?= h($pr['reason'] ?? 'Veri eksik') ?></span><?php endif; ?>
           </td>
           <td style="font-size:12px"><?= h($o['status'] ?: '—') ?></td>
