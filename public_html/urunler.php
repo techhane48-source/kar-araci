@@ -27,7 +27,7 @@ if (($_GET['export'] ?? '') === 'maliyet') {
             $desi = (float)($r['kesilen_desi'] ?? 0);
             if ($desi <= 0) $desi = desi_from_dims((float)($r['en'] ?? 0), (float)($r['boy'] ?? 0), (float)($r['yukseklik'] ?? 0));
             fputcsv($out, [
-                $r['barcode'] ?? '', $r['model_kodu'] ?? '', '', $r['category'] ?? '', $r['name'] ?? '',
+                csv_safe_text($r['barcode'] ?? ''), csv_safe_text($r['model_kodu'] ?? ''), '', csv_safe_text($r['category'] ?? ''), csv_safe_text($r['name'] ?? ''),
                 (float)($r['price'] ?? 0), (int)($r['quantity'] ?? 0),
                 (float)($r['cost'] ?? 0) > 0 ? (float)$r['cost'] : '',
                 (float)($r['cost_vat'] ?? $r['kdv'] ?? 20),
@@ -61,107 +61,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'impor
         flash_set('error', 'Toplu maliyet içe aktarma Pro plan özelliğidir.');
         e_redirect('odeme.php');
     }
-    if (empty($_FILES['csv']['tmp_name'])) {
-        flash_set('error', 'CSV dosyası seçin.');
-        e_redirect('urunler.php');
-    }
-    $tmpName = $_FILES['csv']['tmp_name'];
-    $origName = $_FILES['csv']['name'] ?? '';
-    $isXlsx = (strtolower(pathinfo($origName, PATHINFO_EXTENSION)) === 'xlsx');
-
-    $rows = [];
-    $header = [];
-    if ($isXlsx) {
-        try {
-            $parsed = xlsx_read($tmpName);
-            $header = $parsed['headers'];
-            $rows = $parsed['rows'];
-        } catch (\Throwable $e) {
-            flash_set('error', 'XLSX okunamadı: ' . $e->getMessage());
-            e_redirect('urunler.php');
-        }
-    } else {
-        $file = fopen($tmpName, 'r');
-        $firstLine = (string)fgets($file);
-        rewind($file);
-        $delim = (substr_count($firstLine, ';') > substr_count($firstLine, ',')) ? ';' : ',';
-        $header = fgetcsv($file, null, $delim, '"', '\\');
-        $rows = [];
-        while (($r = fgetcsv($file, null, $delim, '"', '\\')) !== false) $rows[] = $r;
-        fclose($file);
-    }
-    // Türkçe karakter fold + normalize (büyük/küçük harf dahil)
-    $norm = static function (string $x): string {
-        $x = strtolower(trim($x)); // ASCII lowercase (Türkçe büyük harfler strtr ile)
-        $x = strtr($x, ['Ç' => 'c', 'Ğ' => 'g', 'İ' => 'i', 'I' => 'i', 'Ö' => 'o', 'Ş' => 's', 'Ü' => 'u', 'ç' => 'c', 'ğ' => 'g', 'ı' => 'i', 'ö' => 'o', 'ş' => 's', 'ü' => 'u']);
-        return preg_replace('/[^a-z0-9]/', '', $x);
-    };
-
-    if ($header === false) {
-        flash_set('error', 'Dosya boş veya okunamadı.');
-    } else {
-        $normHeader = array_map($norm, $header);
-        $idx = static function (array $names) use ($normHeader): ?int {
-            foreach ($names as $n) {
-                $k = array_search($n, $normHeader, true);
-                if ($k !== false) return $k;
-            }
-            return null;
-        };
-        $bIdx  = $idx(['barkod', 'barcode', 'sku']);
-        $cIdx  = $idx(['urunmaliyetikdvdahil', 'maliyet', 'cost', 'alis', 'alisfiyati']);
-        if ($bIdx === null || $cIdx === null) {
-            flash_set('error', 'Başlıklarda "Barkod" ve "Ürün Maliyeti (KDV Dahil)" kolonları bulunmalı.');
-        } else {
-            $kIdx  = $idx(['maliyetkdvorani', 'kdvorani', 'kdv']);
-            $dIdx  = $idx(['desi']);
-            $mIdx  = $idx(['marka']);
-            $mkIdx = $idx(['modelkodu', 'model']);
-            $rIdx  = $idx(['renk']);
-            $bdIdx = $idx(['beden']);
-            $sIdx  = $idx(['stokadet', 'stok', 'adet', 'quantity']);
-            $iIdx  = $idx(['iadeorani', 'iade', 'returnrate']);
-            $tIdx  = $idx(['teslimattipi', 'kargotipi', 'cargotype']);
-            $eIdx  = $idx(['ekstragider', 'ekstra', 'extrafee']);
-
-            $num = static function (?string $s): ?float {
-                $s = trim((string)$s);
-                if ($s === '') return null;
-                return parse_money_input($s);
-            };
-
-            foreach ($rows as $row) {
-                $barcode = trim((string)($row[$bIdx] ?? ''));
-                $costVal = $num($row[$cIdx] ?? null);
-                if ($barcode === '' || $costVal === null) continue;
-
-                $sets = ['cost = ?'];
-                $params = [max(0.0, $costVal)];
-                $add = function (string $col, $val) use (&$sets, &$params) {
-                    $sets[] = "$col = ?";
-                    $params[] = $val;
-                };
-                if (($v = $num($kIdx !== null ? ($row[$kIdx] ?? null) : null)) !== null) { if ($v >= 0 && $v <= 100) $add('cost_vat', $v); }
-                if (($v = $num($dIdx !== null ? ($row[$dIdx] ?? null) : null)) !== null) $add('kesilen_desi', $v);
-                if (($v = $sIdx !== null ? trim((string)($row[$sIdx] ?? '')) : '') !== '' && is_numeric(str_replace(['.', ','], '', $v))) $add('quantity', (int)str_replace(['.', ','], '', $v));
-                if (($v = $num($iIdx !== null ? ($row[$iIdx] ?? null) : null)) !== null) $add('return_rate', $v);
-                if (($v = $eIdx !== null ? trim((string)($row[$eIdx] ?? '')) : '') !== '' && ($v = $num($v)) !== null) $add('extra_fee', $v);
-                if ($mIdx !== null && ($v = trim((string)($row[$mIdx] ?? ''))) !== '') $add('marka', $v);
-                if ($mkIdx !== null && ($v = trim((string)($row[$mkIdx] ?? ''))) !== '') $add('model_kodu', $v);
-                if ($rIdx !== null && ($v = trim((string)($row[$rIdx] ?? ''))) !== '') $add('renk', $v);
-                if ($bdIdx !== null && ($v = trim((string)($row[$bdIdx] ?? ''))) !== '') $add('beden', $v);
-                if ($tIdx !== null && ($v = trim((string)($row[$tIdx] ?? ''))) !== '') $add('cargo_type', $v);
-
-                $params[] = $u['id'];
-                $params[] = $barcode;
-                $upd = db()->prepare("UPDATE products SET " . implode(', ', $sets) . " WHERE user_id = ? AND barcode = ? AND marketplace = 'trendyol'");
-                $upd->execute($params);
-                if ($upd->rowCount() > 0) $updated++; else $notFound++;
-            }
-        }
-    }
-    flash_set($updated > 0 ? 'success' : 'error',
-        $updated > 0 ? "$updated ürünün maliyeti güncellendi" . ($notFound ? ", $notFound barkod eşleşmedi" : '') . '.' : 'Hiçbir ürün güncellenemedi. Barkodları kontrol edin.');
+    try{
+        [$headers,$rows]=analysis_read_upload($_FILES['csv']??[]);
+        $res=with_marketplace_lock((int)$u['id'],'trendyol',static function()use($u,$headers,$rows){
+            return ['ok'=>true,'stats'=>catalog_cost_import(db(),(int)$u['id'],$headers,$rows)];
+        });
+        if(!$res['ok'])throw new RuntimeException($res['error']);
+        $stats=$res['stats'];
+        flash_set('success',$stats['updated'].' ürün güncellendi; '.$stats['unmatched'].' barkod eşleşmedi, '.$stats['blank'].' boş maliyet atlandı. Fiyat, stok ve fatura desisi değiştirilmedi.');
+    }catch(Throwable $e){flash_set('error',$e instanceof InvalidArgumentException||$e instanceof RuntimeException?$e->getMessage():'Dosya işlenemedi; değişiklikler geri alındı.');}
     e_redirect('urunler.php');
 }
 
@@ -254,7 +162,7 @@ if ($q !== '') {
 $totalProfit = 0.0; $totalRevenue = 0.0; $totalCommission = 0.0; $totalCount = 0; $maliyetsiz = 0;
 $totStmt = db()->prepare("SELECT marketplace, cost, price, cargo, rate, kdv, cost_vat, extra_fee, service_fee, stopaj, stopaj_mode, stopaj_rate, allow_negative_vat, return_rate FROM products WHERE $where");
 $totStmt->execute($args);
-foreach ($totStmt->fetchAll() as $tp) {
+while ($tp=$totStmt->fetch()) {
     if ((float)$tp['cost'] <= 0) $maliyetsiz++;
     $rr = product_profit($tp);
     if ((float)$tp['cost'] > 0) $totalProfit += $rr['profit'];

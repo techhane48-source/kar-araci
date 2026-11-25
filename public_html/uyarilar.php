@@ -26,16 +26,21 @@ foreach ($products as $p) if ($p['barcode'] !== '') $byBarcode[$p['barcode']] = 
 
 $rules=target_rules(db(),(int)$u['id']);$now=time();
 $labels=alert_catalog_labels();$alerts=array_fill_keys(array_keys($labels),[]);
-$summary=alert_catalog_summary($products,$rules,$now);
+$summary=['products'=>0,'evaluated'=>0,'flagged'=>0,'counts'=>array_fill_keys(array_keys($labels),0)];
 foreach($products as $p){
-    $a=alert_catalog_row($p,target_for_product($rules,$p),$now);
-    foreach($a['issues'] as $key)$alerts[$key][]=array_merge($p,['_profit'=>$a['profit'],'_rule'=>$a['rule']]);
+    $summary['products']++;$a=alert_catalog_row($p,target_for_product($rules,$p),$now);
+    if($a['profit']!==null)$summary['evaluated']++;
+    if($a['issues'])$summary['flagged']++;
+    foreach($a['issues'] as $key){
+        $summary['counts'][$key]++;
+        if(count($alerts[$key])<50)$alerts[$key][]=array_merge($p,['_profit'=>$a['profit'],'_rule'=>$a['rule']]);
+    }
 }
 $orders=cost_history_overlay(db(),(int)$u['id'],$orders);
-$alerts['siparis']=[];$alerts['cari']=[];
+$alerts['siparis']=[];$alerts['cari']=[];$orderAlertCount=0;
 foreach($orders as $o){
     $a=alert_order_row($o,$byBarcode);
-    if($a)$alerts['siparis'][]=array_merge($o,['_sale'=>(float)$o['total_price'],'_reason'=>$a['reason'],'_profit'=>$a['profit']]);
+    if($a){$orderAlertCount++;if(count($alerts['siparis'])<50)$alerts['siparis'][]=array_merge($o,['_sale'=>(float)$o['total_price'],'_reason'=>$a['reason'],'_profit'=>$a['profit']]);}
 }
 $q=db()->prepare("SELECT job,state,last_success FROM sync_status WHERE user_id=? AND marketplace=?");
 $q->execute([$u['id'],$mp]);$sync=[];foreach($q->fetchAll() as $r)$sync[$r['job']]=$r;
@@ -44,7 +49,7 @@ foreach(['products'=>'Ürün','orders'=>'Sipariş','settlements'=>'Finans','docu
     if(!$r||!$r['last_success']||$r['state']!=='success'||!catalog_fresh($r['last_success'],$now))
         $alerts['cari'][]=['msg'=>$name.': son başarılı sorgu yok, eski veya son işlem başarısız.'];
 }
-$totalAlerts=array_sum(array_map('count',$alerts));
+$totalAlerts=array_sum($summary['counts'])+$orderAlertCount+count($alerts['cari']);
 $selected=is_string($_GET['type']??null)?$_GET['type']:'all';
 if($selected!=='all'&&!isset($labels[$selected]))$selected='all';
 if(($_GET['export']??'')==='csv'){
@@ -90,11 +95,11 @@ require __DIR__ . '/../includes/header.php';
   $sections['cari']=['title'=>'Senkronizasyon kontrolü','desc'=>'Başarılı sorgu, veri kapsamının eksiksiz olduğunu garanti etmez.'];
   foreach ($sections as $key => $sec):
     if($selected!=='all'&&isset($labels[$key])&&$key!==$selected)continue;
-    $list = $alerts[$key];
+    $list = $alerts[$key];$count=$summary['counts'][$key]??($key==='siparis'?$orderAlertCount:count($list));
     if (!$list) continue;
   ?>
   <div class="card table-card" style="margin:16px 0">
-    <h2><?= h($sec['title']) ?> <span class="hint" style="font-weight:400">(<?= count($list) ?>)</span></h2>
+    <h2><?= h($sec['title']) ?> <span class="hint" style="font-weight:400">(<?= $count ?>)</span></h2>
     <p class="hint" style="margin-bottom:10px"><?= h($sec['desc']) ?></p>
     <?php if ($key === 'cari'): ?>
       <?php foreach($list as $item):?><p><?= h($item['msg']) ?></p><?php endforeach;?> <a href="magaza.php">Mağaza bağlantısı →</a>
@@ -136,8 +141,8 @@ require __DIR__ . '/../includes/header.php';
         <?php endforeach; ?>
       </table>
     <?php endif; ?>
-    <?php if (count($list) > 50): ?>
-      <p class="hint" style="margin-top:8px">İlk 50 gösteriliyor (toplam <?= count($list) ?>).</p>
+    <?php if ($count > 50): ?>
+      <p class="hint" style="margin-top:8px">İlk 50 gösteriliyor (toplam <?= $count ?>).</p>
     <?php endif; ?>
   </div>
   <?php endforeach; ?>

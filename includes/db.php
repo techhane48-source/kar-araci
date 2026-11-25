@@ -29,6 +29,12 @@ function db(): PDO
 function migrate(): void
 {
     $pdo = db();
+    // Versioned, serialized and atomic; normal reads avoid schema writes.
+    $version=1;
+    if((int)$pdo->query('PRAGMA user_version')->fetchColumn()>=$version)return;
+    $pdo->exec('BEGIN IMMEDIATE');
+    try{
+        if((int)$pdo->query('PRAGMA user_version')->fetchColumn()>=$version){$pdo->exec('COMMIT');return;}
 
     $pdo->exec("CREATE TABLE IF NOT EXISTS users (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -358,6 +364,12 @@ function migrate(): void
         }
     }
 
+    // Nonunique: existing duplicate barcodes must be reviewed, never silently merged.
+    $pdo->exec("CREATE INDEX IF NOT EXISTS idx_products_market_barcode ON products(user_id,marketplace,barcode)");
+    $pdo->exec("CREATE INDEX IF NOT EXISTS idx_products_market_category ON products(user_id,marketplace,category)");
+    $pdo->exec("CREATE INDEX IF NOT EXISTS idx_products_market_id ON products(user_id,marketplace,id)");
+    $pdo->exec("CREATE INDEX IF NOT EXISTS idx_orders_market_date ON orders(user_id,marketplace,order_date)");
+
     // integrations: siparişlerin son otomatik senkron zamanı (auto-sync throttle)
     $icols = array_column($pdo->query("PRAGMA table_info(integrations)")->fetchAll(PDO::FETCH_ASSOC), 'name');
     if (!in_array('last_orders_sync', $icols, true)) {
@@ -386,6 +398,9 @@ function migrate(): void
     foreach ($defaults as $k => $v) {
         $ins->execute([$k, $v]);
     }
+    $pdo->exec('PRAGMA user_version = '.$version);
+    $pdo->exec('COMMIT');
+    }catch(Throwable $e){$pdo->exec('ROLLBACK');throw $e;}
 }
 
 function setting(string $key): string

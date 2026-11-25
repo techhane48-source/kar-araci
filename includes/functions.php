@@ -14,6 +14,7 @@ require_once __DIR__ . '/buybox_decision.php';
 require_once __DIR__ . '/catalog_alerts.php';
 require_once __DIR__ . '/cargo_audit.php';
 require_once __DIR__ . '/payout_receipts.php';
+require_once __DIR__ . '/catalog_cost_import.php';
 
 // ---- İş mantığı: komisyon oranları + kâr hesabı ----
 
