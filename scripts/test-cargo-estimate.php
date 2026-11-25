@@ -1,0 +1,20 @@
+<?php
+declare(strict_types=1);
+require_once __DIR__.'/../includes/cargo_estimate.php';
+date_default_timezone_set('Europe/Istanbul');
+$t=['from'=>'2026-01-01','through'=>'2026-12-31','source'=>'synthetic only','rows'=>[['carrier'=>'TEX','desi'=>3,'min_sale'=>350,'max_sale'=>null,'gross_tl'=>120]]];
+$o=['currencyCode'=>'TRY','orderCountryCode'=>'TR','cargoCompany'=>'Trendyol Express','orderDate'=>strtotime('2026-07-01')*1000,'totalPrice'=>500,'lines'=>[['barcode'=>'001','quantity'=>1]],'cargoDeci'=>8];
+$q=cargo_order_quote($o,['001'=>['expected_desi'=>2.5]],[$t]);$tests=[];
+$tests['entered desi precedence']=$q['amount']===120.0&&$q['desi']===2.5;
+$tests['barem not guessed']=cargo_order_quote(array_replace($o,['totalPrice'=>100]),['001'=>['expected_desi'=>2.5]],[$t])===null;
+$tests['own carrier not guessed']=cargo_order_quote(array_replace($o,['sellerCargoAgreement'=>true]),['001'=>['expected_desi'=>2.5]],[$t])===null;
+$tests['historical rate not guessed']=cargo_tariff_quote($t,'TEX',3,500,'2025-12-31')===null;
+$p=['marketplace'=>'trendyol','order_number'=>'O','status'=>'Delivered','currency_code'=>'TRY','country_code'=>'TR','cargo_estimate'=>120];
+$r=['invoice_serial'=>'F','parcel_id'=>'P','order_number'=>'O','shipment_type'=>'Gönderi Kargo Bedeli','amount'=>132,'invoice_raw'=>json_encode(['id'=>'F','sellerId'=>123,'affiliate'=>'TRENDYOLTR','country'=>'TR'])];
+$tests['estimate before invoice']=cargo_effective([$p],[],'123')['selected']===120.0;
+$a=cargo_effective([$p],[$r],'123');$tests['invoice replaces not adds']=$a['estimate']===120.0&&$a['selected']===132.0;
+$tests['duplicate invoice withheld']=cargo_effective([$p],[$r,$r],'123')['selected']===null;
+$tests['multi package withheld']=cargo_effective([$p,$p],[$r],'123')['selected']===null;
+$tests['return separate']=cargo_effective([$p],[array_replace($r,['shipment_type'=>'İade Kargo Bedeli'])],'123')['selected']===120.0;
+$tests['foreign seller withheld']=cargo_effective([$p],[$r],'999')['selected']===null;
+foreach($tests as $n=>$ok)echo ($ok?'PASS':'FAIL')." $n\n";exit(in_array(false,$tests,true)?1:0);

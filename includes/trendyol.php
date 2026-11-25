@@ -252,6 +252,8 @@ final class TrendyolClient
                         'customerName' => trim(($it['customerFirstName'] ?? '') . ' ' . ($it['customerLastName'] ?? '')),
                         'totalPrice' => (float)($it['packageTotalPrice'] ?? $it['totalPrice'] ?? 0),
                         'cargoCompany' => $it['cargoProviderName'] ?? '',
+                        'cargoDeci' => $it['cargoDeci'] ?? null,
+                        'sellerCargoAgreement' => ($it['whoPays']??null)==1,
                         'lines' => $lines,
                         'orderDate' => $it['orderDate'] ?? null,
                         'lastModifiedDate' => $it['lastModifiedDate'] ?? null,

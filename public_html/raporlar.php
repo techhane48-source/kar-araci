@@ -9,7 +9,7 @@ $mp = $_GET['mp'] ?? $mps[0];
 if (!in_array($mp, $mps, true)) $mp = $mps[0];
 
 $rapor = $_GET['r'] ?? 'order';
-$allowed = ['order', 'product', 'category', 'return', 'ads', 'campaign', 'buybox', 'claims', 'order_finance', 'period_finance', 'product_finance', 'product_cost_evidence'];
+$allowed = ['order', 'product', 'category', 'return', 'ads', 'campaign', 'buybox', 'claims', 'order_finance', 'period_finance', 'product_finance', 'product_cost_evidence', 'cargo_effective'];
 if (!in_array($rapor, $allowed, true)) $rapor = 'order';
 
 $days = (int)($_GET['days'] ?? 30);
@@ -105,6 +105,12 @@ if($rapor==='order'){
         $reportRows[]=[$bc,$byBarcode[$bc]['name']??$bc,(string)$row['query_type'],$count,$c,$d,$d-$c];$credit+=$c;$debt+=$d;$n+=$count;}
     $summary=['Finansal işlem kaydı'=>$n,'Alacak'=>$money($credit),'Borç'=>$money($debt),'Borç − alacak'=>$money($debt-$credit)];
     $reportNote=$rapor==='return'?'Finansal işlem adedi ürün iade adedi değildir. İade tutarı, yeniden satılabilirlik ve gerçek kargo maliyeti eşleşmeden iade zararı hesaplanmaz.':'Satıcı ve Trendyol kaynaklı indirim/kuponlar ayrı işlem türleridir; iptaller dahil. Tarih finansal işlem tarihidir; kampanya kârlılığı değildir.';
+}elseif($rapor==='cargo_effective'){
+    $reportCols=['Sipariş','Tarife tahmini (KDV dahil)','Fatura gönderi tutarı (API)','Seçilen kargo tutarı','Fatura kalemi','Durum'];
+    $data=$mp==='trendyol'?cargo_effective_report(db(),(int)$u['id'],array_column($orders,'order_number')):[];$known=0;$estimated=0;
+    foreach($data as $no=>$a){$reportRows[]=[(string)$no,$a['estimate'],$a['invoiced'],$a['selected'],$a['invoice_rows'],$a['state']];if($a['invoiced']!==null)$known++;elseif($a['selected']!==null)$estimated++;}
+    $summary=['Sipariş'=>count($data),'Fatura kaydı olan'=>$known,'Tarife tahmini olan'=>$estimated,'Diğer'=>count($data)-$known-$estimated];
+    $reportNote='Sipariş tarihindeki doğrulanmış tarife tahmini saklanır. Tek paketli siparişte doğrulanan gönderi faturası tutarı tahminin yerini alır; ikisi toplanmaz. Çoklu paketler ayrıca incelenir. Fatura API tutarının KDV niteliği doğrulanmalıdır. Tarifeler sunucu yöneticisi tarafından doğrulanmış tarihli dosya olarak yüklenmelidir. Bu aşamada diğer kâr ekranları bu tutara geçirilmemiştir.';
 }elseif($rapor==='product_cost_evidence'){
     $reportCols=['Barkod','Ürün','Eşleşen sipariş','Adet','Satış alacağı','Satış komisyonu','Satıcı geliri','Kayıtlı alış maliyeti','Kargo öncesi fark','Kargosu doğrudan eşleşen sipariş','Bu siparişlerin kargosu','Yalnız bu siparişlerin kargo sonrası farkı'];
     $data=$mp==='trendyol'?product_cost_evidence(db(),(int)$u['id'],array_column($orders,'order_number')):['groups'=>[],'orders'=>0,'matched'=>0,'shared_orders'=>0,'shared_cargo'=>null];
@@ -186,6 +192,7 @@ $raporLabels = [
     'period_finance' => 'Dönem Finans Hareketleri',
     'product_finance' => 'Ürün Finansal Hareketleri',
     'product_cost_evidence' => 'Ürün Satış / Maliyet Eşleştirmesi',
+    'cargo_effective' => 'Tahmini / Faturalanmış Kargo',
     'product' => 'Ürün Kârlılık Analizi',
     'category' => 'Kategori Kârlılık Analizi',
     'claims' => 'İade Talepleri ve Durumları',

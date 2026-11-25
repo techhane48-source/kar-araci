@@ -28,11 +28,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'save_
         $db=db();$n=0;
         try{
             if(!is_array($_POST['en']??null)||count($_POST['en'])>100)throw new InvalidArgumentException('En fazla 100 ürün.');
-            $upd=$db->prepare("UPDATE products SET en=?,boy=?,yukseklik=?,kesilen_desi=? WHERE id=? AND user_id=? AND marketplace=?");
+            $upd=$db->prepare("UPDATE products SET en=?,boy=?,yukseklik=?,kesilen_desi=?,expected_desi=? WHERE id=? AND user_id=? AND marketplace=?");
             $db->beginTransaction();
             foreach(array_keys($_POST['en']) as $id){
                 $vals=[];
-                foreach(['en','boy','yukseklik','kesilen'] as $key){
+                foreach(['en','boy','yukseklik','kesilen','expected_desi'] as $key){
                     $v=$_POST[$key][$id]??'';
                     if(!is_string($v))throw new InvalidArgumentException('Geçersiz ölçü.');
                     $num=$v===''?0:parse_money_input($v);
@@ -151,7 +151,7 @@ require __DIR__ . '/../includes/header.php';
 
   <?php if ($tab === 'desi'): ?>
   <div class="card table-card" style="margin:16px 0">
-    <h2>Desi Kontrolü</h2>
+    <h2>Desi Kontrolü</h2><p><a href="raporlar.php?r=cargo_effective">Tahmini / faturalanmış kargo raporu</a></p>
     <p class="hint" style="max-width:760px">Ürünün <b>en × boy × yükseklik (cm)</b> ölçülerini gir. "Olması gereken desi" otomatik hesaplanır (÷3000). Kargo firmasının kestiği <b>desi</b>'yi de gir — kesilen desi olması gerekenden büyükse <b>fazla kargo</b> kesilmiş olabilir.</p>
     <form method="get" style="display:flex;gap:8px;align-items:center;margin-bottom:12px">
       <input type="hidden" name="tab" value="desi">
@@ -166,14 +166,15 @@ require __DIR__ . '/../includes/header.php';
       <input type="hidden" name="tab" value="desi">
       <input type="hidden" name="mp" value="<?= h($mp) ?>">
       <table>
-        <tr><th>Ürün</th><th>En (cm)</th><th>Boy (cm)</th><th>Yük (cm)</th><th>Olması Gereken Desi</th><th>Kesilen Desi</th><th>Durum</th></tr>
-        <?php foreach ($products as $p): $beklenen = desi_from_dims((float)$p['en'], (float)$p['boy'], (float)$p['yukseklik']); $kesilen = (float)$p['kesilen_desi']; ?>
+        <tr><th>Ürün</th><th>En (cm)</th><th>Boy (cm)</th><th>Yük (cm)</th><th>Olması Gereken Desi</th><th>Girilen paket desisi</th><th>Kesilen Desi</th><th>Durum</th></tr>
+        <?php foreach ($products as $p): $beklenen = (float)($p['expected_desi']??0) ?: desi_from_dims((float)$p['en'], (float)$p['boy'], (float)$p['yukseklik']); $kesilen = (float)$p['kesilen_desi']; ?>
         <tr>
           <td><?= h($p['name']) ?></td>
           <td><input type="number" step="0.1" name="en[<?= $p['id'] ?>]" value="<?= (float)$p['en'] > 0 ? number_format((float)$p['en'], 1, '.', '') : '' ?>" style="width:70px"></td>
           <td><input type="number" step="0.1" name="boy[<?= $p['id'] ?>]" value="<?= (float)$p['boy'] > 0 ? number_format((float)$p['boy'], 1, '.', '') : '' ?>" style="width:70px"></td>
           <td><input type="number" step="0.1" name="yukseklik[<?= $p['id'] ?>]" value="<?= (float)$p['yukseklik'] > 0 ? number_format((float)$p['yukseklik'], 1, '.', '') : '' ?>" style="width:70px"></td>
           <td><?= $beklenen > 0 ? number_format($beklenen, 2, ',', '.') : '<span class="hint">—</span>' ?></td>
+          <td><input type="number" min="0" max="500" step="0.01" name="expected_desi[<?= $p['id'] ?>]" value="<?= (float)($p['expected_desi']??0)>0?number_format((float)$p['expected_desi'],2,'.',''):'' ?>" style="width:80px"></td>
           <td><input type="number" step="0.01" name="kesilen[<?= $p['id'] ?>]" value="<?= $kesilen > 0 ? number_format($kesilen, 2, '.', '') : '' ?>" style="width:80px"></td>
           <td>
             <?php if ($beklenen > 0 && $kesilen > 0): ?>
@@ -183,7 +184,7 @@ require __DIR__ . '/../includes/header.php';
           </td>
         </tr>
         <?php endforeach; ?>
-        <?php if (!$products): ?><tr><td colspan="7" class="hint">Ürün yok. Önce ürünlerini senkronize et.</td></tr><?php endif; ?>
+        <?php if (!$products): ?><tr><td colspan="8" class="hint">Ürün yok. Önce ürünlerini senkronize et.</td></tr><?php endif; ?>
       </table>
       <?php if ($dtotalPages > 1): ?>
       <div style="display:flex;gap:8px;align-items:center;justify-content:center;margin-top:14px">

@@ -30,7 +30,7 @@ function migrate(): void
 {
     $pdo = db();
     // Versioned, serialized and atomic; normal reads avoid schema writes.
-    $version=4;
+    $version=5;
     if((int)$pdo->query('PRAGMA user_version')->fetchColumn()>=$version)return;
     $pdo->exec('BEGIN IMMEDIATE');
     try{
@@ -135,7 +135,7 @@ function migrate(): void
     )");
     $pdo->exec("CREATE INDEX IF NOT EXISTS idx_orders_user_date ON orders(user_id, order_date)");
     $orderCols=array_column($pdo->query("PRAGMA table_info(orders)")->fetchAll(PDO::FETCH_ASSOC),'name');
-    foreach (['currency_code'=>'TEXT DEFAULT NULL','country_code'=>'TEXT DEFAULT NULL','last_modified_ms'=>'INTEGER NOT NULL DEFAULT 0'] as $col=>$definition) {
+    foreach (['currency_code'=>'TEXT DEFAULT NULL','country_code'=>'TEXT DEFAULT NULL','last_modified_ms'=>'INTEGER NOT NULL DEFAULT 0','cargo_estimate'=>'REAL DEFAULT NULL','cargo_estimate_json'=>'TEXT DEFAULT NULL','cargo_provider'=>'TEXT DEFAULT NULL'] as $col=>$definition) {
         if(!in_array($col,$orderCols,true)) $pdo->exec("ALTER TABLE orders ADD COLUMN $col $definition");
     }
 
@@ -362,6 +362,7 @@ function migrate(): void
         'en' => "ALTER TABLE products ADD COLUMN en REAL NOT NULL DEFAULT 0",
         'boy' => "ALTER TABLE products ADD COLUMN boy REAL NOT NULL DEFAULT 0",
         'yukseklik' => "ALTER TABLE products ADD COLUMN yukseklik REAL NOT NULL DEFAULT 0",
+        'expected_desi' => "ALTER TABLE products ADD COLUMN expected_desi REAL DEFAULT NULL",
         'kesilen_desi' => "ALTER TABLE products ADD COLUMN kesilen_desi REAL NOT NULL DEFAULT 0",
         'quantity' => "ALTER TABLE products ADD COLUMN quantity INTEGER NOT NULL DEFAULT 0",
         'stock_observed_at' => "ALTER TABLE products ADD COLUMN stock_observed_at INTEGER DEFAULT NULL",
