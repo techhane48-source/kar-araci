@@ -56,7 +56,7 @@ with tempfile.TemporaryDirectory(prefix="karfiyat-http-") as tmp:
                 row = con.execute("SELECT cost_vat,kdv,stopaj_mode,stopaj FROM products WHERE name='CI product'").fetchone()
                 assert row == (10.0,20.0,"manual",0.0), row
                 con.execute("UPDATE users SET plan='pro' WHERE email='http-test@example.invalid'")
-            for path in ("urunler.php","dashboard.php","magaza.php","kar-marji.php","canli-performans.php","raporlar.php","pazar-zekasi.php","hakedis-desi.php","promosyon-analiz.php","toplu-analiz.php"):
+            for path in ("urunler.php","dashboard.php","magaza.php","kar-marji.php","canli-performans.php","raporlar.php","pazar-zekasi.php","hakedis-desi.php","promosyon-analiz.php","toplu-analiz.php","maliyet-gecmisi.php"):
                 status, page = request(path)
                 assert status == 200 and len(page) > 500 and "<html" in page.lower(), (path, status, page[:150])
                 print("PASS HTTP", path)

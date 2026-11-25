@@ -2,6 +2,7 @@
 declare(strict_types=1);
 require_once __DIR__.'/finance.php';
 require_once __DIR__.'/profit.php';
+require_once __DIR__.'/cost_history.php';
 
 /**
  * Order-level evidence aggregation. The order number and package ID are separate
@@ -10,7 +11,7 @@ require_once __DIR__.'/profit.php';
  */
 function order_evidence(array $packages,array $settlements,array $cargo,array $claims): array
 {
-    $issues=[];$byPackage=[];$invoice=0;$cost=0;$missingCost=0;$units=0;$active=0;
+    $issues=[];$byPackage=[];$invoice=0;$cost=0;$missingCost=0;$units=0;$active=0;$datedUnits=0;$observedUnits=0;
     $orderNo=(string)($packages[0]['order_number']??'');
     foreach($packages as $p){
         $id=(string)($p['package_number']??'');
@@ -34,6 +35,7 @@ function order_evidence(array $packages,array $settlements,array $cargo,array $c
                 $v=finance_units($l['cost_snapshot']??null);
                 if($v<=0)throw new InvalidArgumentException('Maliyet yok');
                 $cost+=$v*$qty;
+                if(($l['cost_source']??'')==='dated_user')$datedUnits+=$qty;else $observedUnits+=$qty;
             }catch(InvalidArgumentException $e){$missingCost+=$qty;}
         }
     }
@@ -101,11 +103,11 @@ function order_evidence(array $packages,array $settlements,array $cargo,array $c
     // Deliberately not a net-profit result: invoices, VAT, withholding, service,
     // merchant shipping, returns and future adjustments are not fully reconciled.
     return ['order_number'=>$orderNo,'packages'=>count($byPackage),'active_packages'=>$active,
-        'invoice'=>$active?$invoice/10000:null,'units'=>$units,'observed_cost'=>$active&&$units>0&&!$missingCost?$cost/10000:null,
-        'missing_cost_units'=>$missingCost,'matched_finance'=>$matched,'unmatched_finance'=>$unmatched,'unverified_finance'=>$unverified,
-        'credit'=>$matched?$credit/10000:null,'debt'=>$matched?$debt/10000:null,
-        'sale_credit'=>$sales?$saleCredit/10000:null,'sale_commission'=>$sales?$saleCommission/10000:null,'sale_revenue'=>$sales?$saleRevenue/10000:null,
-        'cargo_rows'=>$cargoN,'outbound_cargo'=>$cargoN?$outbound/10000:null,'return_cargo'=>$cargoN?$returnCargo/10000:null,'other_cargo'=>$cargoN?$otherCargo/10000:null,
+        'invoice'=>$active?$invoice/10000.0:null,'units'=>$units,'observed_cost'=>$active&&$units>0&&!$missingCost?$cost/10000.0:null,
+        'dated_cost_units'=>$datedUnits,'first_observed_units'=>$observedUnits,'missing_cost_units'=>$missingCost,'matched_finance'=>$matched,'unmatched_finance'=>$unmatched,'unverified_finance'=>$unverified,
+        'credit'=>$matched?$credit/10000.0:null,'debt'=>$matched?$debt/10000.0:null,
+        'sale_credit'=>$sales?$saleCredit/10000.0:null,'sale_commission'=>$sales?$saleCommission/10000.0:null,'sale_revenue'=>$sales?$saleRevenue/10000.0:null,
+        'cargo_rows'=>$cargoN,'outbound_cargo'=>$cargoN?$outbound/10000.0:null,'return_cargo'=>$cargoN?$returnCargo/10000.0:null,'other_cargo'=>$cargoN?$otherCargo/10000.0:null,
         'claim_items'=>count($claims),'issues'=>array_values(array_unique($issues)),
         'profit'=>null,'state'=>$issues?'Eksik / inceleme gerekli':'Temel kalemler eşleşti; kesin kâr değil'];
 }
@@ -130,7 +132,7 @@ function load_order_evidence(PDO $db,int $uid,array $orderNumbers): array
         }
         foreach($chunk as $n){
             $g=$groups[$n]??[];
-            if(!empty($g['packages']))$out[$n]=order_evidence($g['packages'],$g['settlements']??[],$g['cargo']??[],$g['claims']??[]);
+            if(!empty($g['packages']))$out[$n]=order_evidence(cost_history_overlay($db,$uid,$g['packages']),$g['settlements']??[],$g['cargo']??[],$g['claims']??[]);
         }
     }
     return $out;

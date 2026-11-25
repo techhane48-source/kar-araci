@@ -10,7 +10,7 @@ $pro = is_pro($u);
 if (($_GET['export'] ?? '') === 'maliyet') {
     $bos = (($_GET['bos'] ?? '') === '1');
     $format = (($_GET['format'] ?? 'xlsx') === 'csv') ? 'csv' : 'xlsx';
-    $sql = "SELECT * FROM products WHERE user_id = ? AND barcode != ''";
+    $sql = "SELECT * FROM products WHERE user_id = ? AND barcode != '' AND marketplace='trendyol'";
     if ($bos) $sql .= ' AND (cost = 0 OR cost IS NULL)';
     $sql .= ' ORDER BY id';
     $st = db()->prepare($sql);
@@ -288,6 +288,7 @@ unset($p);
 $pageTitle = 'Ürünlerim — ' . APP_NAME;
 require __DIR__ . '/../includes/header.php';
 ?>
+<div class="wrap"><a class="btn-ghost" href="maliyet-gecmisi.php">Tarih bazlı maliyet geçmişi</a></div>
 <div class="wrap">
   <div class="toolbar">
     <h1>Ürünlerim</h1>

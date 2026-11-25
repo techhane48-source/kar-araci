@@ -26,6 +26,7 @@ foreach (db()->query("SELECT * FROM products WHERE user_id = {$u['id']} AND mark
 $orders = db()->query("SELECT * FROM orders WHERE user_id = {$u['id']} AND marketplace = " . db()->quote($mp) . " AND order_date >= $fromTs ORDER BY order_date DESC")->fetchAll();
 foreach ($orders as &$o) $o['lines'] = json_decode($o['lines'] ?? '[]', true) ?: [];
 unset($o);
+$orders=cost_history_overlay(db(),(int)$u['id'],$orders);
 
 // Report semantics: only verified inputs; no fabricated advertising attribution or return loss.
 $reportRows=[];$reportCols=[];$summary=[];$reportNote='';
@@ -43,15 +44,15 @@ if($rapor==='order'){
             $pr['ok']?'Tahmini':($pr['reason']??'Veri eksik')];
     }
     $summary=['Ciro'=>$money($sale),'Hesaplanan ciro'=>$money($knownSale),'Tahmini kâr'=>$known?$money($profit):'—','Kapsam'=>"$known / $count"];
-    $reportNote='Sipariş maliyeti, komisyon ve kargo tahminleri kullanılır. Gerçek finansal mutabakat değildir.';
+    $reportNote='Tarihli kullanıcı maliyeti veya ilk gözlem ile komisyon ve kargo tahminleri kullanılır. Güncel maliyet geçmişe uygulanmaz. Gerçek finansal mutabakat değildir.';
 }elseif($rapor==='order_finance'){
-    $reportCols=['Sipariş','Paket','Aktif satış tutarı','Gözlemlenen maliyet','Satış komisyonu (ekstre)','Satış satıcı geliri (ekstre)','Finans alacak','Finans borç','Gönderi kargo (fatura)','İade kargo (fatura)','Diğer kargo','İade kalemi','Eşleşen finans','Eşleşmeyen / doğrulanmamış finans','Durum','Eksikler'];
+    $reportCols=['Sipariş','Paket','Aktif satış tutarı','Tarihli / gözlemlenen maliyet','Tarihli maliyet adedi','İlk gözlem adedi','Satış komisyonu (ekstre)','Satış satıcı geliri (ekstre)','Finans alacak','Finans borç','Gönderi kargo (fatura)','İade kargo (fatura)','Diğer kargo','İade kalemi','Eşleşen finans','Eşleşmeyen / doğrulanmamış finans','Durum','Eksikler'];
     $evidence=$mp==='trendyol'?load_order_evidence(db(),(int)$u['id'],array_column($orders,'order_number')):[];
     $known=0;$matched=0;$unmatched=0;
     foreach($evidence as $e){
         if(!$e['issues'])$known++;
         $matched+=$e['matched_finance'];$unmatched+=$e['unmatched_finance']+$e['unverified_finance'];
-        $reportRows[]=[$e['order_number'],$e['packages'],$e['invoice'],$e['observed_cost'],$e['sale_commission'],$e['sale_revenue'],
+        $reportRows[]=[$e['order_number'],$e['packages'],$e['invoice'],$e['observed_cost'],$e['dated_cost_units'],$e['first_observed_units'],$e['sale_commission'],$e['sale_revenue'],
             $e['credit'],$e['debt'],$e['outbound_cargo'],$e['return_cargo'],$e['other_cargo'],$e['claim_items'],$e['matched_finance'],
             $e['unmatched_finance']+$e['unverified_finance'],$e['state'],implode('; ',$e['issues'])];
     }
@@ -69,7 +70,7 @@ if($rapor==='order'){
         $total+=$g['sale'];$covered+=$g['known_sale'];$cost+=$g['cost'];$missing+=$g['missing_qty'];
     }
     $summary=['Eşleşen ciro'=>$money($total),'Maliyeti bilinen ciro'=>$money($covered),'Gözlemlenen maliyet'=>$money($cost),'Eksik maliyet adedi'=>$missing];
-    $reportNote='Net kâr değildir; komisyon ve paket kargosu ürünlere dağıtılmadı. İlk gözlemlenen maliyet kullanılır. Tutarı eşleşmeyen '.$agg['excluded'].' paket dışarıda.';
+    $reportNote='Net kâr değildir; komisyon ve paket kargosu ürünlere dağıtılmadı. Tarihli kullanıcı maliyeti varsa önceliklidir; yoksa ilk gözlem kullanılır. Tutarı eşleşmeyen '.$agg['excluded'].' paket dışarıda.';
 }elseif($rapor==='claims'){
     $reportCols=['İade talebi','Sipariş','Barkod','Ürün','Statü','İade sebebi','Son güncelleme','Eşleşme','Gözlemlenen birim maliyet'];
     $q=db()->prepare("SELECT c.*,o.package_number AS matched_package,o.order_number AS matched_order,o.currency_code,o.country_code,o.lines

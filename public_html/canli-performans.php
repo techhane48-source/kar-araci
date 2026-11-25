@@ -67,7 +67,7 @@ foreach ($ps->fetchAll() as $p) {
 $weekStart = strtotime('today') - 6 * 86400;
 $q = db()->prepare("SELECT * FROM orders WHERE user_id = ? AND marketplace = ? AND order_date >= ? ORDER BY order_date DESC");
 $q->execute([$u['id'], $mp, $weekStart]);
-$orders = $q->fetchAll();
+$orders = cost_history_overlay(db(),(int)$u['id'],$q->fetchAll());
 
 $todayStart = strtotime('today');
 $yesterdayStart = $todayStart - 86400;
@@ -80,7 +80,7 @@ $week = []; // dayKey (Y-m-d) => [sale, profit, count]
 
 foreach ($orders as $o) {
     if (!order_is_active_sale($o)) continue;
-    $o['lines'] = json_decode($o['lines'] ?? '[]', true) ?: [];
+    $o['lines'] = is_array($o['lines'])?$o['lines']:(json_decode($o['lines']??'[]',true)?:[]);
     $day = strtotime(date('Y-m-d', (int)$o['order_date']));
     $dayKey = date('Y-m-d', (int)$o['order_date']);
     if (!isset($week[$dayKey])) $week[$dayKey] = ['sale' => 0.0, 'profit' => 0.0, 'count' => 0];
@@ -242,7 +242,7 @@ require __DIR__ . '/../includes/header.php';
     <h2>Son Siparişler</h2>
     <table>
       <tr><th>Sipariş No</th><th>Tarih</th><th>Satış</th><th>Net Kâr</th><th>Durum</th></tr>
-      <?php foreach (array_slice($orders, 0, 25) as $o): $o['lines'] = json_decode($o['lines'] ?? '[]', true) ?: []; $pr = calc_order_profit($o, $byBarcode); ?>
+      <?php foreach (array_slice($orders, 0, 25) as $o): $o['lines'] = is_array($o['lines'])?$o['lines']:(json_decode($o['lines']??'[]',true)?:[]); $pr = calc_order_profit($o, $byBarcode); ?>
         <tr>
           <td style="font-size:12px"><?= h($o['order_number'] ?: $o['package_number'] ?: '—') ?></td>
           <td style="font-size:12px"><?= date('d.m H:i', (int)$o['order_date']) ?></td>

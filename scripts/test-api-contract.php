@@ -20,7 +20,7 @@ $tests['newest package wins']=$r['count']===1&&$r['orders'][0]['status']==='Deli
 $tests['currency country and barcode parsed']=$r['orders'][0]['currencyCode']==='TRY'&&$r['orders'][0]['orderCountryCode']==='TR'&&$r['orders'][0]['lines'][0]['barcode']==='001';
 $requests=[];$res=$client->testConnection();$tests['no cross environment authentication']=!$res['ok']&&count($requests)===1;
 $products=['001'=>['cost'=>100,'kdv'=>20,'cargo'=>10,'rate'=>19]];
-$o=['marketplace'=>'trendyol','currency_code'=>'TRY','country_code'=>'TR','status'=>'Delivered','total_price'=>299.99,'lines'=>[['barcode'=>'001','quantity'=>2,'price'=>150,'discount_details'=>[['lineItemPrice'=>149.99],['lineItemPrice'=>150]]]]];
+$o=['marketplace'=>'trendyol','currency_code'=>'TRY','country_code'=>'TR','status'=>'Delivered','total_price'=>299.99,'lines'=>[['barcode'=>'001','quantity'=>2,'price'=>150,'cost_snapshot'=>100,'cost_vat_snapshot'=>20,'discount_details'=>[['lineItemPrice'=>149.99],['lineItemPrice'=>150]]]]];
 $tests['item level discount sum']=calc_order_profit($o,$products)['ok'];
 $o['currency_code']='EUR';$tests['foreign currency excluded']=!order_is_active_sale($o)&&!calc_order_profit($o,$products)['ok'];
 $o['currency_code']=null;$tests['unknown currency excluded']=!order_is_active_sale($o);

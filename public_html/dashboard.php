@@ -33,7 +33,7 @@ foreach ($ps->fetchAll() as $p) {
 // Siparişler
 $q = db()->prepare("SELECT * FROM orders WHERE user_id = ? AND marketplace = ? AND order_date >= ? ORDER BY order_date DESC");
 $q->execute([$u['id'], $mp, $fromTs]);
-$orders = $q->fetchAll();
+$orders = cost_history_overlay(db(),(int)$u['id'],$q->fetchAll());
 
 // Aggregasyon
 $ciro = 0.0; $maliyetliCiro = 0.0;
@@ -44,7 +44,7 @@ $siparis = 0; $maliyetliSiparis = 0; $urunAdet = 0;
 
 foreach ($orders as $o) {
     if (!order_is_active_sale($o)) continue;
-    $o['lines'] = json_decode($o['lines'] ?? '[]', true) ?: [];
+    $o['lines'] = is_array($o['lines'])?$o['lines']:(json_decode($o['lines']??'[]',true)?:[]);
     $sale = (float)$o['total_price'];
     $ciro += $sale;
     $siparis++;

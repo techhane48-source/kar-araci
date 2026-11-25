@@ -165,6 +165,7 @@ function calc_order_profit(array $order, array $byBarcode): array
         if ($qty<=0 || !isset($line['price']) || !is_numeric($line['price'])) return $fail('Satır fiyatı/adedi eksik.');
         if (!order_is_active_sale($line)) return $fail('Kısmi iptal/iade: finansal kayıt bekleniyor.');
         $product=$byBarcode[$line['barcode']??'']??null;
+        if (($order['marketplace']??'')==='trendyol' && !isset($line['cost_snapshot'])) return $fail('Sipariş tarihine ait maliyet veya ilk gözlem eksik.');
         if (!$product || (float)($line['cost_snapshot'] ?? $product['cost'] ?? 0)<=0) return $fail('Ürün maliyeti eksik.');
         // Invoice net is not seller settlement. Platform-funded discounts require reconciliation.
         if (abs((float)($line['platform_discount']??0))>0.005) return $fail('Trendyol katkılı indirim: finansal kayıt bekleniyor.');

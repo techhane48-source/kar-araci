@@ -8,6 +8,7 @@ require_once __DIR__ . '/finance.php';
 require_once __DIR__ . '/sync_coverage.php';
 require_once __DIR__ . '/claims.php';
 require_once __DIR__ . '/order_evidence.php';
+require_once __DIR__ . '/cost_history.php';
 
 // ---- İş mantığı: komisyon oranları + kâr hesabı ----
 

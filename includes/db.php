@@ -233,6 +233,11 @@ function migrate(): void
         summary_json TEXT DEFAULT NULL, checked_at INTEGER DEFAULT NULL,
         PRIMARY KEY(user_id,seller_id,payment_order_id)
     )");
+    $pdo->exec("CREATE TABLE IF NOT EXISTS product_cost_history (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,user_id INTEGER NOT NULL,barcode TEXT NOT NULL,
+        effective_at INTEGER NOT NULL,cost REAL NOT NULL,cost_vat REAL NOT NULL,source TEXT NOT NULL,recorded_at INTEGER NOT NULL
+    )");
+    $pdo->exec("CREATE INDEX IF NOT EXISTS idx_cost_history_lookup ON product_cost_history(user_id,barcode,effective_at,id)");
     $pdo->exec("CREATE TABLE IF NOT EXISTS order_cost_snapshots (
         user_id INTEGER NOT NULL, marketplace TEXT NOT NULL, package_number TEXT NOT NULL,
         line_key TEXT NOT NULL, barcode TEXT NOT NULL, cost REAL NOT NULL, cost_vat REAL NOT NULL,
