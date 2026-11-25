@@ -1,0 +1,23 @@
+<?php
+declare(strict_types=1);
+$dir=sys_get_temp_dir().'/karfiyat-product-finance-'.bin2hex(random_bytes(8));mkdir($dir,0700);define('DB_PATH',$dir.'/test.sqlite');
+register_shutdown_function(static function()use($dir){foreach(glob($dir.'/*')as$f)unlink($f);rmdir($dir);});
+require_once __DIR__.'/../includes/functions.php';
+$db=db();$now=time();$t=[];
+$db->prepare("INSERT INTO integration_bindings(user_id,marketplace,seller_id,stage) VALUES(?,?,?,?)")->execute([1,'trendyol','123',1]);
+$ins=$db->prepare("INSERT INTO settlements(user_id,marketplace,external_id,barcode,query_type,transaction_date,raw_json) VALUES(?,?,?,?,?,?,?)");
+$base=['sellerId'=>123,'barcode'=>'001','affiliate'=>'TRENDYOLTR','country'=>'TR','credit'=>100,'debt'=>0,'sellerRevenue'=>81,'commissionAmount'=>19];
+$put=static function($uid,$id,$type,$over=[])use($ins,$base,$now){$raw=array_replace($base,['id'=>$id],$over);$ins->execute([$uid,'trendyol',$id,'001',$type,$now-1,json_encode($raw)]);};
+$put(1,'S','Sale');$put(1,'R','Return',['credit'=>0,'debt'=>50,'sellerRevenue'=>40.5,'commissionAmount'=>9.5]);
+$put(1,'D','Discount',['credit'=>0,'debt'=>10,'sellerRevenue'=>8.1,'commissionAmount'=>1.9]);
+$put(1,'DC','DiscountCancel',['credit'=>10,'debt'=>0,'sellerRevenue'=>8.1,'commissionAmount'=>1.9]);
+$put(1,'X','Sale',['barcode'=>'wrong']);$put(1,'Y','Sale',['sellerId'=>999]);$put(1,'Z','Sale',['commissionAmount'=>20]);$put(2,'S','Sale');
+$r=product_finance_period($db,1,$now-10,$now);$g=$r['groups']['001'];
+$t['sale components']=$g['sale_n']===1&&$g['sale_revenue']===810000&&$g['sale_commission']===190000;
+$t['return components']=$g['return_n']===1&&$g['return_revenue']===405000&&$g['return_commission']===95000;
+$t['campaign cancellation offset']=$g['campaign_n']===2&&$g['campaign_candidate']===0;
+$t['wrong seller barcode arithmetic excluded']=$r['excluded']===3;
+$t['tenant isolation']=$g['rows']===4;
+$t['missing coverage visible']=count($r['gaps'])===1;
+$t['empty period not zero profit']=product_finance_period($db,1,$now+1,$now+2)['groups']===[];
+foreach($t as $n=>$ok)echo ($ok?'PASS':'FAIL')." $n\n";exit(in_array(false,$t,true)?1:0);

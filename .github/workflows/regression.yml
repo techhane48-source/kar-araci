@@ -31,6 +31,7 @@ jobs:
           php scripts/test-report-lines.php
           php scripts/test-finance-integrity.php
           php scripts/test-period-finance.php
+          php scripts/test-product-finance.php
           php scripts/test-analysis-import.php
           php scripts/test-billing.php
           php scripts/test-sync-coverage.php

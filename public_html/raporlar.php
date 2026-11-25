@@ -9,7 +9,7 @@ $mp = $_GET['mp'] ?? $mps[0];
 if (!in_array($mp, $mps, true)) $mp = $mps[0];
 
 $rapor = $_GET['r'] ?? 'order';
-$allowed = ['order', 'product', 'category', 'return', 'ads', 'campaign', 'buybox', 'claims', 'order_finance', 'period_finance'];
+$allowed = ['order', 'product', 'category', 'return', 'ads', 'campaign', 'buybox', 'claims', 'order_finance', 'period_finance', 'product_finance'];
 if (!in_array($rapor, $allowed, true)) $rapor = 'order';
 
 $days = (int)($_GET['days'] ?? 30);
@@ -105,6 +105,19 @@ if($rapor==='order'){
         $reportRows[]=[$bc,$byBarcode[$bc]['name']??$bc,(string)$row['query_type'],$count,$c,$d,$d-$c];$credit+=$c;$debt+=$d;$n+=$count;}
     $summary=['Finansal işlem kaydı'=>$n,'Alacak'=>$money($credit),'Borç'=>$money($debt),'Borç − alacak'=>$money($debt-$credit)];
     $reportNote=$rapor==='return'?'Finansal işlem adedi ürün iade adedi değildir. İade tutarı, yeniden satılabilirlik ve gerçek kargo maliyeti eşleşmeden iade zararı hesaplanmaz.':'Satıcı ve Trendyol kaynaklı indirim/kuponlar ayrı işlem türleridir; iptaller dahil. Tarih finansal işlem tarihidir; kampanya kârlılığı değildir.';
+}elseif($rapor==='product_finance'){
+    $reportCols=['Barkod','Ürün','Satış hareketi','Satış alacağı','Satış komisyonu','Satıcı satış geliri','İade hareketi','İade borcu','İade komisyonu','İade satıcı geliri azalması','Kampanya hareketi','Kampanya satıcı geliri farkı (işaretli)','Diğer hareket','Toplam hareket'];
+    $data=$mp==='trendyol'?product_finance_period(db(),(int)$u['id'],$fromTs,time()+1):['groups'=>[],'excluded'=>0,'gaps'=>[]];
+    $sales=0;$returns=0;$campaigns=0;
+    foreach($data['groups'] as $bc=>$g){
+        $reportRows[]=[(string)$bc,$byBarcode[$bc]['name']??'Katalogda yok',$g['sale_n'],$g['sale_n']?$g['sale_credit']/10000.0:null,
+            $g['sale_n']?$g['sale_commission']/10000.0:null,$g['sale_n']?$g['sale_revenue']/10000.0:null,
+            $g['return_n'],$g['return_n']?$g['return_debt']/10000.0:null,$g['return_n']?$g['return_commission']/10000.0:null,
+            $g['return_n']?$g['return_revenue']/10000.0:null,$g['campaign_n'],$g['campaign_n']?$g['campaign_candidate']/10000.0:null,$g['adjustments'],$g['rows']];
+        $sales+=$g['sale_n'];$returns+=$g['return_n'];$campaigns+=$g['campaign_n'];
+    }
+    $summary=['Barkod'=>count($reportRows),'Satış hareketi'=>$sales,'İade hareketi'=>$returns,'Kampanya hareketi'=>$campaigns,'Hariç tutulan'=>$data['excluded'],'Kesin ürün net kârı'=>'—'];
+    $reportNote='İşlem tarihi bazında otomatik cari ekstre kayıtları. Satış komisyonu ve iade komisyonu ayrı gösterilir, satıcı gelirinden tekrar düşülmez. Hareket adedi ürün adedi değildir. Kampanya tutarı gelecekteki teklif değil, gerçekleşmiş finans hareketidir; Trendyol katkısı ve düzeltmeler ayrı değerlendirilmelidir. Kargo, maliyet, stok geri kazanımı, KDV, hizmet ve reklam giderleri bu tabloya dağıtılmaz. Bu rapor net kâr değildir; boş değer sıfır değildir. '.sync_coverage_label(db(),(int)$u['id'],$mp,'settlements_transaction',$fromTs,time());
 }elseif($rapor==='period_finance'){
     $reportCols=['Finans hareketi','Kayıt adedi','Alacak (TL)','Borç (TL)','Borç − alacak (TL)'];
     $data=$mp==='trendyol'?period_finance(db(),(int)$u['id'],$fromTs,time()):['groups'=>[],'excluded'=>0,'coverage'=>[]];
@@ -165,6 +178,7 @@ $raporLabels = [
     'order' => 'Sipariş Kârlılık Analizi',
     'order_finance' => 'Sipariş Finansal Eşleştirme',
     'period_finance' => 'Dönem Finans Hareketleri',
+    'product_finance' => 'Ürün Finansal Hareketleri',
     'product' => 'Ürün Kârlılık Analizi',
     'category' => 'Kategori Kârlılık Analizi',
     'claims' => 'İade Talepleri ve Durumları',
