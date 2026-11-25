@@ -30,7 +30,7 @@ function migrate(): void
 {
     $pdo = db();
     // Versioned, serialized and atomic; normal reads avoid schema writes.
-    $version=7;
+    $version=8;
     if((int)$pdo->query('PRAGMA user_version')->fetchColumn()>=$version)return;
     $pdo->exec('BEGIN IMMEDIATE');
     try{
@@ -257,6 +257,13 @@ function migrate(): void
         payout_date INTEGER NOT NULL, amount REAL NOT NULL, raw_json TEXT NOT NULL,
         summary_json TEXT DEFAULT NULL, checked_at INTEGER DEFAULT NULL,
         PRIMARY KEY(user_id,seller_id,payment_order_id)
+    )");
+    $payoutCols=array_column($pdo->query("PRAGMA table_info(trendyol_payouts)")->fetchAll(PDO::FETCH_ASSOC),'name');
+    foreach(['last_detail_attempt'=>'INTEGER DEFAULT NULL','detail_failures'=>'INTEGER NOT NULL DEFAULT 0','detail_retry_after'=>'INTEGER NOT NULL DEFAULT 0'] as $col=>$definition)
+        if(!in_array($col,$payoutCols,true))$pdo->exec("ALTER TABLE trendyol_payouts ADD COLUMN $col $definition");
+    $pdo->exec("CREATE TABLE IF NOT EXISTS auto_payout_progress (
+        user_id INTEGER NOT NULL,seller_id TEXT NOT NULL,next_page INTEGER NOT NULL DEFAULT 1,last_batch_at INTEGER NOT NULL,cycles INTEGER NOT NULL DEFAULT 0,
+        PRIMARY KEY(user_id,seller_id)
     )");
     $pdo->exec("CREATE TABLE IF NOT EXISTS payout_receipts (
         user_id INTEGER NOT NULL,seller_id TEXT NOT NULL,payment_order_id TEXT NOT NULL,

@@ -423,13 +423,16 @@ final class TrendyolClient
         $body=$res['body']??null;
         if (($res['http']??0)!==200 || !is_array($body['content']??null) || !isset($body['totalPages']))
             return ['ok'=>false,'error'=>'Ödeme emirleri alınamadı.'];
-        $items=[];
+        if(!is_numeric($body['totalPages'])||!is_finite((float)$body['totalPages'])||(float)$body['totalPages']!==(float)(int)$body['totalPages']||(int)$body['totalPages']<0||(int)$body['totalPages']>100000||count($body['content'])>10)return ['ok'=>false,'error'=>'Ödeme sayfa bilgisi geçersiz.'];
+        $items=[];$seen=[];
         foreach($body['content'] as $row) {
-            if (!ctype_digit((string)($row['id']??'')) || ($row['status']??'')!=='PAID'
+            if (!is_array($row)||!ctype_digit((string)($row['id']??'')) || ($row['status']??'')!=='PAID'
                 || !is_numeric($row['amount']??null) || !is_numeric($row['payoutDate']??null))
                 return ['ok'=>false,'error'=>'Ödeme emri verisi eksik.'];
             if ((string)($row['sellerId']??'')!==$this->sellerId) return ['ok'=>false,'error'=>'Ödeme emri satıcı kimliği uyuşmuyor.'];
-            $items[]=$row;
+            $id=(string)$row['id'];
+            if(isset($seen[$id])||!is_finite((float)$row['amount'])||(float)$row['amount']<0||!is_finite((float)$row['payoutDate']))return ['ok'=>false,'error'=>'Ödeme emri tutarı/kimliği geçersiz.'];
+            $seen[$id]=true;$items[]=$row;
         }
         return ['ok'=>true,'items'=>$items,'totalPages'=>(int)$body['totalPages']];
     }

@@ -622,18 +622,14 @@ function sync_trendyol_payout_page_unlocked(int $userId,int $page=0): array
 {
     $int=get_integration($userId,'trendyol');
     if(!$int)return ['ok'=>false,'error'=>'Trendyol mağazası bağlı değil.'];
-    $res=integration_client($int)->getPaymentOrders($page);
-    if(!$res['ok'])return $res;
-    $st=db()->prepare("INSERT INTO trendyol_payouts(user_id,seller_id,payment_order_id,payout_date,amount,raw_json)
-        VALUES(?,?,?,?,?,?) ON CONFLICT(user_id,seller_id,payment_order_id) DO UPDATE SET
-        payout_date=excluded.payout_date,amount=excluded.amount,raw_json=excluded.raw_json");
-    foreach($res['items'] as $row) $st->execute([$userId,$int['seller_id'],(string)$row['id'],intdiv((int)$row['payoutDate'],1000),
-        (float)$row['amount'],json_encode($row,JSON_THROW_ON_ERROR|JSON_UNESCAPED_UNICODE)]);
-    return ['ok'=>true,'count'=>count($res['items']),'totalPages'=>$res['totalPages']];
+    return payout_fetch_store_page(db(),$userId,(string)$int['seller_id'],integration_client($int),max(0,$page));
 }
 function check_trendyol_payout(int $userId,string $id): array
 {
-    return run_sync_job($userId,'trendyol','payout_detail',static fn()=>check_trendyol_payout_unlocked($userId,$id));
+    return run_sync_job($userId,'trendyol','payout_detail',static function()use($userId,$id){
+        $int=get_integration($userId,'trendyol');if(!$int)return ['ok'=>false,'error'=>'Mağaza bağlı değil.'];
+        return payout_detail_attempt(db(),$userId,(string)$int['seller_id'],$id,time(),static fn()=>check_trendyol_payout_unlocked($userId,$id));
+    });
 }
 
 function check_trendyol_payout_unlocked(int $userId,string $id): array

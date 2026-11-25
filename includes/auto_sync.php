@@ -49,7 +49,7 @@ function auto_sync_execute(array $task,int $now): array
       'claims'=>sync_trendyol_claims($uid,auto_sync_days($last,$now,30,7,89)),
       'settlements'=>sync_settlements($uid,'trendyol',auto_sync_days($last,$now)),
       'documents'=>sync_trendyol_documents($uid,auto_sync_days($last,$now)),
-      'payout_list'=>sync_trendyol_payout_page($uid,0),
+      'payout_list'=>auto_payout_list_sync($uid),
       'buybox'=>auto_buybox_sync($uid),
       'payout_detail'=>auto_payout_detail_sync($uid),
       default=>['ok'=>false,'error'=>'Bilinmeyen otomatik iş']
