@@ -50,9 +50,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['repricing'])) {
         $cost = (float)$p['cost'];
         $cargo = (float)$p['cargo'];
         $rate = (float)$p['rate'];
-        $kdv = (float)($p['kdv'] ?: 20.0);
+        $kdv = (float)($p['kdv'] ?? 20.0);
         $extra = (float)$p['extra_fee'];
-        $service = (float)($p['service_fee'] ?: trendyol_service_fee());
+        $service = (float)($p['service_fee'] ?? trendyol_service_fee());
         $ret = (float)$p['return_rate'];
         $tp = 0.0; $tm = 0.0;
         if ($tip === 'tutar') $tp = $deger;
@@ -92,9 +92,9 @@ function urun_kar(array $p): array {
     if ($cost <= 0 || $price <= 0) return ['ok' => false];
     $cargo = (float)$p['cargo'];
     $rate = (float)$p['rate'];
-    $kdv = (float)($p['kdv'] ?: 20.0);
+    $kdv = (float)($p['kdv'] ?? 20.0);
     $extra = (float)$p['extra_fee'];
-    $service = (float)($p['service_fee'] ?: trendyol_service_fee());
+    $service = (float)($p['service_fee'] ?? trendyol_service_fee());
     $ret = (float)$p['return_rate'];
     $stopaj = auto_stopaj($price, $kdv, 1.0);
     $r = calc_profit($cost, $price, $cargo, $rate, $kdv, $extra, $service, $stopaj, $ret);
@@ -166,8 +166,8 @@ if ($detayBc !== '') {
         $p = $detayP;
         $cost = (float)$p['cost']; $price = (float)$p['price'];
         $cargo = (float)$p['cargo']; $rate = (float)$p['rate'];
-        $kdv = (float)($p['kdv'] ?: 20.0); $extra = (float)$p['extra_fee'];
-        $service = (float)($p['service_fee'] ?: trendyol_service_fee()); $ret = (float)$p['return_rate'];
+        $kdv = (float)($p['kdv'] ?? 20.0); $extra = (float)$p['extra_fee'];
+        $service = (float)($p['service_fee'] ?? trendyol_service_fee()); $ret = (float)$p['return_rate'];
         $stopaj = auto_stopaj($price, $kdv, 1.0);
         $detayR = calc_profit($cost, $price, $cargo, $rate, $kdv, $extra, $service, $stopaj, $ret);
     }

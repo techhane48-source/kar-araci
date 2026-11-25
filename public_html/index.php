@@ -354,7 +354,12 @@ require __DIR__ . '/../includes/header.php';
 <script>
 document.getElementById("save-btn").addEventListener("click", async () => {
   const category = window.CATEGORIES[+document.getElementById("category").value].name;
-  const priceVal = mode === "price" ? lastPrice : num("price");
+  const priceVal = mode === "price" ? lastPrice
+    : mode === "campaign" ? num("price") * (1 - num("discount") / 100) : num("price");
+  if (!Number.isFinite(priceVal) || priceVal <= 0) {
+    alert("Geçerli ve pozitif bir satış fiyatı hesaplayın.");
+    return;
+  }
   const sa = document.getElementById("stopaj-auto");
   const stopajVal = (sa && sa.checked) ? priceVal / (1 + num("kdv")/100) * 0.01 : num("stopaj");
   const body = {

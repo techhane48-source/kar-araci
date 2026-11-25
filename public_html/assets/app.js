@@ -85,6 +85,15 @@ function calculate(){
     let lo = 0, hi = (cost + cargo + extra + serviceFee)*4 + 1000;
     let guard = 0;
     while(f(hi) < 0 && guard++ < 60) hi *= 2;
+    if (!Number.isFinite(hi) || !Number.isFinite(f(hi)) || f(hi) < 0) {
+      lastPrice = 0;
+      $("result-label").textContent = "Önerilen Satış Fiyatı";
+      $("result-value").textContent = "Hedefe ulaşılamıyor";
+      $("result-value").classList.add("neg");
+      ["kpi-margin","kpi-ratio","kpi-commission","kpi-kdv"].forEach(id => kpi(id, "—", ""));
+      $("breakdown").innerHTML = "<tr><td>Mevcut giderlerle hedef mümkün değil.</td></tr>";
+      return;
+    }
     for(let i=0;i<200;i++){ const mid=(lo+hi)/2; if(f(mid)>0) hi=mid; else lo=mid; }
     const P = (lo+hi)/2;
     const r = computeAt(P, cost, cargo, rate, kdvRate, extra, serviceFee, returnRate);

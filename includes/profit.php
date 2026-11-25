@@ -1,0 +1,123 @@
+<?php
+declare(strict_types=1);
+
+/**
+ * Net kâr hesabı (komisyon hesaplama modeli).
+ * Kâr = Satış − Alış − Komisyon − Kargo − Ek Bedel (ihracat/aynı gün) − KDV (ödenen)
+ * Tüm tutarlar KDV dahil TL. KDV = (Satış − Alış − Komisyon − Kargo − Ek Bedel) × KDV/(1+KDV).
+ */
+function calc_profit(float $cost, float $price, float $cargo, float $rate, float $kdvRate = 20.0, float $extraFee = 0.0, float $serviceFee = 0.0, float $stopaj = 0.0, float $returnRate = 0.0, array $options = []): array
+{
+    $commission = $price * ($rate / 100);
+    $returnLoss = $price * ($returnRate / 100);   // iade oranı kadar satış tutarı kaybı (tutucu tahmin)
+    // Net KDV (Melontik modeli) = Satış KDV − Maliyet KDV − Komisyon KDV − Kargo KDV − Hizmet KDV.
+    // Stopaj ayrı bir tevkifat kalemidir, KDV tabanına girmez. Negatif çıkarsa 0 alınır (floor).
+    // Legacy callers use the common KDV rate; explicit options override each leg.
+    $vat = static function (float $amount, string $key) use ($options, $kdvRate): float {
+        $rate = (float)($options[$key] ?? $kdvRate);
+        if (!is_finite($rate) || $rate < 0 || $rate > 100) {
+            throw new InvalidArgumentException('Geçersiz KDV oranı: ' . $key);
+        }
+        return $amount * $rate / (100 + $rate);
+    };
+    $netKdv = $vat($price, 'sale_vat') - $vat($cost, 'cost_vat')
+        - $vat($commission, 'commission_vat') - $vat($cargo, 'cargo_vat')
+        - $vat($extraFee, 'extra_vat') - $vat($serviceFee, 'service_vat');
+    if (!($options['allow_negative_vat'] ?? false) && $netKdv < 0) $netKdv = 0.0;
+    $profit = $price - $cost - $commission - $cargo - $extraFee - $serviceFee - $stopaj - $netKdv - $returnLoss;
+    $margin = $price > 0 ? ($profit / $price) * 100 : 0.0;   // kâr marjı = kâr / satış
+    $ratio = $cost > 0 ? ($profit / $cost) * 100 : 0.0;      // kâr oranı = kâr / maliyet
+    return [
+        'profit' => $profit,
+        'margin' => $margin,
+        'ratio' => $ratio,
+        'commission' => $commission,
+        'net_kdv' => $netKdv,
+        'extra_fee' => $extraFee,
+        'service_fee' => $serviceFee,
+        'stopaj' => $stopaj,
+        'return_loss' => $returnLoss,
+        'totalCuts' => $commission + $cargo + $extraFee + $serviceFee + $stopaj + $netKdv + $returnLoss,
+    ];
+}
+
+/**
+ * Stopaj (tevkifat) — Melontik modeli: KDV-hariç satış tutarının belirli oranı.
+ * Trendyol için %1 (0.01). $stopajRate yüzde olarak verilir (örn. 1.0).
+ */
+function auto_stopaj(float $price, float $kdvRate = 20.0, float $stopajRate = 1.0): float
+{
+    if ($price <= 0) return 0.0;
+    return $price / (1 + $kdvRate / 100) * ($stopajRate / 100);
+}
+
+/** Trendyol sabit hizmet bedeli (₺). */
+function trendyol_service_fee(): float
+{
+    return 13.19;
+}
+
+/**
+ * Ters hesap motoru — Melontik'in "Fiyat Oluştur" çekirdeği.
+ * Hedef net kâr (₺) veya hedef kâr marjı (%) ver; gerekli satış fiyatını kuruşuna çöz.
+ * Komisyon, hizmet bedeli, kargo, stopaj (KDV-hariç × oran), Net KDV (floor 0) ve iade kaybı
+ * tam olarak modele dahildir. Binary search ile Net KDV floor'unu da doğru ele alır.
+ *
+ * @param float $targetProfit  hedef net kâr (₺). 0 ise $targetMargin kullanılır.
+ * @param float $targetMargin  hedef kâr marjı (%) = kâr / satış. 0 ise $targetProfit kullanılır.
+ * @param float $stopajRate    stopaj oranı (%) — Trendyol %1.
+ */
+function calc_price(float $cost, float $cargo, float $rate, float $kdvRate = 20.0,
+                    float $extraFee = 0.0, float $serviceFee = 13.19, float $stopajRate = 1.0,
+                    float $returnRate = 0.0, float $targetProfit = 0.0, float $targetMargin = 0.0, array $options = []): array
+{
+    $saleVat = (float)($options['sale_vat'] ?? $kdvRate);
+    $profitAt = static function (float $P) use ($cost, $cargo, $rate, $kdvRate, $extraFee, $serviceFee, $stopajRate, $returnRate, $saleVat, $options): float {
+        return calc_profit($cost, $P, $cargo, $rate, $kdvRate, $extraFee, $serviceFee,
+            auto_stopaj($P, $saleVat, $stopajRate), $returnRate, $options)['profit'];
+    };
+
+    $f = $targetMargin > 0
+        ? (function (float $P) use ($profitAt, $targetMargin): float {
+            return $profitAt($P) - $P * $targetMargin / 100;
+        })
+        : (function (float $P) use ($profitAt, $targetProfit): float {
+            return $profitAt($P) - $targetProfit;
+        });
+
+    $lo = 0.0;
+    $hi = ($cost + $cargo + $extraFee + $serviceFee) * 4 + 1000.0;
+    $guard = 0;
+    while ($f($hi) < 0 && $guard++ < 60) { $hi *= 2; }
+    if (!is_finite($hi) || !is_finite($f($hi)) || $f($hi) < 0) {
+        return ['ok' => false, 'error' => 'Hedef kâr mevcut giderlerle ulaşılamıyor.',
+            'price' => 0.0, 'profit' => 0.0, 'margin' => 0.0, 'ratio' => 0.0,
+            'commission' => 0.0, 'net_kdv' => 0.0, 'service_fee' => $serviceFee,
+            'stopaj' => 0.0, 'cargo' => $cargo, 'extra_fee' => $extraFee, 'return_loss' => 0.0];
+    }
+
+    for ($i = 0; $i < 200; $i++) {
+        $mid = ($lo + $hi) / 2;
+        if ($f($mid) > 0) $hi = $mid; else $lo = $mid;
+    }
+    $P = ($lo + $hi) / 2;
+    if (!is_finite($P) || $P <= 0) $P = 0.0;
+
+    $r = calc_profit($cost, $P, $cargo, $rate, $kdvRate, $extraFee, $serviceFee, auto_stopaj($P, $saleVat, $stopajRate), $returnRate, $options);
+
+    return [
+        'ok' => true,
+        'price' => $P,
+        'profit' => $r['profit'],
+        'margin' => $r['margin'],
+        'ratio' => $r['ratio'],
+        'commission' => $r['commission'],
+        'net_kdv' => $r['net_kdv'],
+        'service_fee' => $serviceFee,
+        'stopaj' => $r['stopaj'],
+        'cargo' => $cargo,
+        'extra_fee' => $extraFee,
+        'return_loss' => $r['return_loss'],
+    ];
+}
+
