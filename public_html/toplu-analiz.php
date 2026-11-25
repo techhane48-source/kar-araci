@@ -125,12 +125,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'analy
                         $price = parse_price($row[$colIdx] ?? '');
                         $t = ['price' => $price, 'profit' => null, 'ratio' => null, 'margin' => null];
                         if ($hasCost && $price > 0) {
-                            $r = calc_profit(
-                                $cost, $price, (float)$p['cargo'], (float)$p['rate'],
-                                (float)($p['kdv'] ?? 20), (float)($p['extra_fee'] ?? 0),
-                                (float)($p['service_fee'] ?? 0), (float)($p['stopaj'] ?? 0),
-                                (float)($p['return_rate'] ?? 0)
-                            );
+                            $r = product_profit($p, $price);
                             $t = ['price' => $price, 'profit' => $r['profit'], 'ratio' => $r['ratio'], 'margin' => $r['margin']];
                             if ($best === null || $r['profit'] > $best) $best = $r['profit'];
                         }

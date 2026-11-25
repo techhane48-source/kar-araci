@@ -41,9 +41,7 @@ foreach ($products as $p) {
     if ($cost <= 0) {
         $alerts['maliyet'][] = $p;
     } else {
-        $r = calc_profit($cost, $price, (float)$p['cargo'], (float)$p['rate'],
-            (float)($p['kdv'] ?: 20), (float)$p['extra_fee'], (float)($p['service_fee'] ?: trendyol_service_fee()),
-            auto_stopaj($price, (float)($p['kdv'] ?: 20), 1.0), (float)$p['return_rate']);
+        $r = product_profit($p);
         if ($r['profit'] < 0) $alerts['zarar'][] = array_merge($p, ['_profit' => $r['profit']]);
     }
     if ((float)$p['rate'] <= 0) $alerts['komisyon'][] = $p;

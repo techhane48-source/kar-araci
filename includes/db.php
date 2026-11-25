@@ -230,6 +230,10 @@ function migrate(): void
     // Migration: yeni ürün kolonları (kdv, cargo_type, extra_fee)
     $padd = [
         'kdv' => "ALTER TABLE products ADD COLUMN kdv REAL NOT NULL DEFAULT 20",
+        'cost_vat' => "ALTER TABLE products ADD COLUMN cost_vat REAL DEFAULT NULL",
+        'stopaj_mode' => "ALTER TABLE products ADD COLUMN stopaj_mode TEXT NOT NULL DEFAULT 'legacy'",
+        'stopaj_rate' => "ALTER TABLE products ADD COLUMN stopaj_rate REAL NOT NULL DEFAULT 1",
+        'allow_negative_vat' => "ALTER TABLE products ADD COLUMN allow_negative_vat INTEGER NOT NULL DEFAULT 0",
         'cargo_type' => "ALTER TABLE products ADD COLUMN cargo_type TEXT NOT NULL DEFAULT 'seller'",
         'extra_fee' => "ALTER TABLE products ADD COLUMN extra_fee REAL NOT NULL DEFAULT 0",
         'barcode' => "ALTER TABLE products ADD COLUMN barcode TEXT NOT NULL DEFAULT ''",

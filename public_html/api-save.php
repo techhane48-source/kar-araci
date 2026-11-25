@@ -12,6 +12,15 @@ if (!is_array($data)) {
     exit;
 }
 
+if ($_SERVER['REQUEST_METHOD'] !== 'POST' || !csrf_verify(is_string($data['csrf'] ?? null) ? $data['csrf'] : null)) {
+    http_response_code(403); echo json_encode(['ok'=>false,'error'=>'Geçersiz oturum']); exit;
+}
+foreach (['cost','price','cargo','rate','extra_fee','kdv','cost_vat','service_fee','stopaj','stopaj_rate','return_rate'] as $key) {
+    if (isset($data[$key]) && (!is_numeric($data[$key]) || !is_finite((float)$data[$key]) || (float)$data[$key]<0 ||
+        (in_array($key,['rate','kdv','cost_vat','stopaj_rate','return_rate'],true) && (float)$data[$key]>100))) {
+        http_response_code(422); echo json_encode(['ok'=>false,'error'=>'Geçersiz değer: '.$key]); exit;
+    }
+}
 $marketplace = $data['marketplace'] ?? '';
 $category = $data['category'] ?? '';
 $name = trim($data['name'] ?? 'Ürün');
@@ -37,8 +46,8 @@ if (!is_pro($u)) {
     }
 }
 
-db()->prepare("INSERT INTO products (user_id, name, marketplace, category, rate, cost, price, cargo, cargo_type, extra_fee, kdv, service_fee, stopaj, return_rate)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
+db()->prepare("INSERT INTO products (user_id, name, marketplace, category, rate, cost, price, cargo, cargo_type, extra_fee, kdv, service_fee, stopaj, return_rate, cost_vat, stopaj_mode, stopaj_rate, allow_negative_vat)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
     ->execute([
         $u['id'],
         mb_substr($name, 0, 120),
@@ -54,6 +63,10 @@ db()->prepare("INSERT INTO products (user_id, name, marketplace, category, rate,
         (float) ($data['service_fee'] ?? 0),
         (float) ($data['stopaj'] ?? 0),
         (float) ($data['return_rate'] ?? 0),
+        (float) ($data['cost_vat'] ?? $data['kdv'] ?? 20),
+        ($data['stopaj_mode'] ?? '') === 'manual' ? 'manual' : 'auto',
+        (float) ($data['stopaj_rate'] ?? 1),
+        !empty($data['allow_negative_vat']) ? 1 : 0,
     ]);
 
 echo json_encode(['ok' => true]);

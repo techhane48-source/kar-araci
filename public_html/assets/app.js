@@ -40,7 +40,7 @@ function stopajAutoOn(){
 }
 
 function stopajValue(P, kdvRate){
-  if(stopajAutoOn()) return P / (1 + kdvRate/100) * (STOPAJ_RATE/100);
+  if(stopajAutoOn()) return P / (1 + kdvRate/100) * (num("stopaj-rate")/100);
   return num("stopaj");
 }
 
@@ -48,9 +48,9 @@ function stopajValue(P, kdvRate){
 function computeAt(P, cost, cargo, rateFrac, kdvRate, extra, serviceFee, returnFrac){
   const commission = P * rateFrac;
   const stopaj = stopajValue(P, kdvRate);
-  const kdvFrac = kdvRate / (100 + kdvRate);
-  let netKdv = (P - cost - commission - cargo - extra - serviceFee) * kdvFrac;
-  if(netKdv < 0) netKdv = 0;   // Melontik: Net KDV negatif çıkarsa 0
+  const costVat = num("cost-vat");
+  let netKdv = P*kdvRate/(100+kdvRate) - cost*costVat/(100+costVat) - (commission+cargo+extra+serviceFee)/6;
+  if(netKdv < 0 && !$("negative-vat").checked) netKdv = 0;
   const returnLoss = P * returnFrac;
   const profit = P - cost - commission - cargo - extra - serviceFee - stopaj - netKdv - returnLoss;
   return {commission, stopaj, netKdv, returnLoss, profit};
@@ -132,7 +132,7 @@ function renderProfit(profit, margin, ratio, commission, netKdv, stopaj, extra, 
   kpi("kpi-kdv", tl(netKdv));
 
   const price = num("price"), cost = num("cost"), cargo = num("cargo");
-  const stopajLabel = stopajAutoOn() ? "Stopaj (KDV-hariç × %"+STOPAJ_RATE+")" : "Stopaj";
+  const stopajLabel = stopajAutoOn() ? "Stopaj (KDV-hariç × %"+num("stopaj-rate")+")" : "Stopaj";
   const rows = [
     ["Satış Fiyatı", price, ""],
     ["Alış Fiyatı", -cost, "neg"],
@@ -165,7 +165,7 @@ function renderPrice(P, r, margin, ratio, rate){
 
   const cost = num("cost"), cargo = num("cargo");
   const extra = num("extra-fee"), serviceFee = num("service-fee");
-  const stopajLabel = stopajAutoOn() ? "Stopaj (KDV-hariç × %"+STOPAJ_RATE+")" : "Stopaj";
+  const stopajLabel = stopajAutoOn() ? "Stopaj (KDV-hariç × %"+num("stopaj-rate")+")" : "Stopaj";
   const rows = [
     ["Satış Fiyatı", P, ""],
     ["Alış Fiyatı", -cost, "neg"],
@@ -198,7 +198,7 @@ function renderCampaign(salePrice, discount, profit, margin, ratio, commission, 
 
   const price = num("price"), cost = num("cost"), cargo = num("cargo");
   const discountAmt = price - salePrice;
-  const stopajLabel = stopajAutoOn() ? "Stopaj (KDV-hariç × %"+STOPAJ_RATE+")" : "Stopaj";
+  const stopajLabel = stopajAutoOn() ? "Stopaj (KDV-hariç × %"+num("stopaj-rate")+")" : "Stopaj";
   const verdict = profit >= 0
     ? "✓ Bu kampanya KÂRLI — " + tl(profit) + " kazanırsın, girebilirsin"
     : "✗ Bu kampanya ZARARDA — " + tl(profit) + " kaybedersin, girmemen önerilir";
@@ -284,7 +284,7 @@ document.addEventListener("DOMContentLoaded", () => {
     });
     $("stopaj").disabled = sa.checked;
   }
-  ["cost","price","cargo","rate","kdv","targetProfit","targetMargin","extra-fee","service-fee","stopaj","return-rate"].forEach(id=>{
+  ["cost","price","cargo","rate","kdv","cost-vat","negative-vat","stopaj-rate","discount","targetProfit","targetMargin","extra-fee","service-fee","stopaj","return-rate"].forEach(id=>{
     $(id).addEventListener("input", calculate);
   });
   $("category").addEventListener("change", ()=>{

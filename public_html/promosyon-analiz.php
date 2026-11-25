@@ -90,10 +90,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'analy
                 }
             }
             if ($hasCost && $price > 0 && $rateKnown) {
-                $r = calc_profit($cost, $price, (float)$p['cargo'], $rate,
-                    (float)($p['kdv'] ?? 20), (float)($p['extra_fee'] ?? 0),
-                    (float)($p['service_fee'] ?? 0), (float)($p['stopaj'] ?? 0),
-                    (float)($p['return_rate'] ?? 0));
+                $r = product_profit($p, $price, $rate);
                 $t = ['price' => $price, 'profit' => $r['profit'], 'margin' => $r['margin'], 'ratio' => $r['ratio'], 'col' => $colName];
                 if ($best === null || $r['profit'] > $best) $best = $r['profit'];
             }

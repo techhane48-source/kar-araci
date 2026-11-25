@@ -58,7 +58,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['repricing'])) {
         if ($tip === 'tutar') $tp = $deger;
         elseif ($tip === 'oran') $tp = $cost * $deger / 100.0;   // kâr oranı = kâr/maliyet
         else $tm = $deger;                                        // kâr marjı = kâr/satış
-        $r = calc_price($cost, $cargo, $rate, $kdv, $extra, $service, 1.0, $ret, $tp, $tm);
+        $r = product_target_price($p, $tp, $tm);
         if ($r['price'] <= 0) continue;
         if ($apply) {
             db()->prepare("UPDATE products SET price = ? WHERE id = ?")->execute([$r['price'], $p['id']]);
@@ -96,8 +96,8 @@ function urun_kar(array $p): array {
     $extra = (float)$p['extra_fee'];
     $service = (float)($p['service_fee'] ?? trendyol_service_fee());
     $ret = (float)$p['return_rate'];
-    $stopaj = auto_stopaj($price, $kdv, 1.0);
-    $r = calc_profit($cost, $price, $cargo, $rate, $kdv, $extra, $service, $stopaj, $ret);
+    $stopaj = product_stopaj($p, $price);
+    $r = product_profit($p);
     return ['ok' => true, 'profit' => $r['profit'], 'ratio' => $r['ratio'], 'margin' => $r['margin']];
 }
 
@@ -168,8 +168,8 @@ if ($detayBc !== '') {
         $cargo = (float)$p['cargo']; $rate = (float)$p['rate'];
         $kdv = (float)($p['kdv'] ?? 20.0); $extra = (float)$p['extra_fee'];
         $service = (float)($p['service_fee'] ?? trendyol_service_fee()); $ret = (float)$p['return_rate'];
-        $stopaj = auto_stopaj($price, $kdv, 1.0);
-        $detayR = calc_profit($cost, $price, $cargo, $rate, $kdv, $extra, $service, $stopaj, $ret);
+        $stopaj = product_stopaj($p, $price);
+        $detayR = product_profit($p);
     }
 }
 ?>

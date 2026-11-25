@@ -216,7 +216,7 @@ function sync_products(int $userId, string $marketplace): array
                           VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?, 0, 0, 0, 0)");
 
     // Only refresh marketplace fields; never overwrite user costs, cargo or commission settings.
-    $upd = $db->prepare("UPDATE products SET price = COALESCE(?, price), quantity = COALESCE(?, quantity)
+    $upd = $db->prepare("UPDATE products SET price = COALESCE(?, price), quantity = COALESCE(?, quantity), kdv = COALESCE(?, kdv)
                           WHERE id = ? AND user_id = ? AND marketplace = ?");
     $db->beginTransaction();
     try {
@@ -232,7 +232,8 @@ function sync_products(int $userId, string $marketplace): array
             $key = ($barcode !== '') ? ('b:' . $barcode) : ('n:' . $name);
             if (isset($existing[$key])) {
                 if ($barcode !== '' && ($price !== null || $quantity !== null)) {
-                    $upd->execute([$price, $quantity, $existing[$key], $userId, $marketplace]);
+                    $vat = isset($p['vatRate']) && is_numeric($p['vatRate']) && $p['vatRate'] >= 0 && $p['vatRate'] <= 100 ? (float)$p['vatRate'] : null;
+                    $upd->execute([$price, $quantity, $vat, $existing[$key], $userId, $marketplace]);
                     $updated++;
                 } else $skipped++;
                 continue;

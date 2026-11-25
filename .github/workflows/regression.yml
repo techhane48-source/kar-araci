@@ -19,5 +19,6 @@ jobs:
           php scripts/test-trendyol-v2.php
           php scripts/test-money-input.php
           php scripts/test-order-estimate.php
+          php scripts/test-product-profit.php
       - name: JavaScript syntax
         run: node --check public_html/assets/app.js

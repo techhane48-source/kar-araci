@@ -74,7 +74,7 @@ function calc_price(float $cost, float $cargo, float $rate, float $kdvRate = 20.
     $saleVat = (float)($options['sale_vat'] ?? $kdvRate);
     $profitAt = static function (float $P) use ($cost, $cargo, $rate, $kdvRate, $extraFee, $serviceFee, $stopajRate, $returnRate, $saleVat, $options): float {
         return calc_profit($cost, $P, $cargo, $rate, $kdvRate, $extraFee, $serviceFee,
-            auto_stopaj($P, $saleVat, $stopajRate), $returnRate, $options)['profit'];
+            (isset($options['fixed_stopaj']) ? (float)$options['fixed_stopaj'] : auto_stopaj($P, $saleVat, $stopajRate)), $returnRate, $options)['profit'];
     };
 
     $f = $targetMargin > 0
@@ -103,7 +103,7 @@ function calc_price(float $cost, float $cargo, float $rate, float $kdvRate = 20.
     $P = ($lo + $hi) / 2;
     if (!is_finite($P) || $P <= 0) $P = 0.0;
 
-    $r = calc_profit($cost, $P, $cargo, $rate, $kdvRate, $extraFee, $serviceFee, auto_stopaj($P, $saleVat, $stopajRate), $returnRate, $options);
+    $r = calc_profit($cost, $P, $cargo, $rate, $kdvRate, $extraFee, $serviceFee, (isset($options['fixed_stopaj']) ? (float)$options['fixed_stopaj'] : auto_stopaj($P, $saleVat, $stopajRate)), $returnRate, $options);
 
     return [
         'ok' => true,
@@ -182,4 +182,41 @@ function calc_order_profit(array $order, array $byBarcode): array
     return ['ok'=>true,'estimated'=>true,'sale'=>$sale,'cost'=>$cost,'cargo'=>$cargo,'profit'=>$profit,
         'margin'=>$profit/$sale*100,'ratio'=>$profit/$cost*100,'commission'=>$commission,
         'service_fee'=>$service,'stopaj'=>$stopaj,'net_kdv'=>$netVat,'extra_fee'=>0.0,'return_loss'=>0.0];
+}
+
+/** Persisted product settings are shared by catalog, pricing, alerts and campaign estimates. */
+function product_profit_options(array $product): array
+{
+    $saleVat = (float)($product['kdv'] ?? 20);
+    // Legacy purchase VAT was not stored separately.
+    $costVat = (float)($product['cost_vat'] ?? $saleVat);
+    return ['sale_vat'=>$saleVat, 'cost_vat'=>$costVat,
+        'commission_vat'=>20.0, 'cargo_vat'=>20.0, 'extra_vat'=>20.0, 'service_vat'=>20.0,
+        'allow_negative_vat'=>!empty($product['allow_negative_vat'])];
+}
+function product_stopaj(array $product, float $price): float
+{
+    $mode = $product['stopaj_mode'] ?? 'legacy';
+    if ($mode === 'manual' || ($mode === 'legacy' && ($product['marketplace'] ?? 'trendyol') !== 'trendyol'))
+        return (float)($product['stopaj'] ?? 0);
+    return auto_stopaj($price,(float)($product['kdv'] ?? 20),(float)($product['stopaj_rate'] ?? 1));
+}
+function product_profit(array $product, ?float $price = null, ?float $rate = null): array
+{
+    $price = $price ?? (float)$product['price'];
+    $options = product_profit_options($product);
+    return calc_profit((float)$product['cost'],$price,(float)($product['cargo']??0),
+        $rate ?? (float)$product['rate'],(float)($product['kdv']??20),
+        (float)($product['extra_fee']??0),(float)($product['service_fee']??0),
+        product_stopaj($product,$price),(float)($product['return_rate']??0),$options);
+}
+function product_target_price(array $product, float $targetProfit, float $targetMargin): array
+{
+    $options=product_profit_options($product);
+    $mode=$product['stopaj_mode']??'legacy';
+    if ($mode==='manual' || ($mode==='legacy' && ($product['marketplace']??'trendyol')!=='trendyol'))
+        $options['fixed_stopaj']=(float)($product['stopaj']??0);
+    return calc_price((float)$product['cost'],(float)($product['cargo']??0),(float)$product['rate'],
+        (float)($product['kdv']??20),(float)($product['extra_fee']??0),(float)($product['service_fee']??0),
+        (float)($product['stopaj_rate']??1),(float)($product['return_rate']??0),$targetProfit,$targetMargin,$options);
 }

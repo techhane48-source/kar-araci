@@ -30,7 +30,7 @@ if (($_GET['export'] ?? '') === 'maliyet') {
                 $r['barcode'] ?? '', $r['model_kodu'] ?? '', '', $r['category'] ?? '', $r['name'] ?? '',
                 (float)($r['price'] ?? 0), (int)($r['quantity'] ?? 0),
                 (float)($r['cost'] ?? 0) > 0 ? (float)$r['cost'] : '',
-                (float)($r['kdv'] ?? 0) > 0 ? (float)$r['kdv'] : 20,
+                (float)($r['cost_vat'] ?? $r['kdv'] ?? 20),
                 'TRY', $desi > 0 ? round($desi, 2) : '',
                 (!empty($r['cargo_type']) && $r['cargo_type'] !== 'seller') ? $r['cargo_type'] : 'standart',
                 0, (float)($r['extra_fee'] ?? 0),
@@ -127,8 +127,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'impor
             $num = static function (?string $s): ?float {
                 $s = trim((string)$s);
                 if ($s === '') return null;
-                $s = str_replace(',', '.', $s);
-                return is_numeric($s) ? (float)$s : null;
+                return parse_money_input($s);
             };
 
             foreach ($rows as $row) {
@@ -142,7 +141,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'impor
                     $sets[] = "$col = ?";
                     $params[] = $val;
                 };
-                if (($v = $num($kIdx !== null ? ($row[$kIdx] ?? null) : null)) !== null) $add('kdv', $v);
+                if (($v = $num($kIdx !== null ? ($row[$kIdx] ?? null) : null)) !== null) { if ($v >= 0 && $v <= 100) $add('cost_vat', $v); }
                 if (($v = $num($dIdx !== null ? ($row[$dIdx] ?? null) : null)) !== null) $add('kesilen_desi', $v);
                 if (($v = $sIdx !== null ? trim((string)($row[$sIdx] ?? '')) : '') !== '' && is_numeric(str_replace(['.', ','], '', $v))) $add('quantity', (int)str_replace(['.', ','], '', $v));
                 if (($v = $num($iIdx !== null ? ($row[$iIdx] ?? null) : null)) !== null) $add('return_rate', $v);
@@ -155,7 +154,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'impor
 
                 $params[] = $u['id'];
                 $params[] = $barcode;
-                $upd = db()->prepare("UPDATE products SET " . implode(', ', $sets) . " WHERE user_id = ? AND barcode = ?");
+                $upd = db()->prepare("UPDATE products SET " . implode(', ', $sets) . " WHERE user_id = ? AND barcode = ? AND marketplace = 'trendyol'");
                 $upd->execute($params);
                 if ($upd->rowCount() > 0) $updated++; else $notFound++;
             }
@@ -253,14 +252,12 @@ if ($q !== '') {
 
 // KPI toplamları: yalnızca gerekli kolonlar, tüm ürünler üzerinden (hafif döngü)
 $totalProfit = 0.0; $totalRevenue = 0.0; $totalCommission = 0.0; $totalCount = 0; $maliyetsiz = 0;
-$totStmt = db()->prepare("SELECT cost, price, cargo, rate, kdv, extra_fee, service_fee, stopaj, return_rate FROM products WHERE $where");
+$totStmt = db()->prepare("SELECT marketplace, cost, price, cargo, rate, kdv, cost_vat, extra_fee, service_fee, stopaj, stopaj_mode, stopaj_rate, allow_negative_vat, return_rate FROM products WHERE $where");
 $totStmt->execute($args);
 foreach ($totStmt->fetchAll() as $tp) {
     if ((float)$tp['cost'] <= 0) $maliyetsiz++;
-    $rr = calc_profit((float)$tp['cost'], (float)$tp['price'], (float)$tp['cargo'], (float)$tp['rate'],
-        (float)($tp['kdv'] ?? 20), (float)($tp['extra_fee'] ?? 0), (float)($tp['service_fee'] ?? 0),
-        (float)($tp['stopaj'] ?? 0), (float)($tp['return_rate'] ?? 0));
-    $totalProfit += $rr['profit'];
+    $rr = product_profit($tp);
+    if ((float)$tp['cost'] > 0) $totalProfit += $rr['profit'];
     $totalRevenue += (float)$tp['price'];
     $totalCommission += $rr['commission'];
     $totalCount++;
@@ -280,9 +277,7 @@ $stmt->execute($args);
 $products = $stmt->fetchAll();
 
 foreach ($products as &$p) {
-    $r = calc_profit((float)$p['cost'], (float)$p['price'], (float)$p['cargo'], (float)$p['rate'],
-        (float)($p['kdv'] ?? 20), (float)($p['extra_fee'] ?? 0), (float)($p['service_fee'] ?? 0),
-        (float)($p['stopaj'] ?? 0), (float)($p['return_rate'] ?? 0));
+    $r = product_profit($p);
     $p['_profit'] = $r['profit'];
     $p['_margin'] = $r['margin'];
     $p['_ratio'] = $r['ratio'];
