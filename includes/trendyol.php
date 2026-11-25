@@ -441,7 +441,8 @@ final class TrendyolClient
         foreach($res['body']['buyboxInfo'] as $r) {
             $bc=(string)($r['barcode']??'');
             if (!in_array($bc,$barcodes,true) || isset($items[$bc])) return ['ok'=>false,'error'=>'Buybox barkod eşleşmesi geçersiz.'];
-            if (!is_numeric($r['buyboxOrder']??null) || !is_numeric($r['buyboxPrice']??null) || !is_bool($r['hasMultipleSeller']??null))
+            if (!is_numeric($r['buyboxOrder']??null) || !is_numeric($r['buyboxPrice']??null) || !is_bool($r['hasMultipleSeller']??null)
+                || !is_finite((float)$r['buyboxPrice']) || (float)$r['buyboxPrice']<0 || (float)$r['buyboxOrder']<0 || floor((float)$r['buyboxOrder'])!==(float)$r['buyboxOrder'])
                 return ['ok'=>false,'error'=>'Buybox yanıtı eksik.'];
             $items[$bc]=['barcode'=>$bc,'rank'=>(int)$r['buyboxOrder'],'price'=>(float)$r['buyboxPrice'],
                 'multiple'=>$r['hasMultipleSeller'],'second'=>isset($r['secondBuyboxPrice'])&&is_numeric($r['secondBuyboxPrice'])?(float)$r['secondBuyboxPrice']:null,

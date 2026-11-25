@@ -100,7 +100,7 @@ if($rapor==='order'){
     $summary=['Finansal işlem kaydı'=>$n,'Alacak'=>$money($credit),'Borç'=>$money($debt),'Borç − alacak'=>$money($debt-$credit)];
     $reportNote=$rapor==='return'?'Finansal işlem adedi ürün iade adedi değildir. İade tutarı, yeniden satılabilirlik ve gerçek kargo maliyeti eşleşmeden iade zararı hesaplanmaz.':'Satıcı ve Trendyol kaynaklı indirim/kuponlar ayrı işlem türleridir; iptaller dahil. Tarih finansal işlem tarihidir; kampanya kârlılığı değildir.';
 }elseif($rapor==='buybox'){
-    $reportCols=['Barkod','Ürün','Bizim Fiyat','Buybox Sırası','Buybox Fiyatı','Fiyat Farkı','Son Sorgu'];
+    $reportCols=['Barkod','Ürün','Bizim Fiyat','Buybox Sırası','Buybox Fiyatı','Fiyat Farkı','Son Sorgu','Güncellik'];
     $integration=get_integration((int)$u['id'],$mp);
     $data=[];
     if($mp==='trendyol'&&$integration){
@@ -112,7 +112,7 @@ if($rapor==='order'){
         $bb=$data[$bc]??null;$price=(float)$product['price'];$bp=$bb&&(float)$bb['buybox_price']>0?(float)$bb['buybox_price']:null;
         $rank=$bb&&(int)$bb['buybox_rank']>0?(int)$bb['buybox_rank']:null;
         if($rank!==null){$known++;if($rank===1)$first++;}
-        $reportRows[]=[(string)$bc,$product['name'],$price,$rank,$bp,$bp===null?null:$price-$bp,$bb?date('d.m.Y H:i',(int)$bb['checked_at']):null];
+        $reportRows[]=[(string)$bc,$product['name'],$price,$rank,$bp,$bp===null?null:$price-$bp,$bb?date('d.m.Y H:i',(int)$bb['checked_at']):null,buybox_is_fresh($bb,time())?'Son 1 saat':'Eski / veri yok'];
     }
     $summary=['Ürün'=>count($byBarcode),'Sırası bilinen'=>$known,'Birinci sırada'=>$first];
     $reportNote='Pazar Zekası ekranında sorgulanan resmî Buybox verilerinin son görüntüsü. Tarih filtresi uygulanmaz; sorgu zamanı gösterilir.';
