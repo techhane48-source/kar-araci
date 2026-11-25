@@ -122,10 +122,10 @@ require __DIR__ . '/../includes/header.php';
   <div class="kpi-row">
     <div class="kpi"><div class="k-label">Toplam Ciro</div><div class="k-value"><?= tl($ciro) ?></div></div>
     <div class="kpi"><div class="k-label">Maliyeti Olan Ciro</div><div class="k-value"><?= tl($maliyetliCiro) ?></div></div>
-    <div class="kpi"><div class="k-label">Brüt Kâr</div><div class="k-value <?= $brutKar < 0 ? 'neg' : '' ?>"><?= tl($brutKar) ?></div></div>
-    <div class="kpi"><div class="k-label">Net Kâr</div><div class="k-value <?= $netKar < 0 ? 'neg' : 'pos' ?>"><?= tl($netKar) ?></div></div>
-    <div class="kpi"><div class="k-label">Net Kâr / Satış</div><div class="k-value <?= $karSatis < 0 ? 'neg' : '' ?>">%<?= number_format($karSatis, 1, ',', '.') ?></div></div>
-    <div class="kpi"><div class="k-label">Net Kâr / Maliyet</div><div class="k-value <?= $karMaliyet < 0 ? 'neg' : '' ?>">%<?= number_format($karMaliyet, 1, ',', '.') ?></div></div>
+    <div class="kpi"><div class="k-label">Tahmini Brüt Kâr</div><div class="k-value <?= $brutKar < 0 ? 'neg' : '' ?>"><?= tl($brutKar) ?></div></div>
+    <div class="kpi"><div class="k-label">Tahmini Net Kâr</div><div class="k-value <?= $netKar < 0 ? 'neg' : 'pos' ?>"><?= tl($netKar) ?></div></div>
+    <div class="kpi"><div class="k-label">Tahmini Net Kâr / Satış</div><div class="k-value <?= $karSatis < 0 ? 'neg' : '' ?>">%<?= number_format($karSatis, 1, ',', '.') ?></div></div>
+    <div class="kpi"><div class="k-label">Tahmini Net Kâr / Maliyet</div><div class="k-value <?= $karMaliyet < 0 ? 'neg' : '' ?>">%<?= number_format($karMaliyet, 1, ',', '.') ?></div></div>
   </div>
 
   <?php if ($maliyetliCiro < $ciro): ?>

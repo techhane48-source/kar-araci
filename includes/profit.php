@@ -136,3 +136,50 @@ function parse_money_input(string $raw): ?float
     $n = (float)$v;
     return is_finite($n) ? $n : null;
 }
+
+
+/** Cancelled packages do not count as sales. Return costs remain a separate financial process. */
+function order_is_active_sale(array $order): bool
+{
+    return !in_array(strtolower((string)($order['status'] ?? '')), ['cancelled','canceled','unsupplied','returned','undelivered','unpacked'], true);
+}
+
+function calc_order_profit(array $order, array $byBarcode): array
+{
+    $sale = (float)($order['total_price'] ?? 0);
+    $fail = static fn(string $reason): array => ['ok'=>false,'missing'=>true,'sale'=>$sale,'profit'=>null,'reason'=>$reason];
+    $lines = $order['lines'] ?? [];
+    if (!order_is_active_sale($order)) return $fail('İptal/iade: finansal kayıt bekleniyor.');
+    if (!is_array($lines) || !$lines || $sale <= 0) return $fail('Sipariş verisi eksik.');
+    $cost=0.0; $cargo=0.0; $commission=0.0; $saleVat=0.0; $costVat=0.0;
+    $stopaj=0.0; $sum=0.0; $extra=0.0;
+    foreach ($lines as $line) {
+        $qty=(int)($line['quantity']??0);
+        if ($qty<=0 || !isset($line['price']) || !is_numeric($line['price'])) return $fail('Satır fiyatı/adedi eksik.');
+        if (!order_is_active_sale($line)) return $fail('Kısmi iptal/iade: finansal kayıt bekleniyor.');
+        $product=$byBarcode[$line['barcode']??'']??null;
+        if (!$product || (float)$product['cost']<=0) return $fail('Ürün maliyeti eksik.');
+        // Invoice net is not seller settlement. Platform-funded discounts require reconciliation.
+        if (abs((float)($line['platform_discount']??0))>0.005) return $fail('Trendyol katkılı indirim: finansal kayıt bekleniyor.');
+        $lineSale=(float)$line['price']*$qty;
+        $rate=(float)($line['commission_rate']??$product['rate']??-1);
+        $vat=(float)($line['vat_rate']??$product['kdv']??-1);
+        $purchaseVat=(float)($product['cost_vat']??$product['kdv']??-1);
+        if ($rate<0||$rate>100||$vat<0||$vat>100||$purchaseVat<0||$purchaseVat>100||$lineSale<0) return $fail('Komisyon/KDV verisi geçersiz.');
+        $lineCost=(float)$product['cost']*$qty;
+        $sum+=$lineSale; $cost+=$lineCost;
+        // Product cargo is a forecast; multi-line package fee allocation is not verified.
+        $cargo+=(float)($product['cargo']??0);
+        $commission+=$lineSale*$rate/100;
+        $saleVat+=$lineSale*$vat/(100+$vat);
+        $costVat+=$lineCost*$purchaseVat/(100+$purchaseVat);
+        $stopaj+=auto_stopaj($lineSale,$vat);
+    }
+    if (abs($sum-$sale)>0.05) return $fail('Paket ve satır toplamları uyuşmuyor.');
+    $service=trendyol_service_fee();
+    $netVat=max(0.0,$saleVat-$costVat-($commission+$cargo+$service)/6);
+    $profit=$sale-$cost-$cargo-$commission-$service-$stopaj-$netVat;
+    return ['ok'=>true,'estimated'=>true,'sale'=>$sale,'cost'=>$cost,'cargo'=>$cargo,'profit'=>$profit,
+        'margin'=>$profit/$sale*100,'ratio'=>$profit/$cost*100,'commission'=>$commission,
+        'service_fee'=>$service,'stopaj'=>$stopaj,'net_kdv'=>$netVat,'extra_fee'=>0.0,'return_loss'=>0.0];
+}

@@ -78,7 +78,7 @@ if ($rapor === 'order') {
         if ($kar !== null) $toplam['kar'] += $kar;
     }
 } elseif ($rapor === 'category') {
-    $reportCols = ['Kategori', 'Adet', 'Ciro', 'Maliyet', 'Kâr'];
+    $reportCols = ['Kategori', 'Adet', 'Ciro', 'Maliyet', 'Kesintiler Öncesi Fark'];
     $agg = [];
     foreach ($orders as $o) {
         if (!order_is_active_sale($o)) continue;

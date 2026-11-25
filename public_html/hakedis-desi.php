@@ -43,6 +43,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'save_
 
 // --- Hakediş kontrolü ---
 $hakedisResult = null;
+$officialCargo = [];
+$officialPayments = [];
+if ($mp === 'trendyol') {
+    $cq = db()->prepare("SELECT order_number, shipment_type, COUNT(*) AS kalem, SUM(amount) AS tutar, SUM(desi) AS desi FROM trendyol_cargo_items WHERE user_id=? GROUP BY order_number, shipment_type ORDER BY order_number DESC LIMIT 100");
+    $cq->execute([$u['id']]); $officialCargo = $cq->fetchAll();
+    $pq = db()->prepare("SELECT payment_order_id, transaction_date, raw_json FROM trendyol_financial_documents WHERE user_id=? AND query_type='PaymentOrder' ORDER BY transaction_date DESC LIMIT 100");
+    $pq->execute([$u['id']]); $officialPayments = $pq->fetchAll();
+}
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'check_hakedis') {
     if (!csrf_verify($_POST['csrf'] ?? '')) {
         flash_set('error', 'Oturum süresi doldu.');
@@ -169,7 +177,7 @@ require __DIR__ . '/../includes/header.php';
   <?php else: ?>
   <div class="card" style="margin:16px 0;max-width:620px">
     <h2>Hakediş Kontrolü</h2>
-    <p class="hint">Trendyol hakediş dökümünde sana yansıyan <b>satış tutarını</b> gir. Kâr&Fiyat, senkron ettiğin siparişlerle karşılaştırıp <b>eksik satış bedeli</b> olup olmadığını ve desi bilgilerinden <b>fazla kargo</b> kesintisini kontrol eder.</p>
+    <p class="hint">Bu manuel karşılaştırma kesin hakediş mutabakatı değildir. Sipariş tarihi ile ödeme tarihi farklı olabilir. Resmî ödeme ve kargo kayıtları aşağıda ayrıca gösterilir.</p>
     <form method="post" style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end">
       <input type="hidden" name="csrf" value="<?= h(csrf_token()) ?>">
       <input type="hidden" name="action" value="check_hakedis">
@@ -188,7 +196,7 @@ require __DIR__ . '/../includes/header.php';
           Dikkat gerektiren kalemler tespit edildi:
           <ul style="margin:8px 0 0 18px">
             <?php if ($hakedisResult['eksikSatis']): ?>
-              <li><b>Eksik satış bedeli:</b> girilen <?= tl($hakedisResult['entered']) ?> &lt; senkron siparişler <?= tl($hakedisResult['synced']) ?></li>
+              <li><b>Manuel tutar farkı:</b> girilen <?= tl($hakedisResult['entered']) ?> &lt; senkron siparişler <?= tl($hakedisResult['synced']) ?></li>
             <?php endif; ?>
             <?php foreach ($hakedisResult['fazlaDesi'] as $f): ?>
               <li><b>Fazla kargo (desi):</b> <?= h($f['name']) ?> — kesilen <?= number_format($f['kesilen'], 2, ',', '.') ?> &gt; olması gereken <?= number_format($f['beklenen'], 2, ',', '.') ?></li>
@@ -202,4 +210,31 @@ require __DIR__ . '/../includes/header.php';
   </div>
   <?php endif; ?>
 </div>
+<?php if ($mp === 'trendyol'): ?>
+<div class="wrap">
+  <div class="card table-card" style="margin:16px 0">
+    <h2>Resmî Trendyol ödeme emirleri</h2>
+    <p class="hint">Mağaza Bağlama ekranındaki cari hesap senkronundan alınır. Bu kayıtlar tek başına net kâr veya kesin banka mutabakatı değildir.</p>
+    <table><tr><th>Ödeme emri</th><th>İşlem tarihi</th><th>Ödeme kaydı</th></tr>
+    <?php foreach ($officialPayments as $payment): $raw=json_decode($payment['raw_json'],true) ?: []; ?>
+    <tr><td><?= h((string)($payment['payment_order_id'] ?? '—')) ?></td>
+    <td><?= date('d.m.Y',(int)$payment['transaction_date']) ?></td>
+    <td><?= isset($raw['debt']) ? tl((float)$raw['debt']) : '—' ?></td></tr>
+    <?php endforeach; ?>
+    <?php if (!$officialPayments): ?><tr><td colspan="3">Henüz ödeme kaydı yok.</td></tr><?php endif; ?>
+    </table>
+  </div>
+  <div class="card table-card" style="margin:16px 0">
+    <h2>Resmî kargo faturası kalemleri</h2>
+    <p class="hint">Sipariş numarası ve kargo türüne göre gruplanmış son 100 kayıt grubu. Gönderi ve iade kargoları ayrı tutulur.</p>
+    <table><tr><th>Sipariş no</th><th>Kargo türü</th><th>Kalem</th><th>Toplam desi</th><th>Fatura tutarı</th></tr>
+    <?php foreach ($officialCargo as $row): ?>
+    <tr><td><?= h((string)$row['order_number']) ?></td><td><?= h((string)$row['shipment_type']) ?></td>
+    <td><?= (int)$row['kalem'] ?></td><td><?= (float)$row['desi'] ?></td><td><?= tl((float)$row['tutar']) ?></td></tr>
+    <?php endforeach; ?>
+    <?php if (!$officialCargo): ?><tr><td colspan="5">Henüz kargo faturası kalemi yok.</td></tr><?php endif; ?>
+    </table>
+  </div>
+</div>
+<?php endif; ?>
 <?php require __DIR__ . '/../includes/footer.php'; ?>

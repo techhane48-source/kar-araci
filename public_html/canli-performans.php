@@ -165,7 +165,7 @@ require __DIR__ . '/../includes/header.php';
     </div>
     <p class="hint" style="margin-bottom:10px">Mavi: satış, yeşil: kâr (satış ölçeğinde). Saat etiketleri her 3 saatte bir.</p>
     <table>
-      <tr><th>Saat</th><th>Satış</th><th>Net Kâr</th><th>Sipariş</th></tr>
+      <tr><th>Saat</th><th>Satış</th><th>Tahmini Kâr</th><th>Sipariş</th></tr>
       <?php foreach ($hourly as $h => $d): if ($d['count'] === 0) continue; ?>
         <tr>
           <td><?= str_pad((string)$h, 2, '0', STR_PAD_LEFT) ?>:00</td>
@@ -201,7 +201,8 @@ require __DIR__ . '/../includes/header.php';
     $todayProducts = [];
     foreach ($orders as $o) {
         if ((int)$o['order_date'] < $todayStart) continue;
-        foreach ($o['lines'] as $l) {
+        $lines = is_array($o['lines']) ? $o['lines'] : (json_decode($o['lines'] ?? '[]', true) ?: []);
+        foreach ($lines as $l) {
             $bc = $l['barcode'] ?? '';
             if ($bc === '' || isset($todayProducts[$bc])) continue;
             $p = $byBarcode[$bc] ?? null;

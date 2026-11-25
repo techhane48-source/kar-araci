@@ -66,11 +66,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'check
 // --- URL'den fiyat çekmeyi dene (best-effort; bot koruması olabilir) ---
 function fetch_tracker_price(string $url): array
 {
-    if (!preg_match('#^https?://#i', $url)) return ['ok' => false, 'error' => 'Geçersiz URL.'];
+    $parts = parse_url($url);
+    $host = strtolower((string)($parts['host'] ?? ''));
+    if (($parts['scheme'] ?? '') !== 'https' || !in_array($host, ['www.trendyol.com','trendyol.com'], true)
+        || isset($parts['user']) || isset($parts['pass']) || isset($parts['port'])) {
+        return ['ok'=>false,'error'=>'Şimdilik yalnızca doğrudan HTTPS Trendyol ürün bağlantıları desteklenir.'];
+    }
+    $ip = gethostbyname($host);
+    if (!filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4 | FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE))
+        return ['ok'=>false,'error'=>'Güvenli ürün adresi çözümlenemedi.'];
     $ch = curl_init($url);
     curl_setopt_array($ch, [
         CURLOPT_RETURNTRANSFER => true,
-        CURLOPT_FOLLOWLOCATION => true,
+        CURLOPT_FOLLOWLOCATION => false,
+        CURLOPT_RESOLVE => [$host . ':443:' . $ip],
         CURLOPT_TIMEOUT => 15,
         CURLOPT_CONNECTTIMEOUT => 8,
         CURLOPT_SSL_VERIFYPEER => true,

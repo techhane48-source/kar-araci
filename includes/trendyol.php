@@ -206,7 +206,7 @@ final class TrendyolClient
                     'lastModifiedStartDate' => (string)($cs * 1000),
                     'lastModifiedEndDate' => (string)($ce * 1000 + 999),
                 ];
-                if ($status !== '') $params['status'] = $status;
+                if ($status !== '') $params['packageItemStatuses'] = $status;
                 if ($cursor !== null) $params['nextCursor'] = $cursor;
                 $res = $this->request('GET', "/integration/order/sellers/{$this->sellerId}/orders/stream", $params);
 
