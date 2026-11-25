@@ -15,7 +15,7 @@ if (!csrf_verify($_POST['csrf'] ?? $_GET['csrf'] ?? null)) {
 }
 
 // Benzersiz demo e-posta
-$email = 'demo' . time() . '@demo.karfiyat';
+$email = 'demo' . bin2hex(random_bytes(12)) . '@demo.karfiyat';
 $name = 'Demo Kullanıcı';
 
 db()->prepare("INSERT INTO users (email, name, password_hash, plan, is_demo) VALUES (?, ?, ?, 'pro', 1)")
@@ -42,6 +42,8 @@ foreach ($sample as $s) {
 }
 
 session_boot();
+session_regenerate_id(true);
+unset($_SESSION['csrf']);
 $_SESSION['uid'] = $uid;
 flash_set('success', 'Demo hesabına hoş geldin! 6 örnek ürünle dolu. Gerçek hesabın için istediğin zaman ücretsiz kayıt olabilirsin.');
 e_redirect('dashboard.php');

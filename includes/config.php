@@ -15,7 +15,7 @@ define('FREE_PRODUCT_LIMIT', 5);   // ücretsiz planda kayıtlı ürün sınır�
 
 // Yönetici (ilk kurulumda oluşturulur; ilk girişte şifre değiştirmeye zorlanır)
 define('ADMIN_EMAIL', 'admin@karfiyat.local');
-define('ADMIN_DEFAULT_PASSWORD', '1234');
+// No public bootstrap password. Use scripts/reset-admin.php on the trusted server.
 
 date_default_timezone_set('Europe/Istanbul');
 ini_set('display_errors', '0');

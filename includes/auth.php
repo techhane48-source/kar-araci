@@ -9,6 +9,7 @@ require_once __DIR__ . '/db.php';
 function session_boot(): void
 {
     if (session_status() === PHP_SESSION_NONE) {
+        ini_set('session.use_strict_mode','1');
         session_name('karfiyat');
         session_set_cookie_params([
             'httponly' => true,
@@ -163,4 +164,31 @@ function totp_verify(string $secret, string $code): bool
 function generate_referral_code(int $userId): string
 {
     return strtoupper(substr(md5('kf' . $userId . random_bytes(8)), 0, 8));
+}
+
+function safe_login_next(mixed $next): string
+{
+    if(!is_string($next)||!preg_match('#^/[A-Za-z0-9_./?=&%+\-]*$#D',$next)
+        ||str_starts_with($next,'//')||str_contains(rawurldecode($next),'\\')||str_starts_with(rawurldecode($next),'//'))
+        return 'dashboard.php';
+    return $next;
+}
+
+/** Atomic fixed-window counter; never use untrusted forwarding headers as IP. */
+function auth_take_attempt(PDO $db,string $scope,int $limit,int $seconds,int $now): bool
+{
+    $key=hash('sha256',$scope);
+    $st=$db->prepare("INSERT INTO auth_attempts(scope,window_start,attempts) VALUES(?,?,1)
+        ON CONFLICT(scope) DO UPDATE SET
+        attempts=CASE WHEN window_start<=? THEN 1 ELSE attempts+1 END,
+        window_start=CASE WHEN window_start<=? THEN excluded.window_start ELSE window_start END
+        WHERE window_start<=? OR attempts<?");
+    $cut=$now-$seconds;$st->execute([$key,$now,$cut,$cut,$cut,$limit]);
+    return $st->rowCount()===1;
+}
+function login_attempt_allowed(string $email): bool
+{
+    $now=time();$ip=(string)($_SERVER['REMOTE_ADDR']??'unknown');
+    if(!auth_take_attempt(db(),'login-ip:'.$ip,30,900,$now))return false;
+    return auth_take_attempt(db(),'login-account:'.strtolower(trim($email)),8,900,$now);
 }

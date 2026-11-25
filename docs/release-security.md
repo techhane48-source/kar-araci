@@ -1,0 +1,5 @@
+# Shared release security gates
+
+Card payments are disabled by default. Only enable with KARFIYAT_ENABLE_CARD_PAYMENTS=1 and configured HTTPS KARFIYAT_PUBLIC_ORIGIN after sandbox testing and provider signature validation review. Existing sessions initiated before this change cannot be auto-approved; reconcile manually. Callback uses stored intent, provider retrieval, original amount, currency, basket, conversation, token, fraud status and provider payment ID. Sandbox never grants production entitlement. One-time payment, not recurring subscription.
+
+New admin password is random and unknown until the operator executes php scripts/reset-admin.php in a trusted server terminal. Legacy default password is refused at login. Reset existing admin before deployment and verify no older active admin sessions. Fixed-window login and TOTP limits use SQLite; proxy configuration and distributed deployment need additional review. Do not enable payment or deploy until real provider tests, response signature verification, refund/chargeback processing and reconciliation are complete.

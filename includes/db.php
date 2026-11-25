@@ -187,6 +187,15 @@ function migrate(): void
         last_attempt INTEGER NOT NULL, last_success INTEGER,
         state TEXT NOT NULL, PRIMARY KEY(user_id,marketplace,job)
     )");
+    $pdo->exec("CREATE TABLE IF NOT EXISTS auth_attempts (
+        scope TEXT PRIMARY KEY, window_start INTEGER NOT NULL, attempts INTEGER NOT NULL
+    )");
+    $pdo->exec("CREATE TABLE IF NOT EXISTS checkout_intents (
+        token_hash TEXT PRIMARY KEY, user_id INTEGER NOT NULL, basket_id TEXT NOT NULL UNIQUE,
+        conversation_id TEXT NOT NULL, amount_minor INTEGER NOT NULL, sandbox INTEGER NOT NULL,
+        merchant_fingerprint TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'pending',
+        provider_payment_key TEXT UNIQUE, created_at INTEGER NOT NULL, approved_at INTEGER
+    )");
     $pdo->exec("CREATE TABLE IF NOT EXISTS analysis_jobs (
         user_id INTEGER NOT NULL, kind TEXT NOT NULL, module TEXT NOT NULL,
         headers_json TEXT NOT NULL, stats_json TEXT NOT NULL, created_at INTEGER NOT NULL,
@@ -318,7 +327,7 @@ function migrate(): void
     if (!$stmt->fetch()) {
         $pdo->prepare("INSERT INTO users (email, name, password_hash, plan, is_admin, must_change_password)
                        VALUES (?, 'Yönetici', ?, 'pro', 1, 1)")
-            ->execute([ADMIN_EMAIL, password_hash(ADMIN_DEFAULT_PASSWORD, PASSWORD_DEFAULT)]);
+            ->execute([ADMIN_EMAIL, password_hash(bin2hex(random_bytes(32)), PASSWORD_DEFAULT)]);
     }
 
     // Varsayılan ayarlar (yoksa)

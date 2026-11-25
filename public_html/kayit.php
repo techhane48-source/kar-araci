@@ -51,6 +51,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 db()->prepare("UPDATE users SET referral_code = ? WHERE id = ?")->execute([$ownCode, $uid]);
 
                 session_boot();
+                session_regenerate_id(true);
+                unset($_SESSION['csrf']);
                 $_SESSION['uid'] = $uid;
                 flash_set('success', 'Hoş geldin! Ürünlerini kaydetmeye başlayabilirsin.');
                 e_redirect('index.php');
