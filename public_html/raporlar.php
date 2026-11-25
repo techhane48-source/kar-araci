@@ -73,7 +73,7 @@ if($rapor==='order'){
     $summary=['Eşleşen ciro'=>$money($total),'Maliyeti bilinen ciro'=>$money($covered),'Gözlemlenen maliyet'=>$money($cost),'Eksik maliyet adedi'=>$missing];
     $reportNote='Net kâr değildir; komisyon ve paket kargosu ürünlere dağıtılmadı. Tarihli kullanıcı maliyeti varsa önceliklidir; yoksa ilk gözlem kullanılır. Tutarı eşleşmeyen '.$agg['excluded'].' paket dışarıda.';
 }elseif($rapor==='claims'){
-    $reportCols=['İade talebi','Sipariş','Barkod','Ürün','Statü','İade sebebi','Son güncelleme','Eşleşme','Gözlemlenen birim maliyet'];
+    $reportCols=['İade talebi','Sipariş','Barkod','Ürün','Statü','İade sebebi','Son güncelleme','Eşleşme','Gözlemlenen birim maliyet','Depo kontrolü','Geri kazanılan maliyet','Stok değer kaybı (toplam iade zararı değil)'];
     $q=db()->prepare("SELECT c.*,o.package_number AS matched_package,o.order_number AS matched_order,o.currency_code,o.country_code,o.lines,o.order_date
         FROM trendyol_claim_items c LEFT JOIN orders o ON o.user_id=c.user_id AND o.marketplace='trendyol'
         AND o.package_number=c.outbound_package AND o.order_number=c.order_number
@@ -81,16 +81,19 @@ if($rapor==='order'){
     $q->execute([$u['id'],$fromTs*1000]);$states=[];$matched=0;$known=0;$claimRows=$q->fetchAll();
     $claimOrders=[];foreach($claimRows as $row)if($row['matched_package']!==null)$claimOrders[$row['matched_package']]=['marketplace'=>'trendyol','package_number'=>$row['matched_package'],'order_number'=>$row['matched_order'],'currency_code'=>$row['currency_code'],'country_code'=>$row['country_code'],'lines'=>$row['lines'],'order_date'=>$row['order_date']];
     $claimOrders=cost_history_overlay(db(),(int)$u['id'],$claimOrders);
+    $counts=return_accepted_counts(db(),(int)$u['id'],$claimRows);$checks=db()->prepare("SELECT * FROM return_inventory_checks WHERE user_id=? AND item_id=?");$inventoryKnown=0;$inventoryLoss=0.0;
     if($mp==='trendyol')foreach($claimRows as $row){
         $order=$claimOrders[$row['matched_package']??'']??null;
         $match=claim_order_match($row,$order);
         $states[$row['status']]=($states[$row['status']]??0)+1;
         if($match['state']==='Paket ve ürün satırı eşleşti')$matched++;
         if($match['cost']!==null)$known++;
-        $reportRows[]=[$row['claim_id'],$row['order_number'],$row['barcode'],$row['product_name'],$row['status'],$row['reason'],date('d.m.Y H:i',intdiv((int)$row['modified_ms'],1000)),$match['state'].' / '.$match['scope'],$match['cost']];
+        $checks->execute([$u['id'],$row['item_id']]);$inventory=return_inventory_evidence($row,$order,$counts[return_inventory_key($row)]??0,$checks->fetch()?:null);
+        if($inventory['ready']){$inventoryKnown++;$inventoryLoss+=$inventory['inventory_loss'];}
+        $reportRows[]=[$row['claim_id'],$row['order_number'],$row['barcode'],$row['product_name'],$row['status'],$row['reason'],date('d.m.Y H:i',intdiv((int)$row['modified_ms'],1000)),$match['state'].' / '.$match['scope'],$match['cost'],$inventory['state'],$inventory['recovery'],$inventory['inventory_loss']];
     }
-    $summary=['İade kalemi'=>count($reportRows),'Kabul edilmiş'=>$states['Accepted']??0,'Aksiyon bekleyen'=>$states['WaitingInAction']??0,'Eşleşen ürün satırı'=>$matched,'Maliyeti bilinen'=>$known];
-    $reportNote='İade kalemi durumu, finansal geri ödeme değildir. Tarih filtresi son güncelleme tarihine göre uygulanır. Tarihli maliyet önceliklidir; yoksa ilk gözlem kullanılır. stok durumu, geri ödeme ve kargo payı doğrulanmadan zarar hesaplanmaz. '.sync_coverage_label(db(),(int)$u['id'],$mp,'claims_query',$fromTs,time());
+    $summary=['İade kalemi'=>count($reportRows),'Kabul edilmiş'=>$states['Accepted']??0,'Aksiyon bekleyen'=>$states['WaitingInAction']??0,'Eşleşen ürün satırı'=>$matched,'Maliyeti bilinen'=>$known,'Depo kontrolü geçerli'=>$inventoryKnown,'Beyan edilen stok değer kaybı'=>$inventoryKnown?$money($inventoryLoss):'—'];
+    $reportNote='İade kalemi durumu, finansal geri ödeme değildir. Tarih filtresi son güncelleme tarihine göre uygulanır. Tarihli maliyet önceliklidir; yoksa ilk gözlem kullanılır. Depo kontrolü girilmiş kabul edilmiş iadelerin stok değer kaybı ayrı gösterilir; geri ödeme ve kargo payı dahil değildir. Toplam iade zararı hesaplanmaz. '.sync_coverage_label(db(),(int)$u['id'],$mp,'claims_query',$fromTs,time());
 }elseif($rapor==='return'||$rapor==='campaign'){
     $types=$rapor==='return'?['Return','ManualRefund','ManualRefundCancel']:['Discount','DiscountCancel','Coupon','CouponCancel','TyDiscount','TyDiscountCancel','TyCoupon','TyCouponCancel'];
     $reportCols=['Barkod','Ürün','İşlem türü','İşlem kaydı adedi','Alacak','Borç','Borç − alacak'];
@@ -181,7 +184,7 @@ $pageTitle = 'Raporlar — ' . APP_NAME;
 require __DIR__ . '/../includes/header.php';
 ?>
 <div class="page-head">
-  <h1>Raporlar</h1>
+  <h1>Raporlar</h1><?php if($rapor==='claims'&&$mp==='trendyol'): ?><p><a class="btn-ghost" href="iade-kontrol.php">İade depo kontrolü</a></p><?php endif; ?>
   <p class="muted">Kârlılık analizleri · <a href="raporlar.php?r=<?= h($rapor) ?>&mp=<?= urlencode($mp) ?>&days=<?= $days ?>&export=1">⬇ Raporu İndir (CSV)</a></p>
 </div>
 

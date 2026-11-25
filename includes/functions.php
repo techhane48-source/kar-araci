@@ -16,6 +16,7 @@ require_once __DIR__ . '/cargo_audit.php';
 require_once __DIR__ . '/payout_receipts.php';
 require_once __DIR__ . '/catalog_cost_import.php';
 require_once __DIR__ . '/period_finance.php';
+require_once __DIR__ . '/return_inventory.php';
 
 // ---- İş mantığı: komisyon oranları + kâr hesabı ----
 

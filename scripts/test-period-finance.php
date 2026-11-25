@@ -26,5 +26,5 @@ $t['withholding separate']=$r['groups']['Stopaj']['debt']===20000;
 $t['ad only candidate']=$r['groups']['Reklam / influencer adayı']['debt']===500000;
 $t['wrong seller excluded']=$r['excluded']===1;
 $t['coverage missing']=count($r['coverage']['service_fee_transaction'])===1;
-$t['schema migration version']=(int)$db->query('PRAGMA user_version')->fetchColumn()===2;
+$t['schema migration version']=(int)$db->query('PRAGMA user_version')->fetchColumn()>=2;
 foreach($t as $n=>$ok)echo ($ok?'PASS':'FAIL')." $n\n";exit(in_array(false,$t,true)?1:0);

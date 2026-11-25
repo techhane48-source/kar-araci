@@ -70,7 +70,7 @@ with tempfile.TemporaryDirectory(prefix="karfiyat-http-") as tmp:
                 sale=json.dumps({"id":"CI-SALE","barcode":"CI001","orderNumber":"CI-ORDER","shipmentPackageId":"CI-PACKAGE","affiliate":"TRENDYOLTR","country":"TR","credit":717.74,"debt":0,"commissionAmount":136.3706,"sellerRevenue":581.3694})
                 con.execute("INSERT INTO settlements(user_id,marketplace,external_id,order_number,shipment_package_id,query_type,raw_json,finance_scope) VALUES(?,?,?,?,?,?,?,?)",
                             (uid,"trendyol","CI-SALE","CI-ORDER","CI-PACKAGE","Sale",sale,"domestic"))
-            for path in ("urunler.php","dashboard.php","magaza.php","kar-marji.php","canli-performans.php","raporlar.php","pazar-zekasi.php","hakedis-desi.php","promosyon-analiz.php","toplu-analiz.php","maliyet-gecmisi.php","kar-hedefleri.php","uyarilar.php","kargo-kontrol.php","banka-mutabakat.php"):
+            for path in ("urunler.php","dashboard.php","magaza.php","kar-marji.php","canli-performans.php","raporlar.php","pazar-zekasi.php","hakedis-desi.php","promosyon-analiz.php","toplu-analiz.php","maliyet-gecmisi.php","kar-hedefleri.php","uyarilar.php","kargo-kontrol.php","banka-mutabakat.php","iade-kontrol.php"):
                 status, page = request(path)
                 assert status == 200 and len(page) > 500 and "<html" in page.lower(), (path, status, page[:150])
                 print("PASS HTTP", path)

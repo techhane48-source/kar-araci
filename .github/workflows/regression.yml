@@ -35,6 +35,7 @@ jobs:
           php scripts/test-billing.php
           php scripts/test-sync-coverage.php
           php scripts/test-claims.php
+          php scripts/test-return-inventory.php
           php scripts/test-order-evidence.php
           php scripts/test-cost-history.php
           php scripts/test-profit-targets.php

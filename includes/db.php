@@ -30,7 +30,7 @@ function migrate(): void
 {
     $pdo = db();
     // Versioned, serialized and atomic; normal reads avoid schema writes.
-    $version=2;
+    $version=3;
     if((int)$pdo->query('PRAGMA user_version')->fetchColumn()>=$version)return;
     $pdo->exec('BEGIN IMMEDIATE');
     try{
@@ -202,6 +202,13 @@ function migrate(): void
     )");
     $pdo->exec("CREATE INDEX IF NOT EXISTS idx_claim_order ON trendyol_claim_items(user_id,order_number,outbound_package)");
     $pdo->exec("CREATE INDEX IF NOT EXISTS idx_claim_modified ON trendyol_claim_items(user_id,modified_ms,status)");
+    $pdo->exec("CREATE TABLE IF NOT EXISTS return_inventory_checks (
+        user_id INTEGER NOT NULL,item_id TEXT NOT NULL,claim_id TEXT NOT NULL,order_number TEXT NOT NULL,
+        outbound_package TEXT NOT NULL,line_id TEXT NOT NULL,barcode TEXT NOT NULL,claim_modified_ms INTEGER NOT NULL,
+        cost_units INTEGER NOT NULL,condition TEXT NOT NULL,recovery_units INTEGER NOT NULL,checked_at INTEGER NOT NULL,
+        PRIMARY KEY(user_id,item_id)
+    )");
+    $pdo->exec("CREATE INDEX IF NOT EXISTS idx_claim_inventory_line ON trendyol_claim_items(user_id,outbound_package,status,order_number,line_id,barcode)");
     $pdo->exec("CREATE TABLE IF NOT EXISTS sync_ranges (
         user_id INTEGER NOT NULL, marketplace TEXT NOT NULL, job TEXT NOT NULL,
         range_start INTEGER NOT NULL, range_end INTEGER NOT NULL,
