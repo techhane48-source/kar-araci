@@ -4,6 +4,7 @@ declare(strict_types=1);
 require_once __DIR__ . '/auth.php';
 require_once __DIR__ . '/crypto.php';
 require_once __DIR__ . '/profit.php';
+require_once __DIR__ . '/finance.php';
 
 // ---- İş mantığı: komisyon oranları + kâr hesabı ----
 
@@ -446,8 +447,8 @@ function sync_settlements_unlocked(int $userId, string $marketplace, int $days =
     $ins = $db->prepare("INSERT INTO settlements
         (user_id, marketplace, external_id, query_type, payment_order_id, barcode, transaction_type,
          commission_rate, commission_amount, seller_revenue, debt, credit, order_number,
-         shipment_package_id, payment_period, transaction_date, order_date)
-         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+         shipment_package_id, payment_period, transaction_date, order_date,raw_json,finance_scope)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
          ON CONFLICT(user_id, marketplace, external_id) DO UPDATE SET
            query_type=excluded.query_type, payment_order_id=excluded.payment_order_id,
            barcode=excluded.barcode, transaction_type=excluded.transaction_type,
@@ -455,7 +456,7 @@ function sync_settlements_unlocked(int $userId, string $marketplace, int $days =
            seller_revenue=excluded.seller_revenue, debt=excluded.debt, credit=excluded.credit,
            order_number=excluded.order_number, shipment_package_id=excluded.shipment_package_id,
            payment_period=excluded.payment_period, transaction_date=excluded.transaction_date,
-           order_date=excluded.order_date");
+           order_date=excluded.order_date,raw_json=excluded.raw_json,finance_scope=excluded.finance_scope");
     $total = 0;
     foreach ($types as $type) {
         for ($s = $start; $s <= $end; $s += 14 * 86400) {
@@ -475,7 +476,7 @@ function sync_settlements_unlocked(int $userId, string $marketplace, int $days =
                         $st['paymentOrderId'], $st['barcode'], $st['transactionType'],
                         $st['commissionRate'], $st['commissionAmount'], $st['sellerRevenue'],
                         $st['debt'], $st['credit'], $st['orderNumber'], $st['shipmentPackageId'],
-                        $st['paymentPeriod'], $td, $od]);
+                        $st['paymentPeriod'], $td, $od,json_encode($st['raw'],JSON_THROW_ON_ERROR|JSON_UNESCAPED_UNICODE),finance_is_domestic($st['raw'])?'domestic':'unverified']);
                     $total++;
                 }
                 $db->commit();
@@ -601,7 +602,8 @@ function check_trendyol_payout_unlocked(int $userId,string $id): array
         foreach($res['settlements'] as $r) $rows[$source][]=$r;
         usleep(650000);
     }
-    try {$summary=payout_components($rows['settlements'],$rows['otherfinancials'],$id);}
+    try {$summary=payout_components($rows['settlements'],$rows['otherfinancials'],$id);
+        $summary['candidate_check']=finance_payout_candidate($rows['settlements'],$rows['otherfinancials'],$id,(float)$payout['amount']);}
     catch(InvalidArgumentException $e){return ['ok'=>false,'error'=>$e->getMessage()];}
     db()->prepare("UPDATE trendyol_payouts SET summary_json=?,checked_at=? WHERE user_id=? AND seller_id=? AND payment_order_id=?")
         ->execute([json_encode($summary,JSON_THROW_ON_ERROR|JSON_UNESCAPED_UNICODE),time(),$userId,$int['seller_id'],$id]);

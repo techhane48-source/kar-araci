@@ -187,6 +187,17 @@ function migrate(): void
         last_attempt INTEGER NOT NULL, last_success INTEGER,
         state TEXT NOT NULL, PRIMARY KEY(user_id,marketplace,job)
     )");
+    $pdo->exec("CREATE TABLE IF NOT EXISTS analysis_jobs (
+        user_id INTEGER NOT NULL, kind TEXT NOT NULL, module TEXT NOT NULL,
+        headers_json TEXT NOT NULL, stats_json TEXT NOT NULL, created_at INTEGER NOT NULL,
+        PRIMARY KEY(user_id,kind,module)
+    )");
+    $pdo->exec("CREATE TABLE IF NOT EXISTS analysis_rows (
+        user_id INTEGER NOT NULL, kind TEXT NOT NULL,module TEXT NOT NULL,row_no INTEGER NOT NULL,
+        payload_json TEXT NOT NULL,best_profit REAL,
+        PRIMARY KEY(user_id,kind,module,row_no)
+    )");
+    $pdo->exec("CREATE INDEX IF NOT EXISTS idx_analysis_profit ON analysis_rows(user_id,kind,module,best_profit)");
     $pdo->exec("CREATE TABLE IF NOT EXISTS trendyol_buybox (
         user_id INTEGER NOT NULL, seller_id TEXT NOT NULL, barcode TEXT NOT NULL,
         buybox_rank INTEGER NOT NULL, buybox_price REAL NOT NULL, multiple_sellers INTEGER NOT NULL,
@@ -224,13 +235,15 @@ function migrate(): void
     $pdo->exec("CREATE INDEX IF NOT EXISTS idx_cargo_order ON trendyol_cargo_items(user_id, order_number)");
     // Legacy rows have no authoritative ID; keep them but do not count as verified finance.
     $settlementCols = array_column($pdo->query("PRAGMA table_info(settlements)")->fetchAll(PDO::FETCH_ASSOC), 'name');
-    foreach (['external_id', 'query_type', 'payment_order_id'] as $col) {
+    foreach (['external_id', 'query_type', 'payment_order_id','raw_json','finance_scope'] as $col) {
         if (!in_array($col, $settlementCols, true)) {
             $pdo->exec("ALTER TABLE settlements ADD COLUMN $col TEXT DEFAULT NULL");
         }
     }
     $pdo->exec("CREATE UNIQUE INDEX IF NOT EXISTS uq_settlements_external
         ON settlements(user_id, marketplace, external_id)");
+    $pdo->exec("CREATE INDEX IF NOT EXISTS idx_settlements_scope ON settlements(user_id,marketplace,finance_scope,query_type,transaction_date)");
+    $pdo->exec("CREATE INDEX IF NOT EXISTS idx_settlements_package ON settlements(user_id,marketplace,shipment_package_id)");
 
     $pdo->exec("CREATE TABLE IF NOT EXISTS settings (
         key TEXT PRIMARY KEY,

@@ -317,3 +317,9 @@ function aggregate_report_lines(array $orders,array $products,bool $byCategory=f
     }
     return ['groups'=>$groups,'excluded'=>$excluded];
 }
+
+/** Excel must not execute user/API supplied text as formulas. Numeric fields remain numeric. */
+function csv_safe_text(string $v): string
+{
+    return preg_match('/^[\x00-\x20]*[=+@-]/',$v) || preg_match('/^[\t\r\n]/',$v) ? "'".$v : $v;
+}

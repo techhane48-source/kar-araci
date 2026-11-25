@@ -61,7 +61,7 @@ if($rapor==='order'){
     $types=$rapor==='return'?['Return','ManualRefund','ManualRefundCancel']:['Discount','DiscountCancel','Coupon','CouponCancel','TyDiscount','TyDiscountCancel','TyCoupon','TyCouponCancel'];
     $reportCols=['Barkod','Ürün','İşlem türü','İşlem kaydı adedi','Alacak','Borç','Borç − alacak'];
     $q=db()->prepare("SELECT barcode,query_type,COUNT(*) AS n,SUM(credit) AS credit,SUM(debt) AS debt FROM settlements
-        WHERE user_id=? AND marketplace=? AND external_id IS NOT NULL AND transaction_date>=? AND query_type IN (".implode(',',array_fill(0,count($types),'?')).") GROUP BY barcode,query_type ORDER BY barcode,query_type");
+        WHERE user_id=? AND marketplace=? AND external_id IS NOT NULL AND finance_scope='domestic' AND transaction_date>=? AND query_type IN (".implode(',',array_fill(0,count($types),'?')).") GROUP BY barcode,query_type ORDER BY barcode,query_type");
     $q->execute(array_merge([$u['id'],$mp,$fromTs],$types));
     $credit=0.0;$debt=0.0;$n=0;
     foreach($q->fetchAll() as $row){$bc=(string)$row['barcode'];$c=(float)$row['credit'];$d=(float)$row['debt'];$count=(int)$row['n'];
@@ -102,7 +102,7 @@ if($rapor==='order'){
 if(in_array($rapor,['return','campaign','ads'],true)){
     $job=$rapor==='ads'?'documents':'settlements';
     $q=db()->prepare("SELECT state,last_success FROM sync_status WHERE user_id=? AND marketplace=? AND job=?");$q->execute([$u['id'],$mp,$job]);$st=$q->fetch();
-    $reportNote.=' Son başarılı senkron: '.($st&&!empty($st['last_success'])?date('d.m.Y H:i',(int)$st['last_success']):'yok').'. Son işlem: '.($st['state']??'bilinmiyor').'. Tarih aralığının tümünün çekildiği garanti edilmez.';
+    $reportNote.=' Son başarılı senkron: '.($st&&!empty($st['last_success'])?date('d.m.Y H:i',(int)$st['last_success']):'yok').'. Son işlem: '.($st['state']??'bilinmiyor').'. Tarih aralığının tümünün çekildiği garanti edilmez. Kapsamı doğrulanmamış eski finans kayıtları tekrar çekilmeli.';
 }
 
 // CSV indir
@@ -112,7 +112,7 @@ if (isset($_GET['export'])) {
     echo "\xEF\xBB\xBF";
     $out = fopen('php://output', 'w');
     fputcsv($out, $reportCols);
-    foreach ($reportRows as $r) fputcsv($out, array_map(fn($v) => is_float($v) ? number_format($v, 2, '.', '') : $v, $r));
+    foreach ($reportRows as $r) fputcsv($out, array_map(fn($v) => is_float($v) ? number_format($v, 2, '.', '') : (is_string($v)?csv_safe_text($v):$v), $r));
     fclose($out);
     exit;
 }

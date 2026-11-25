@@ -2,7 +2,7 @@
 // includes/xlsx.php — minimal OOXML reader/writer (no PhpSpreadsheet).
 // Melontik parity: ürettiğimiz .xlsx Melontik'in "Ürün Ayarları" Excel'iyle birebir yapıda olmalı.
 
-function xlsx_read(string $path): array {
+function xlsx_read(string $path,bool $percentText=false): array {
     $zip=new ZipArchive();
     if($zip->open($path)!==true) throw new RuntimeException('XLSX açılamadı.');
     try {
@@ -18,6 +18,19 @@ function xlsx_read(string $path): array {
         };
         $shared=[];$ss=$read('xl/sharedStrings.xml',false);
         if($ss!==null)foreach($ss->si as $si){$v=(string)$si->t;foreach($si->r as $r)$v.=(string)$r->t;$shared[]=$v;}
+        // Preserve percent-formatted Excel values as human percentages for analysis.
+        $percentStyles=[];
+        if($percentText){
+            $styles=$read('xl/styles.xml',false);
+            if($styles!==null){
+                $percentFormats=[9=>true,10=>true];
+                foreach($styles->numFmts->numFmt??[] as $fmt){
+                    $code=(string)$fmt['formatCode'];
+                    if(preg_match('/%/',preg_replace('/"[^"]*"|\\\\./','',$code)))$percentFormats[(int)$fmt['numFmtId']]=true;
+                }
+                $idx=0;foreach($styles->cellXfs->xf??[] as $xf){if(isset($percentFormats[(int)$xf['numFmtId']]))$percentStyles[$idx]=true;$idx++;}
+            }
+        }
         $sheet=$read('xl/worksheets/sheet1.xml');$headers=null;$rows=[];$headerRow=0;
         foreach($sheet->sheetData->row as $row){
             $cells=[];$max=0;
@@ -29,7 +42,10 @@ function xlsx_read(string $path): array {
                 if(isset($c->f))$v=''; // do not treat cached formula values as authoritative inputs
                 elseif($type==='s')$v=$shared[(int)$c->v]??'';
                 elseif($type==='inlineStr'){$v=(string)$c->is->t;foreach($c->is->r as $r)$v.=(string)$r->t;}
-                else $v=(string)$c->v;
+                else {
+                    $v=(string)$c->v;
+                    if($percentText&&isset($percentStyles[(int)$c['s']])&&is_numeric($v))$v=rtrim(rtrim(number_format((float)$v*100,8,'.',''),'0'),'.').'%';
+                }
                 $cells[$col]=$v;$max=max($max,$col);
             }
             $arr=[];for($i=1;$i<=$max;$i++)$arr[]=$cells[$i]??'';

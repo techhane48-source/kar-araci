@@ -104,6 +104,7 @@ final class TrendyolClient
         $seenTokens = [];
         $contentCount = 0;
         $total = null;
+        $seenContent=[];
         for ($page = 0; $page < $maxPage; $page++) {
             $params = $base;
             if ($token === null) $params['page'] = (string)$page;
@@ -120,16 +121,26 @@ final class TrendyolClient
                 $total = (int)$body['totalElements'];
             }
             $items = $body['content'];
+            if (isset($body['totalElements']) && (int)$body['totalElements']!==$total) return ['ok'=>false,'error'=>'Katalog tarama sırasında değişti; yeniden deneyin.'];
+            foreach($items as $item){
+                if(!isset($item['contentId']))continue;
+                $id=(string)$item['contentId'];
+                if(isset($seenContent[$id]))return ['ok'=>false,'error'=>'Katalogda yinelenen içerik sayfası.'];
+                $seenContent[$id]=true;
+            }
             try {
-                foreach (self::normalizeApprovedContent($items) as $p) $all[$p['barcode']] = $p;
+                foreach (self::normalizeApprovedContent($items) as $p) {
+                    if(isset($all[$p['barcode']]))return ['ok'=>false,'error'=>'Katalogda yinelenen barkod.'];
+                    $all[$p['barcode']] = $p;
+                }
             } catch (UnexpectedValueException $e) {
                 return ['ok' => false, 'error' => $e->getMessage()];
             }
             $contentCount += count($items);
-            if ($contentCount >= $total && ($token === null || empty($body['nextPageToken']) || count($items) < $size)) {
+            if ($contentCount === $total) {
                 return ['ok' => true, 'products' => array_values($all), 'count' => count($all)];
             }
-            if (!$items) return ['ok' => false, 'error' => 'Ürün V2 eksik kayıt döndürdü.'];
+            if (!$items || $contentCount > $total) return ['ok' => false, 'error' => 'Ürün V2 tutarsız kayıt sayısı döndürdü.'];
             if ($token !== null || ($page + 1) * $size >= 10000) {
                 $next = (string)($body['nextPageToken'] ?? '');
                 if ($next === '' || isset($seenTokens[$next])) {
@@ -289,6 +300,7 @@ final class TrendyolClient
         $all = [];
         $page = 0;
         $size = 500;
+        $seen=[];$expected=null;$pages=null;
         if (!in_array($source, ['settlements', 'otherfinancials'], true)) return ['ok'=>false,'error'=>'Geçersiz finans servisi.'];
 
         while (true) {
@@ -309,9 +321,11 @@ final class TrendyolClient
                 return ['ok' => false, 'error' => ($res['error'] ?? 'Cari hesap ekstresi çekilemedi') . " (HTTP {$res['http']})"];
             }
 
-            if (!is_array($res['body']['content'] ?? null) || !isset($res['body']['totalPages'])) {
+            if (!is_array($res['body']['content'] ?? null) || !is_numeric($res['body']['totalPages']??null) || !is_numeric($res['body']['totalElements']??null)) {
                 return ['ok' => false, 'error' => 'Cari hesap ekstresi yanıtı eksik.'];
             }
+            $expected=$expected??(int)$res['body']['totalElements'];$pages=$pages??(int)$res['body']['totalPages'];
+            if($expected!==(int)$res['body']['totalElements']||$pages!==(int)$res['body']['totalPages'])return ['ok'=>false,'error'=>'Finansal kayıtlar sorgu sırasında değişti.'];
             if ((int)$res['body']['totalPages'] > $maxPage) {
                 return ['ok' => false, 'error' => 'Finansal kayıt sayfa sınırı aşıldı.'];
             }
@@ -323,8 +337,16 @@ final class TrendyolClient
                 if (trim((string)($it['id'] ?? '')) === '') {
                     return ['ok' => false, 'error' => 'Finansal işlem kimliği eksik.'];
                 }
+                $id=(string)$it['id'];
+                if(isset($seen[$id]))return ['ok'=>false,'error'=>'Yinelenen finansal işlem sayfası.'];
+                $seen[$id]=true;
+                if((string)($it['sellerId']??'')!==$this->sellerId || !is_numeric($it['transactionDate']??null)
+                    || (float)$it['transactionDate']<=0 || !is_numeric($it['credit']??null) || !is_numeric($it['debt']??null))
+                    return ['ok'=>false,'error'=>'Finansal işlem satıcısı, tarihi veya borç/alacağı eksik.'];
+                if($paymentOrderId!==null && (string)($it['paymentOrderId']??'')!==$paymentOrderId)
+                    return ['ok'=>false,'error'=>'Finansal işlem ödeme emri uyuşmuyor.'];
                 $all[] = [
-                    'externalId' => (string)$it['id'],
+                    'externalId' => $id,
                     'queryType' => $transactionType,
                     'source' => $source,
                     'raw' => $it,
@@ -351,6 +373,7 @@ final class TrendyolClient
             }
         }
 
+        if(count($all)!==$expected)return ['ok'=>false,'error'=>'Finansal toplam kayıt sayısı uyuşmuyor.'];
         return ['ok' => true, 'settlements' => $all, 'count' => count($all)];
     }
 
@@ -398,21 +421,25 @@ final class TrendyolClient
     /** Read actual invoice rows; no guessed allocation to shipment packages. */
     public function getCargoInvoiceItems(string $serial, int $maxPage = 2000): array
     {
-        $all = [];
+        $all = [];$expected=null;$pages=null;$seen=[];
         $path = "/integration/finance/che/sellers/{$this->sellerId}/cargo-invoice/" . rawurlencode($serial) . "/items";
         for ($page = 0; $page < $maxPage; $page++) {
             $res = $this->request('GET', $path, ['page'=>(string)$page, 'size'=>'500']);
             $body = $res['body'] ?? [];
-            if (($res['http'] ?? 0) !== 200 || !is_array($body['content'] ?? null) || !isset($body['totalPages'])) {
+            if (($res['http'] ?? 0) !== 200 || !is_array($body['content'] ?? null) || (!is_numeric($body['totalPages']??null)||!is_numeric($body['totalElements']??null))) {
                 return ['ok'=>false,'error'=>'Kargo faturası yanıtı eksik veya başarısız.'];
             }
+            $expected=$expected??(int)$body['totalElements'];$pages=$pages??(int)$body['totalPages'];
+            if($expected!==(int)$body['totalElements']||$pages!==(int)$body['totalPages'])return ['ok'=>false,'error'=>'Kargo faturası sayfa sayısı değişti.'];
             if (!$body['content'] && $page < (int)$body['totalPages']) return ['ok'=>false,'error'=>'Kargo faturası eksik sayfa.'];
             foreach ($body['content'] as $row) {
                 if (!isset($row['parcelUniqueId'], $row['orderNumber'], $row['amount'], $row['desi'], $row['shipmentPackageType'])
                     || !is_numeric($row['amount']) || !is_numeric($row['desi'])) return ['ok'=>false,'error'=>'Kargo fatura kalemi eksik.'];
-                $all[] = $row;
+                $key=(string)$row['parcelUniqueId'].'|'.(string)$row['shipmentPackageType'];
+                if(isset($seen[$key]))return ['ok'=>false,'error'=>'Kargo faturasında yinelenen paket; manuel doğrulama gerekli.'];
+                $seen[$key]=true;$all[] = $row;
             }
-            if ($page + 1 >= (int)$body['totalPages']) return ['ok'=>true,'items'=>$all];
+            if ($page + 1 >= (int)$body['totalPages']) return count($all)===$expected?['ok'=>true,'items'=>$all]:['ok'=>false,'error'=>'Kargo kalemi sayısı uyuşmuyor.'];
         }
         return ['ok'=>false,'error'=>'Kargo faturası sayfa sınırı aşıldı.'];
     }
@@ -421,6 +448,21 @@ final class TrendyolClient
      * Düşük seviyeli HTTP isteği. Trendyol Basic auth + User-Agent zorunlu.
      */
     private function request(string $method, string $path, array $query = [], ?string $body = null): array
+    {
+        // Retrying writes can duplicate side effects after a lost response.
+        $tries=$method==='GET'?3:1;
+        for($i=0;$i<$tries;$i++){
+            $res=$this->requestOnce($method,$path,$query,$body);
+            $http=(int)($res['http']??0);
+            if(!in_array($http,[0,429,500,502,503,504],true)||$i+1===$tries)return $res;
+            $wait=max(1<<$i,(int)($res['retry_after']??0));
+            if($wait>30)return $res; // defer long backoff to next job, never ignore Retry-After
+            if($this->testTransport===null)usleep($wait*1000000+random_int(0,250000));
+        }
+        return ['http'=>0,'error'=>'İstek tamamlanamadı.'];
+    }
+
+    private function requestOnce(string $method,string $path,array $query,?string $body): array
     {
         if ($this->testTransport !== null) return ($this->testTransport)($method,$path,$query,$body);
         $url = $this->base . $path;
@@ -439,7 +481,12 @@ final class TrendyolClient
         }
 
         $ch = curl_init($url);
+        $retryAfter=0;
         curl_setopt_array($ch, [
+            CURLOPT_HEADERFUNCTION => static function($ch,string $line)use(&$retryAfter):int {
+                if(stripos($line,'Retry-After:')===0){$v=trim(substr($line,12));$retryAfter=ctype_digit($v)?(int)$v:max(0,(strtotime($v)?:0)-time());}
+                return strlen($line);
+            },
             CURLOPT_RETURNTRANSFER => true,
             CURLOPT_HTTPHEADER => $headers,
             CURLOPT_TIMEOUT => 20,
@@ -468,8 +515,8 @@ final class TrendyolClient
             return ['http' => 0, 'error' => 'Bağlantı hatası: ' . $errMsg];
         }
 
-        $decoded = json_decode($body, true);
-        return ['http' => $http, 'body' => $decoded, 'raw' => $body];
+        $decoded = json_decode($body, true, 512, JSON_BIGINT_AS_STRING);
+        return ['http' => $http, 'body' => $decoded, 'retry_after'=>$retryAfter];
     }
 
     /**

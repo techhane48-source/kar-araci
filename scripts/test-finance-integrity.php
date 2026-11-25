@@ -1,0 +1,38 @@
+<?php
+declare(strict_types=1);
+require_once __DIR__.'/../includes/trendyol.php';
+require_once __DIR__.'/../includes/finance.php';
+require_once __DIR__.'/../includes/profit.php';
+$tests=[];$calls=0;
+$client=new TrendyolClient('123','fake','fake',true,static function($m,$p,$q,$b)use(&$calls){
+    $calls++;if($calls===1)return ['http'=>429,'retry_after'=>1];
+    return ['http'=>200,'body'=>['content'=>[],'totalElements'=>0,'totalPages'=>0]];
+});
+$tests['GET transient retry']=$client->getProducts()['ok']&&$calls===2;
+$calls=0;$client=new TrendyolClient('123','fake','fake',true,static function()use(&$calls){$calls++;return ['http'=>503];});
+$tests['write never replayed']=!$client->updatePriceAndInventory([['barcode'=>'001','salePrice'=>100]])['ok']&&$calls===1;
+$calls=0;$client=new TrendyolClient('123','fake','fake',true,static function()use(&$calls){$calls++;return ['http'=>429,'retry_after'=>120];});
+$tests['long retry-after deferred']=!$client->getProducts()['ok']&&$calls===1;
+$raw=['id'=>'1','sellerId'=>123,'transactionDate'=>1762253333685,'credit'=>100.0,'debt'=>0.0,'sellerRevenue'=>80.0,'commissionAmount'=>20.0,'paymentOrderId'=>7,'affiliate'=>'TRENDYOLTR','country'=>'Türkiye'];
+$client=new TrendyolClient('123','fake','fake',true,static fn()=>['http'=>200,'body'=>['content'=>[$raw],'totalElements'=>2,'totalPages'=>1]]);
+$tests['truncated finance rejected']=!$client->getSettlements('Sale','2025-11-04','2025-11-05')['ok'];
+$client=new TrendyolClient('123','fake','fake',true,static fn()=>['http'=>200,'body'=>['content'=>[$raw],'totalElements'=>1,'totalPages'=>1]]);
+$rr=$client->getSettlements('Sale','','',5,'settlements','7');
+$tests['valid financial data accepted']=$rr['ok']&&$rr['count']===1;
+$bad=$raw;$bad['sellerId']=999;
+$client=new TrendyolClient('123','fake','fake',true,static fn()=>['http'=>200,'body'=>['content'=>[$bad],'totalElements'=>1,'totalPages'=>1]]);
+$tests['foreign seller rejected']=!$client->getSettlements('Sale','','',5,'settlements','7')['ok'];
+$tests['sub cent precision']=finance_units(67.4985)===674985;
+$base=['paymentOrderId'=>'7','queryType'=>'Sale','externalId'=>'1','raw'=>$raw];
+$refund=$base;$refund['externalId']='2';$refund['queryType']='Return';$refund['raw']['sellerRevenue']=8;$refund['raw']['commissionAmount']=2;
+$doc=$base;$doc['externalId']='3';$doc['queryType']='Stoppage';$doc['raw']['credit']=0;$doc['raw']['debt']=2;
+$pay=$doc;$pay['externalId']='4';$pay['queryType']='PaymentOrder';$pay['raw']['debt']=70;
+$check=finance_payout_candidate([$base,$base,$refund],[$doc,$pay],'7',70);
+$tests['candidate no double commission']=abs($check['candidate']-70)<0.00001&&abs($check['candidate_difference'])<0.00001&&$check['bank_verified']===false;
+$tests['statement match']=abs($check['statement_difference'])<0.00001;
+$bad=$base;$bad['raw']['country']='Azerbaycan';
+$check=finance_payout_candidate([$bad],[$pay],'7',70);
+$tests['foreign scope withheld']=$check['candidate']===null&&!$check['complete_inputs'];
+$tests['CSV formula text escaped']=csv_safe_text('=1+1')==="'=1+1"&&csv_safe_text('001')==='001';
+foreach($tests as $n=>$ok)echo ($ok?'PASS':'FAIL')." $n\n";
+exit(in_array(false,$tests,true)?1:0);

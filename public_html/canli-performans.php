@@ -24,10 +24,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'save_
         flash_set('error', 'Oturum süresi doldu.');
     } else {
         $pid = (int)($_POST['pid'] ?? 0);
-        $cost = (float)str_replace(',', '.', (string)($_POST['cost'] ?? '0'));
-        if ($pid > 0) {
-            db()->prepare("UPDATE products SET cost = ? WHERE id = ? AND user_id = ?")
-               ->execute([$cost, $pid, $u['id']]);
+        $cost = parse_money_input((string)($_POST['cost'] ?? ''));
+        if ($pid > 0 && $cost !== null && $cost >= 0) {
+            db()->prepare("UPDATE products SET cost = ? WHERE id = ? AND user_id = ? AND marketplace = ?")
+               ->execute([$cost, $pid, $u['id'],$mp]);
             flash_set('success', 'Maliyet güncellendi.');
         }
     }
