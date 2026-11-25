@@ -35,6 +35,7 @@ foreach ($catalogProducts as $p) {
 // Siparişler
 $q = db()->prepare("SELECT * FROM orders WHERE user_id = ? AND marketplace = ? AND order_date >= ? ORDER BY order_date DESC");
 $q->execute([$u['id'], $mp, $fromTs]);
+$expenseEvidence=$mp==='trendyol'?period_expense_evidence(db(),(int)$u['id'],$fromTs,time()):null;
 $orders = commission_profit_overlay(db(),(int)$u['id'],cargo_profit_overlay(db(),(int)$u['id'],cost_history_overlay(db(),(int)$u['id'],$q->fetchAll())));
 
 // Aggregasyon
@@ -136,6 +137,18 @@ require __DIR__ . '/../includes/header.php';
 
   <?php $excludedCurrency=count(array_filter($orders,static fn($o)=>!order_is_domestic_try($o))); if($excludedCurrency): ?><p class="hint"><?= $excludedCurrency ?> paket ülke/para birimi doğrulanmadığından TL cirosuna dahil edilmedi. Eski kayıtları tekrar senkronize edin.</p><?php endif; ?>
   <p class="hint">Kâr tahmini <?= $maliyetliSiparis ?>/<?= $siparis ?> paket üzerinden; reklam, ceza ve diğer mağaza giderleri henüz kesin net kâra işlenmiyor.</p>
+  <?php if($expenseEvidence!==null): ?>
+  <div class="card" style="margin:12px 0">
+    <h2>Dönemde kaydedilen gerçek finans hareketleri</h2>
+    <p class="hint">İşlem tarihine göre; aşağıdaki tutarlar sipariş tarihi bazlı tahmini kârdan tekrar düşülmez. Stopaj vergi avansı/nakit kesintisidir. Fatura KDV niteliği ve siparişe dağılımı ayrıca doğrulanmalıdır.</p>
+    <table><tr><th>Hareket</th><th>Borç</th><th>Alacak / iptal</th><th>Gözlemlenen net kesinti</th><th>Kapsam</th></tr>
+    <?php foreach(['service'=>'Platform hizmet bedeli','withholding'=>'E-ticaret stopajı','cargo'=>'Kargo faturaları','other_invoice'=>'Diğer hizmet faturaları','other_adjustment'=>'Diğer düzeltme / iade belgeleri'] as $key=>$label):$g=$expenseEvidence['groups'][$key]; ?>
+      <tr><td><?=h($label)?></td><td><?=$g['count']?tl($g['debt']/10000.0):'—'?></td><td><?=$g['count']?tl($g['credit']/10000.0):'—'?></td><td><?=$g['observed_net']===null?'—':tl($g['observed_net'])?></td><td><?= $g['coverage_complete']?'Aralık sorgulandı':'Eksik / doğrulanmadı' ?> (<?=$g['count']?> kayıt, <?=$g['excluded']?> hariç)</td></tr>
+    <?php endforeach; ?>
+    </table>
+    <p><a href="raporlar.php?r=period_finance&amp;days=<?=in_array($days,[7,15,30],true)?$days:7?>">Dönem finans hareketleri</a></p>
+  </div>
+  <?php endif; ?>
   <?php if ($maliyetliCiro < $ciro): ?>
     <p class="hint" style="margin:8px 0">
       <?= tl($ciro - $maliyetliCiro) ?> ciro <?= $siparis - $maliyetliSiparis ?> siparişte kâr hesaplanamadı — bu ürünlere <a href="urunler.php">maliyet gir</a>.
@@ -187,8 +200,8 @@ require __DIR__ . '/../includes/header.php';
       <tr><td>Ürün Maliyeti</td><td class="tar"><?= tl($urunMaliyeti) ?></td></tr>
       <tr><td>Komisyon</td><td class="tar"><?= tl($komisyon) ?></td></tr>
       <tr><td>Kargo Ücreti</td><td class="tar"><?= tl($kargo) ?></td></tr>
-      <tr><td>Hizmet Bedeli</td><td class="tar"><?= tl($hizmet) ?></td></tr>
-      <tr><td>Stopaj Kesintisi</td><td class="tar"><?= tl($stopaj) ?></td></tr>
+      <tr><td>Tahmini Hizmet Bedeli</td><td class="tar"><?= tl($hizmet) ?></td></tr>
+      <tr><td>Tahmini Stopaj Kesintisi</td><td class="tar"><?= tl($stopaj) ?></td></tr>
       <tr><td>Net KDV</td><td class="tar"><?= tl($netKdv) ?></td></tr>
       <tr><td>Reklam Harcaması</td><td class="tar">— <span class="hint">(mutabakat yok)</span></td></tr>
       <tr><td>Ceza</td><td class="tar">— <span class="hint">(doğrulanmadı)</span></td></tr>

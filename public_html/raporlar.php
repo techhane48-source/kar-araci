@@ -136,7 +136,7 @@ if($rapor==='order'){
     $data=$mp==='trendyol'?period_finance(db(),(int)$u['id'],$fromTs,time()):['groups'=>[],'excluded'=>0,'coverage'=>[]];
     foreach($data['groups'] as $label=>$g)$reportRows[]=[$label,$g['count'],$g['credit']/10000.0,$g['debt']/10000.0,($g['debt']-$g['credit'])/10000.0];
     $summary=['Hareket grubu'=>count($reportRows),'Doğrulanamayan kayıt'=>$data['excluded'],'Kesin dönem net kârı'=>'—'];
-    $reportNote='İşlem tarihine göre mevcut yurtiçi finansal kayıtlar. Hizmet bedeli resmî filtre ve genel ekstre eşleşmesiyle sınıflanır. Reklam açıklamaları adaydır; gerçek reklam harcaması veya ROAS değildir. Kargo fatura detayı ayrıca toplanmaz. Stopaj nakit kesintisidir; bu tablo net kâr değildir. Kayıt yoksa sıfır gider kabul edilmez.';
+    $reportNote='İşlem tarihine göre mevcut yurtiçi finansal kayıtlar. Hizmet bedeli resmî filtre ve genel ekstre eşleşmesiyle sınıflanır; kargo faturasıyla çelişen sınıflama kabul edilmez. Stopaj iptalleri alacak olarak net kesintiyi azaltır. Bu tutarlar sipariş tahminlerine ikinci kez eklenmez. Reklam açıklamaları adaydır; gerçek reklam harcaması veya ROAS değildir. Kargo fatura detayı ayrıca toplanmaz. Stopaj nakit kesintisidir; bu tablo net kâr değildir. Kayıt yoksa sıfır gider kabul edilmez.';
     foreach(['settlements_transaction'=>'Ekstre','documents_transaction'=>'Belgeler','service_fee_transaction'=>'Hizmet bedeli'] as $job=>$label)$reportNote.=' '.$label.': '.sync_coverage_label(db(),(int)$u['id'],$mp,$job,$fromTs,time());
 }elseif($rapor==='buybox'){
     $reportCols=['Barkod','Ürün','Bizim Fiyat','Buybox Sırası','Buybox Fiyatı','Fiyat Farkı','Son Sorgu','Güncellik'];

@@ -27,4 +27,20 @@ $t['ad only candidate']=$r['groups']['Reklam / influencer adayı']['debt']===500
 $t['wrong seller excluded']=$r['excluded']===1;
 $t['coverage missing']=count($r['coverage']['service_fee_transaction'])===1;
 $t['schema migration version']=(int)$db->query('PRAGMA user_version')->fetchColumn()>=2;
+$cargo=array_replace($row,['raw'=>array_replace($raw,['transactionType'=>'Kargo Faturası'])]);
+try{service_fee_ids([$cargo],[$cargo],'123');$t['cargo cannot be service fee']=false;}catch(InvalidArgumentException $ex){$t['cargo cannot be service fee']=true;}
+$wrong=array_replace($row,['raw'=>array_replace($raw,['transactionSubType'=>'Other'])]);
+try{service_fee_ids([$wrong],[$wrong],'123');$t['explicit conflicting subtype rejected']=false;}catch(InvalidArgumentException $ex){$t['explicit conflicting subtype rejected']=true;}
+$ins->execute([1,'F5','Stoppage','E-ticaret Stopaj İptali',$now-1,json_encode(array_replace($raw,['id'=>'F5','transactionType'=>'E-ticaret Stopaj İptali','debt'=>0,'credit'=>0.5])),null]);
+$ins->execute([1,'F6','DeductionInvoices','Kargo Faturası',$now-1,json_encode(array_replace($raw,['id'=>'F6','transactionType'=>'Kargo Faturası','debt'=>65])),1]);
+$ex=period_expense_evidence($db,1,$now-10,$now);
+$t['actual service separated']=$ex['groups']['service']['observed_net']===13.19&&$ex['groups']['service']['excluded']===1;
+$t['withholding cancellation offsets']=$ex['groups']['withholding']['observed_net']===1.5;
+$t['cargo not double classified']=$ex['groups']['cargo']['observed_net']===65.0;
+$t['missing coverage not complete']=!$ex['groups']['service']['coverage_complete'];
+$t['empty period unknown']=period_expense_evidence($db,1,$now+1,$now+10)['groups']['service']['observed_net']===null;
+sync_record_range($db,1,'trendyol','documents_transaction',$now-10,$now);
+sync_record_range($db,1,'trendyol','service_fee_transaction',$now-10,$now);
+$ex=period_expense_evidence($db,1,$now-10,$now);
+$t['coverage does not erase excluded rows']=!$ex['groups']['service']['coverage_complete']&&$ex['groups']['withholding']['coverage_complete'];
 foreach($t as $n=>$ok)echo ($ok?'PASS':'FAIL')." $n\n";exit(in_array(false,$t,true)?1:0);

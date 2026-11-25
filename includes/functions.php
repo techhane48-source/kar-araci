@@ -549,7 +549,7 @@ function sync_trendyol_documents_unlocked(int $userId, int $days = 30): array
         (user_id,external_id,query_type,transaction_type,payment_order_id,transaction_date,raw_json)
         VALUES(?,?,?,?,?,?,?) ON CONFLICT(user_id,external_id) DO UPDATE SET
         query_type=excluded.query_type,transaction_type=excluded.transaction_type,
-        payment_order_id=excluded.payment_order_id,transaction_date=excluded.transaction_date,raw_json=excluded.raw_json");
+        payment_order_id=excluded.payment_order_id,transaction_date=excluded.transaction_date,raw_json=excluded.raw_json,service_fee_verified=NULL");
     $end = time()-1;
     $start = $end - max(1,min(90,$days))*86400+1;
     $count = 0; $invoices = [];
