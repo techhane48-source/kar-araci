@@ -9,7 +9,7 @@ $tests['separate purchase VAT']=product_profit($p)['profit']<$r['profit'];
 $p['stopaj_mode']='manual';$p['stopaj']=0;
 $tests['manual zero preserved']=product_profit($p)['stopaj']===0.0;
 $target=product_target_price($p,80,0);
-$tests['inverse fixed stopaj']= $target['ok'] && abs(product_profit($p,$target['price'])['profit']-80)<0.00001;
+$tests['inverse fixed stopaj']= $target['ok'] && product_profit($p,$target['price'])['profit']>=80-1e-8 && product_profit($p,$target['price']-0.01)['profit']<80;
 $p['kdv']=0;$p['cost_vat']=0;
 $tests['zero VAT stays zero']=product_profit($p)['net_kdv']===0.0;
 foreach($tests as $k=>$ok) echo ($ok?'PASS':'FAIL')." $k\n";

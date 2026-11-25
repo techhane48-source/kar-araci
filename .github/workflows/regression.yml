@@ -36,6 +36,8 @@ jobs:
           php scripts/test-claims.php
           php scripts/test-order-evidence.php
           php scripts/test-cost-history.php
+          php scripts/test-calculator-matrix.php /tmp/karfiyat-calculator-matrix.json
+          node scripts/test-calculator-parity.js /tmp/karfiyat-calculator-matrix.json
       - name: Isolated HTTP smoke test
         run: python3 scripts/test-http-smoke.py
       - name: JavaScript syntax

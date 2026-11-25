@@ -136,7 +136,7 @@ require __DIR__ . '/../includes/header.php';
           <div class="target-row">
             <div>
               <input type="number" id="targetProfit" value="50" step="0.01" placeholder="Kâr ₺">
-              <div class="hint">Hedef net kâr (₺)</div>
+              <div class="hint">Hedef net kâr (₺); pozitif marj girilirse marj önceliklidir.</div>
             </div>
             <div>
               <input type="number" id="targetMargin" value="0" step="0.1" placeholder="Marj %">
@@ -353,13 +353,14 @@ require __DIR__ . '/../includes/header.php';
 </div>
 
 <script>window.CATEGORIES = <?= json_encode(categories(), JSON_UNESCAPED_UNICODE) ?>;</script>
-<script src="assets/app.js?v=5"></script>
+<script src="assets/app.js?v=6"></script>
 <?php if ($u): ?>
 <script>
 document.getElementById("save-btn").addEventListener("click", async () => {
+  if(!calculationValid){alert("Önce geçerli bir hesaplama yapın.");return;}
   const category = window.CATEGORIES[+document.getElementById("category").value].name;
   const priceVal = mode === "price" ? lastPrice
-    : mode === "campaign" ? num("price") * (1 - num("discount") / 100) : num("price");
+    : mode === "campaign" ? Math.round((num("price") * (1 - num("discount") / 100)+Number.EPSILON)*100)/100 : num("price");
   if (!Number.isFinite(priceVal) || priceVal <= 0) {
     alert("Geçerli ve pozitif bir satış fiyatı hesaplayın.");
     return;

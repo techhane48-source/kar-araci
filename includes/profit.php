@@ -67,6 +67,30 @@ function trendyol_service_fee(): float
  * @param float $targetMargin  hedef kâr marjı (%) = kâr / satış. 0 ise $targetProfit kullanılır.
  * @param float $stopajRate    stopaj oranı (%) — Trendyol %1.
  */
+/** Search each linear segment separately; never skip a feasible VAT-floor peak. */
+function minimum_price_cents(callable $objective,?float $breakpoint,int $maxCents=10000000000): ?int
+{
+    $segments=[[1,$maxCents]];
+    if($breakpoint!==null&&is_finite($breakpoint)&&$breakpoint>0&&$breakpoint<$maxCents/100){
+        $split=(int)floor($breakpoint*100);
+        $segments=[[1,$split],[$split+1,$maxCents]];
+    }
+    $eps=1e-8;
+    foreach($segments as [$lo,$hi]){
+        if($hi<$lo)continue;
+        $left=$objective($lo/100.0);$right=$objective($hi/100.0);
+        if(!is_finite($left)||!is_finite($right))continue;
+        if($left>=-$eps)return $lo;
+        if($right<-$eps)continue;
+        while($lo<$hi){
+            $mid=$lo+intdiv($hi-$lo,2);
+            if($objective($mid/100.0)>=-$eps)$hi=$mid;else $lo=$mid+1;
+        }
+        if($objective($lo/100.0)>=-$eps)return $lo;
+    }
+    return null;
+}
+
 function calc_price(float $cost, float $cargo, float $rate, float $kdvRate = 20.0,
                     float $extraFee = 0.0, float $serviceFee = 13.19, float $stopajRate = 1.0,
                     float $returnRate = 0.0, float $targetProfit = 0.0, float $targetMargin = 0.0, array $options = []): array
@@ -85,29 +109,39 @@ function calc_price(float $cost, float $cargo, float $rate, float $kdvRate = 20.
             return $profitAt($P) - $targetProfit;
         });
 
-    $lo = 0.0;
-    $hi = ($cost + $cargo + $extraFee + $serviceFee) * 4 + 1000.0;
-    $guard = 0;
-    while ($f($hi) < 0 && $guard++ < 60) { $hi *= 2; }
-    if (!is_finite($hi) || !is_finite($f($hi)) || $f($hi) < 0) {
-        return ['ok' => false, 'error' => 'Hedef kâr mevcut giderlerle ulaşılamıyor.',
-            'price' => 0.0, 'profit' => 0.0, 'margin' => 0.0, 'ratio' => 0.0,
-            'commission' => 0.0, 'net_kdv' => 0.0, 'service_fee' => $serviceFee,
-            'stopaj' => 0.0, 'cargo' => $cargo, 'extra_fee' => $extraFee, 'return_loss' => 0.0];
-    }
-
-    for ($i = 0; $i < 200; $i++) {
-        $mid = ($lo + $hi) / 2;
-        if ($f($mid) > 0) $hi = $mid; else $lo = $mid;
-    }
-    $P = ($lo + $hi) / 2;
-    if (!is_finite($P) || $P <= 0) $P = 0.0;
+    // With a zero VAT floor, the objective is piecewise linear and may peak
+    // at the VAT breakpoint. Searching only a large upper bound can miss a
+    // feasible low-price interval. Solve over integer kuruş, not display rounding.
+    $failure = static fn(string $msg):array => ['ok'=>false,'error'=>$msg,
+        'price'=>0.0,'profit'=>0.0,'margin'=>0.0,'ratio'=>0.0,'commission'=>0.0,
+        'net_kdv'=>0.0,'service_fee'=>$serviceFee,'stopaj'=>0.0,'cargo'=>$cargo,'extra_fee'=>$extraFee,'return_loss'=>0.0];
+    foreach([$cost,$cargo,$extraFee,$serviceFee,$targetProfit,$targetMargin,$rate,$returnRate,$stopajRate,$saleVat,$kdvRate] as $v)
+        if(!is_finite($v)||$v<0)return $failure('Negatif veya geçersiz hesap girdisi.');
+    foreach([$rate,$returnRate,$stopajRate,$saleVat,$kdvRate,$targetMargin] as $v)
+        if($v>100)return $failure('Oran 0–100 arasında olmalı.');
+    if(isset($options['fixed_stopaj'])&&(!is_numeric($options['fixed_stopaj'])||!is_finite((float)$options['fixed_stopaj'])||(float)$options['fixed_stopaj']<0))
+        return $failure('Stopaj tutarı geçersiz.');
+    $vf=static function(string $key)use($options,$kdvRate):float{
+        $v=(float)($options[$key]??$kdvRate);
+        if(!is_finite($v)||$v<0||$v>100)throw new InvalidArgumentException('KDV oranı geçersiz.');
+        return $v/(100+$v);
+    };
+    try{
+        $a=$vf('sale_vat')-$rate/100*$vf('commission_vat');
+        $b=$cost*$vf('cost_vat')+$cargo*$vf('cargo_vat')+$extraFee*$vf('extra_vat')+$serviceFee*$vf('service_vat');
+    }catch(InvalidArgumentException $e){return $failure($e->getMessage());}
+    $breakpoint=(!($options['allow_negative_vat']??false)&&$a>0)?$b/$a:null;
+    $cents=minimum_price_cents($f,$breakpoint);
+    if($cents===null)return $failure('Hedef kâr geçerli fiyat aralığında ulaşılamıyor.');
+    $P=$cents/100.0;
 
     $r = calc_profit($cost, $P, $cargo, $rate, $kdvRate, $extraFee, $serviceFee, (isset($options['fixed_stopaj']) ? (float)$options['fixed_stopaj'] : auto_stopaj($P, $saleVat, $stopajRate)), $returnRate, $options);
 
     return [
         'ok' => true,
         'price' => $P,
+        'price_cents'=>$cents,
+        'target_basis'=>$targetMargin>0?'margin':'profit',
         'profit' => $r['profit'],
         'margin' => $r['margin'],
         'ratio' => $r['ratio'],

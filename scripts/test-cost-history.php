@@ -3,7 +3,7 @@ declare(strict_types=1);
 $dir=sys_get_temp_dir().'/karfiyat-cost-'.bin2hex(random_bytes(8));mkdir($dir,0700);define('DB_PATH',$dir.'/test.sqlite');
 register_shutdown_function(static function()use($dir){foreach(glob($dir.'/*')as$f)unlink($f);rmdir($dir);});
 require_once __DIR__.'/../includes/functions.php';
-$db=db();$db->prepare("INSERT INTO products(user_id,marketplace,name,barcode,cost,price) VALUES(?,?,?,?,?,?)")->execute([1,'trendyol','Perde','001',999,200]);
+$db=db();$db->prepare("INSERT INTO products(user_id,marketplace,name,barcode,category,rate,cost,price) VALUES(?,?,?,?,?,?,?,?)")->execute([1,'trendyol','Perde','001','Ev Tekstili',19,999,200]);
 $h=['Barkod','Geçerlilik Tarihi','Maliyet','Maliyet KDV Oranı'];
 $rows=cost_history_values($h,[['001','2025-01-01','100','10%'],['001','2025-02-01','150','20']]);
 $tests=[];$tests['two cost periods']=cost_history_save($db,1,$rows)['inserted']===2;

@@ -31,5 +31,5 @@ near($loss['net_kdv'], -100/6, 'Negative VAT allowed');
 near(calc_profit(200,100,0,0)['net_kdv'],0,'Negative VAT floored by default');
 near(calc_profit(100,200,0,0,0)['net_kdv'],0,'Zero VAT');
 $inverseSeparate=calc_price(400,65,19,20,0,13.19,1,0,80,0,['cost_vat'=>10]);
-near($inverseSeparate['profit'],80,'Inverse uses same VAT options');
+check($inverseSeparate['ok'] && $inverseSeparate['profit']>=80-1e-8 && $inverseSeparate['profit']<80.01,'Inverse uses same VAT options, minimum cent');
 exit($fail ? 1 : 0);
