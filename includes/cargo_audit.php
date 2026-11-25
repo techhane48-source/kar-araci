@@ -7,7 +7,7 @@ require_once __DIR__.'/profit.php';
 function cargo_expectation(string $desi,string $amount): array
 {
     $d=parse_money_input($desi);$a=trim($amount)===''?null:parse_money_input($amount);
-    if($d===null||$d<=0||$d>100000||($amount!==''&&($a===null||$a<0||$a>100000000)))
+    if($d===null||$d<=0||$d>100000||(trim($amount)!==''&&($a===null||$a<0||$a>100000000)))
         throw new InvalidArgumentException('Beklenen fatura desisi ve tutarı geçerli olmalı.');
     return [$d,$a];
 }

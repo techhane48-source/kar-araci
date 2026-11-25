@@ -89,9 +89,11 @@ function cost_history_overlay(PDO $db,int $uid,array $orders): array
     $barcodes=[];$maxTs=0;
     foreach($orders as &$o){
         if(($o['marketplace']??'')!=='trendyol')continue;
-        if(is_string($o['lines']??null))$o['lines']=json_decode($o['lines'],true)?:[];
+        if(is_string($o['lines']??null))$o['lines']=json_decode($o['lines'],true);
+        if(!is_array($o['lines']??null))$o['lines']=[];
         $maxTs=max($maxTs,(int)$o['order_date']);
-        foreach($o['lines']??[] as $l)$barcodes[]=(string)($l['barcode']??'');
+        $o['lines']=array_values(array_filter($o['lines'],'is_array'));
+        foreach($o['lines'] as $l)$barcodes[]=(string)($l['barcode']??'');
     }
     unset($o);
     $map=cost_history_map($db,$uid,$barcodes,$maxTs);

@@ -23,7 +23,7 @@ hesap kökü /
 
 ## İlk giriş
 
-- Yönetici: `admin@karfiyat.local` / şifre `1234`
+- Yönetici hesabı ilk kurulumda rastgele, dışarıya açıklanmayan parola ile oluşturulur. Sunucu yöneticisi güvenli bir parola sıfırlama prosedürü uygulamalıdır; varsayılan 1234 yoktur.
 - **İlk girişte şifre değiştirmeye zorlanır** (güvenlik kilidi). Değiştirmeden panel kullanılmaz — bu kasıtlıdır.
 - Yönetim panelinden IBAN + hesap sahibi bilgisini girin; yoksa kullanıcılar ödeme yapamaz.
 
@@ -56,8 +56,7 @@ kaybolursa kullanıcıların bağlantıları çözülemez).
   Eğer bağlantı "SSL sertifika doğrulaması başarısız" hatası verirse, sunucunun
   `php.ini` dosyasına `curl.cainfo` / `openssl.cafile` ile geçerli bir `cacert.pem`
   yolu tanımlayın (Hostinger'da genellikle varsayılan olarak ayarlıdır).
-- Trendyol, ürün filtreleme V1'i 15 Ekim 2026'da kullanım dışı bırakıyor; V2'ye
-  geçiş gerekirse `getProducts()` içindeki endpoint güncellenir.
+- Trendyol ürün okuma V2 approved endpoint'i, sipariş akış servisi, finans ve iade okumaları geliştirme dalında kullanılmaktadır. Canlı satıcıyla doğrulama tamamlanmadan üretime geçmeyin.
 
 ## Otomatik senkron (cron)
 

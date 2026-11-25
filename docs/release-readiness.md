@@ -1,0 +1,27 @@
+# Release readiness — Trendyol first
+
+This is a draft development branch, not a production release. The eight workstreams are tracked below; a green synthetic CI does not establish actual marketplace accuracy.
+
+| Workstream | Implemented in development | Required acceptance evidence |
+|---|---|---|
+| Trendyol integration | V2 product read, order stream, settlement/documents, claims, Buybox, status and coverage tracking | Actual stage/production read-only payloads, pagination, currency and split packages; current commercial rates |
+| Cargo/desi/payout | Invoice detail audit, explicit seller expectations, payout statement candidate, manual bank receipts | Contract tariff and gross/net fee basis, actual carrier invoice, actual bank deposit |
+| Real profit/returns | Cost snapshots and dated cost, order/claim/finance evidence and estimates | Verified settlement signs, VAT invoices, return inventory condition, service/ads/account fees; no definitive net profit until reconciled |
+| Promotion | Exact barcode and tier parsing, target filters | Real panel XLSX/CSV samples for each campaign type; seller/platform subsidy and eligibility |
+| Melontik parity | Public reference examples, 288 model cases and browser/PHP parity | Authenticated comparison with same settings; documented fee and rounding differences |
+| Actual data test | Isolated populated synthetic database, no external credentials | Read-only store connection and anonymized official extracts; no live writes |
+| Performance/security | CSRF, locks, tenant scoping, encryption, safe uploads, crawler restrictions, batched evidence | Production-like load test (20k products), audit, egress restriction, backup restore and migration, secret recovery |
+| UI | Existing functional screens retained | Final premium desktop/mobile redesign after functional acceptance |
+
+## Acceptance process
+
+1. Backup SQLite using its backup API and preserve encryption key securely, separately. Restore to an isolated environment; never test migrations against live data.
+2. Connect a dedicated read-only Trendyol stage store or use explicitly authorized read-only production data. Do not disclose keys in issues/chat/logs. Keep seller/environment bindings.
+3. Record exact source payloads with personal fields removed; compare amounts, IDs, counts, dates and currency against official panel exports, including zero/missing values, split packages, returned units, subsidies and multi-parcel invoices.
+4. Reconcile a completed payout from statement through bank receipt. Verify gross vs net and VAT separately. An amount match is not sufficient proof of full reconciliation.
+5. Compare matching inputs against authenticated Melontik if access is available. Record differences; public examples alone do not prove equivalence.
+6. Run full regression suite and populated HTTP tests. Benchmark large catalogs; review access controls and SSRF restrictions, deploy crawler in restricted isolated network or leave disabled.
+7. Design after these gates. Review mobile layout and accessibility with actual populated screens.
+8. Obtain explicit approval before merging, production deployment, cron activation or marketplace writes.
+
+No production deployment, bank integration or actual seller-data verification is represented as complete.

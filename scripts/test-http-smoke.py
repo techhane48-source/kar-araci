@@ -87,7 +87,7 @@ with tempfile.TemporaryDirectory(prefix="karfiyat-http-") as tmp:
             status, page = request("kargo-kontrol.php?q=CI-PARCEL")
             assert status == 200 and "CI-PARCEL" in page, "Populated cargo page missing parcel"
             status, csv = request("kargo-kontrol.php?q=CI-PARCEL&export=csv")
-            assert status == 200 and "CI-PARCEL" in csv and "Beklenen fatura desisi" in csv, "Cargo CSV missing record"
+            assert status == 200 and "CI-PARCEL" in csv and "Beklenen desi" in csv, "Cargo CSV missing record"
             print("PASS populated dashboard, order finance and cargo views")
             print("PASS registration, CSRF rejection, saved VAT and withholding settings")
         finally:

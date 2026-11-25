@@ -91,7 +91,7 @@ if($rapor==='order'){
     $summary=['İade kalemi'=>count($reportRows),'Kabul edilmiş'=>$states['Accepted']??0,'Aksiyon bekleyen'=>$states['WaitingInAction']??0,'Eşleşen ürün satırı'=>$matched,'Maliyeti bilinen'=>$known];
     $reportNote='İade kalemi durumu, finansal geri ödeme değildir. Tarih filtresi son güncelleme tarihine göre uygulanır. Tarihli maliyet önceliklidir; yoksa ilk gözlem kullanılır. stok durumu, geri ödeme ve kargo payı doğrulanmadan zarar hesaplanmaz. '.sync_coverage_label(db(),(int)$u['id'],$mp,'claims_query',$fromTs,time());
 }elseif($rapor==='return'||$rapor==='campaign'){
-    $types=$rapor==='return'?['Return','ManualRefund','ManualRefundCancel','ReturnInvoice']:['Discount','DiscountCancel','Coupon','CouponCancel','TyDiscount','TyDiscountCancel','TyCoupon','TyCouponCancel'];
+    $types=$rapor==='return'?['Return','ManualRefund','ManualRefundCancel']:['Discount','DiscountCancel','Coupon','CouponCancel','TyDiscount','TyDiscountCancel','TyCoupon','TyCouponCancel'];
     $reportCols=['Barkod','Ürün','İşlem türü','İşlem kaydı adedi','Alacak','Borç','Borç − alacak'];
     $q=db()->prepare("SELECT barcode,query_type,COUNT(*) AS n,SUM(credit) AS credit,SUM(debt) AS debt FROM settlements
         WHERE user_id=? AND marketplace=? AND external_id IS NOT NULL AND finance_scope='domestic' AND transaction_date>=? AND query_type IN (".implode(',',array_fill(0,count($types),'?')).") GROUP BY barcode,query_type ORDER BY barcode,query_type");
