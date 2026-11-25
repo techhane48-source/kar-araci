@@ -371,7 +371,7 @@ function sync_orders_unlocked(int $userId, string $marketplace, int $days = 7): 
 
     $count = 0;
     $db = db();
-    $products = $db->prepare("SELECT barcode,cost,COALESCE(cost_vat,kdv) AS purchase_vat FROM products WHERE user_id=? AND marketplace=? AND cost>0 AND barcode!=''");
+    $products = $db->prepare("SELECT barcode,MAX(cost) AS cost,MAX(COALESCE(cost_vat,kdv)) AS purchase_vat FROM products WHERE user_id=? AND marketplace=? AND barcode!='' GROUP BY barcode HAVING COUNT(*)=1 AND MAX(cost)>0");
     $products->execute([$userId,$marketplace]);
     $costs=[];foreach($products->fetchAll() as $row) $costs[$row['barcode']]=$row;
     $snapIns=$db->prepare("INSERT OR IGNORE INTO order_cost_snapshots(user_id,marketplace,package_number,line_key,barcode,cost,cost_vat,observed_at) VALUES(?,?,?,?,?,?,?,?)");

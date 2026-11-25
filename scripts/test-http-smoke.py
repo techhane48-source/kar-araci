@@ -67,6 +67,9 @@ with tempfile.TemporaryDirectory(prefix="karfiyat-http-") as tmp:
                             (uid,"CI-INVOICE","DeductionInvoices","Kargo Faturası",now,raw))
                 con.execute("INSERT INTO trendyol_cargo_items(user_id,invoice_serial,row_number,parcel_id,order_number,shipment_type,amount,desi) VALUES(?,?,?,?,?,?,?,?)",
                             (uid,"CI-INVOICE",0,"CI-PARCEL","CI-ORDER","Gönderi Kargo Bedeli",65,3))
+                sale=json.dumps({"id":"CI-SALE","barcode":"CI001","orderNumber":"CI-ORDER","shipmentPackageId":"CI-PACKAGE","affiliate":"TRENDYOLTR","country":"TR","credit":717.74,"debt":0,"commissionAmount":136.3706,"sellerRevenue":581.3694})
+                con.execute("INSERT INTO settlements(user_id,marketplace,external_id,order_number,shipment_package_id,query_type,raw_json,finance_scope) VALUES(?,?,?,?,?,?,?,?)",
+                            (uid,"trendyol","CI-SALE","CI-ORDER","CI-PACKAGE","Sale",sale,"domestic"))
             for path in ("urunler.php","dashboard.php","magaza.php","kar-marji.php","canli-performans.php","raporlar.php","pazar-zekasi.php","hakedis-desi.php","promosyon-analiz.php","toplu-analiz.php","maliyet-gecmisi.php","kar-hedefleri.php","uyarilar.php","kargo-kontrol.php","banka-mutabakat.php"):
                 status, page = request(path)
                 assert status == 200 and len(page) > 500 and "<html" in page.lower(), (path, status, page[:150])
@@ -83,7 +86,7 @@ with tempfile.TemporaryDirectory(prefix="karfiyat-http-") as tmp:
             status, page = request("dashboard.php")
             assert status == 200 and "Tahmini Sipariş Kârı" in page and "717,74" in page, "Populated dashboard missing data"
             status, csv = request("raporlar.php?r=order_finance&export=1")
-            assert status == 200 and "CI-ORDER" in csv, "Populated financial report missing order"
+            assert status == 200 and "CI-ORDER" in csv and "116.37" in csv, "Populated financial report missing known subtotal"
             status, page = request("kargo-kontrol.php?q=CI-PARCEL")
             assert status == 200 and "CI-PARCEL" in page, "Populated cargo page missing parcel"
             status, csv = request("kargo-kontrol.php?q=CI-PARCEL&export=csv")
