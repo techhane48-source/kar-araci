@@ -186,7 +186,8 @@ function sync_products(int $userId, string $marketplace): array
     // İlk senkron (last_sync boş) tam çeker.
     $startDateMs = 0;
     $dateQueryType = '';
-    if (!empty($int['last_sync'])) {
+    // V2 geçişinde eski checkpoint ve stok/fiyat değişikliklerinin kaçmaması için tam tarama.
+    if ($marketplace !== 'trendyol' && !empty($int['last_sync'])) {
         $ts = strtotime((string)$int['last_sync'] . ' UTC');
         if ($ts) {
             $startDateMs = $ts * 1000;
@@ -200,19 +201,23 @@ function sync_products(int $userId, string $marketplace): array
     $db = db();
     $inserted = 0;
     $skipped = 0;
+    $updated = 0;
 
     // Mevcut barkodları TEK sorguda al -> HashSet (O(1) arama, 10k+ ürün için hızlı)
     $existing = [];
-    $stmt = $db->prepare("SELECT barcode, name FROM products WHERE user_id = ? AND marketplace = ?");
+    $stmt = $db->prepare("SELECT id, barcode, name FROM products WHERE user_id = ? AND marketplace = ?");
     $stmt->execute([$userId, $marketplace]);
     foreach ($stmt->fetchAll() as $r) {
-        if ($r['barcode'] !== '') $existing['b:' . $r['barcode']] = true;
-        $existing['n:' . $r['name']] = true;
+        if ($r['barcode'] !== '') $existing['b:' . $r['barcode']] = (int)$r['id'];
+        $existing['n:' . $r['name']] = (int)$r['id'];
     }
 
     $ins = $db->prepare("INSERT INTO products (user_id, name, barcode, marketplace, category, rate, cost, price, quantity, cargo, service_fee, stopaj, return_rate)
                           VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?, 0, 0, 0, 0)");
 
+    // Only refresh marketplace fields; never overwrite user costs, cargo or commission settings.
+    $upd = $db->prepare("UPDATE products SET price = COALESCE(?, price), quantity = COALESCE(?, quantity)
+                          WHERE id = ? AND user_id = ? AND marketplace = ?");
     $db->beginTransaction();
     try {
         foreach ($res['products'] as $p) {
@@ -220,14 +225,21 @@ function sync_products(int $userId, string $marketplace): array
             $name = $p['title'] ?: ($barcode ?: 'Ürün');
             $cat = $p['category'] ?: 'Diğer';
             $rate = category_rate($cat, $marketplace);
-            $price = $p['salePrice'] > 0 ? $p['salePrice'] : $p['listPrice'];
+            $price = ($p['salePrice'] ?? 0) > 0 ? (float)$p['salePrice'] : (isset($p['listPrice']) && $p['listPrice'] > 0 ? (float)$p['listPrice'] : null);
+            $quantity = isset($p['quantity']) ? (int)$p['quantity'] : null;
 
             // Tekil anahtar: barkod (Trendyol'da benzersiz). Barkod yoksa isim'e düş.
             $key = ($barcode !== '') ? ('b:' . $barcode) : ('n:' . $name);
-            if (isset($existing[$key])) { $skipped++; continue; }
-            $existing[$key] = true;
+            if (isset($existing[$key])) {
+                if ($barcode !== '' && ($price !== null || $quantity !== null)) {
+                    $upd->execute([$price, $quantity, $existing[$key], $userId, $marketplace]);
+                    $updated++;
+                } else $skipped++;
+                continue;
+            }
 
-            $ins->execute([$userId, $name, $barcode, $marketplace, $cat, $rate, $price, (int)($p['quantity'] ?? 0)]);
+            $ins->execute([$userId, $name, $barcode, $marketplace, $cat, $rate, $price ?? 0.0, $quantity ?? 0]);
+            $existing[$key] = (int)$db->lastInsertId();
             $inserted++;
         }
         $db->commit();
@@ -240,7 +252,7 @@ function sync_products(int $userId, string $marketplace): array
     $db->prepare("UPDATE integrations SET last_sync = datetime('now') WHERE user_id = ? AND marketplace = ?")
         ->execute([$userId, $marketplace]);
 
-    return ['ok' => true, 'inserted' => $inserted, 'skipped' => $skipped, 'total' => $res['count']];
+    return ['ok' => true, 'inserted' => $inserted, 'updated' => $updated, 'skipped' => $skipped, 'total' => $res['count']];
 }
 
 /**

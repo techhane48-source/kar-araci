@@ -48,7 +48,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $supported) {
         } elseif ($action === 'sync') {
             $res = sync_products((int)$u['id'], $mp);
             if ($res['ok']) {
-                $ok = "Senkronizasyon tamamlandı: {$res['inserted']} yeni ürün eklendi, {$res['skipped']} ürün zaten mevcuttu (toplam {$res['total']} ürün çekildi).";
+                $ok = "Senkronizasyon tamamlandı: {$res['inserted']} yeni ürün eklendi, {$res['updated']} ürün güncellendi, {$res['skipped']} ürün atlandı (toplam {$res['total']} ürün çekildi).";
             } else {
                 $error = 'Senkronizasyon hatası: ' . ($res['error'] ?? 'Bilinmeyen hata');
             }

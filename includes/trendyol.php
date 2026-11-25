@@ -36,7 +36,7 @@ final class TrendyolClient
     public function testConnection(): array
     {
         // 1 adet ürün isteyip auth'un doğruluğunu sınamak en ucuz yoldur.
-        $res = $this->request('GET', "/integration/product/sellers/{$this->sellerId}/products", ['size' => '1']);
+        $res = $this->request('GET', "/integration/product/sellers/{$this->sellerId}/products/approved", ['size' => '1']);
         if (isset($res['http']) && $res['http'] === 200) {
             return ['ok' => true, 'sellerName' => null];
         }
@@ -47,7 +47,7 @@ final class TrendyolClient
             $otherBase = ($this->base === self::PROD) ? self::STAGE : self::PROD;
             $saved = $this->base;
             $this->base = $otherBase;
-            $res2 = $this->request('GET', "/integration/product/sellers/{$this->sellerId}/products", ['size' => '1']);
+            $res2 = $this->request('GET', "/integration/product/sellers/{$this->sellerId}/products/approved", ['size' => '1']);
             $this->base = $saved;
 
             if (isset($res2['http']) && $res2['http'] === 200) {
@@ -66,80 +66,112 @@ final class TrendyolClient
         return ['ok' => false, 'error' => ($res['error'] ?? 'Bilinmeyen hata') . " (HTTP {$res['http']})"];
     }
 
-    /**
-     * Satıcının onaylı/onay bekleyen tüm ürünlerini çeker (sayfalı).
-     * Her ürün: barcode, title, brand, categoryName, price, salePrice, quantity, status, productUrl.
-     *
-     * @param int $maxPage Maksimum sayfa (varsayılan 500 = 100.000 ürün; büyük kataloglar için)
-     */
-    public function getProducts(int $maxPage = 500, string $approvalStatus = '', int $startDateMs = 0, string $dateQueryType = ''): array
+    /** Convert V2 content/variants to the existing barcode-based product model. */
+    public static function normalizeApprovedContent(array $content): array
     {
-        $size = 200; // Trendyol max page size
-
-        // Ortak filtre parametreleri (artımlı senkron için startDate + dateQueryType)
-        $base = ['size' => (string)$size];
-        if ($approvalStatus !== '') $base['approvalStatus'] = $approvalStatus;
-        if ($startDateMs > 0) $base['startDate'] = (string)$startDateMs;
-        if ($dateQueryType !== '') $base['dateQueryType'] = $dateQueryType;
-
-        // 1) Toplam ürün sayısını tek istekle öğren (kaç sayfa var bilmek için)
-        $probeParams = $base;
-        $probeParams['page'] = '0';
-        $probeParams['size'] = '1';
-        $probe = $this->request('GET', "/integration/product/sellers/{$this->sellerId}/products", $probeParams);
-        if (isset($probe['http']) && $probe['http'] !== 200) {
-            return ['ok' => false, 'error' => ($probe['error'] ?? 'Ürün çekilemedi') . " (HTTP {$probe['http']})"];
-        }
-        $total = (int)($probe['body']['totalElements'] ?? 0);
-        $totalPages = (int)ceil($total / $size);
-        if ($totalPages <= 0) $totalPages = 1;
-        $totalPages = min($totalPages, $maxPage);
-
-        $all = [];
-        $batch = 10; // aynı anda çekilen sayfa sayısı (Trendyol rate-limit'e karşı makul)
-
-        for ($start = 0; $start < $totalPages; $start += $batch) {
-            $requests = [];
-            for ($p = $start; $p < min($start + $batch, $totalPages); $p++) {
-                $params = $base;
-                $params['page'] = (string)$p;
-                $requests[] = ['GET', "/integration/product/sellers/{$this->sellerId}/products", $params];
+        $out = [];
+        foreach ($content as $item) {
+            if (!is_array($item) || !isset($item['variants']) || !is_array($item['variants'])) {
+                throw new UnexpectedValueException('Trendyol V2 ürün varyantları eksik.');
             }
-
-            $results = $this->requestParallel($requests);
-            foreach ($results as $res) {
-                if (!isset($res['http']) || $res['http'] !== 200) continue;
-                $items = $res['body']['content'] ?? [];
-                foreach ($items as $it) {
-                    $all[] = [
-                        'barcode' => $it['barcode'] ?? '',
-                        'title' => $it['title'] ?? '',
-                        'brand' => $it['brand'] ?? ($it['brandName'] ?? ''),
-                        'category' => $it['categoryName'] ?? '',
-                        'listPrice' => (float)($it['listPrice'] ?? 0),
-                        'salePrice' => (float)($it['salePrice'] ?? 0),
-                        'quantity' => (int)($it['quantity'] ?? 0),
-                        'status' => $it['status'] ?? '',
-                        'approved' => ($it['approved'] ?? false),
-                        'productUrl' => $it['productUrl'] ?? '',
-                    ];
-                }
+            foreach ($item['variants'] as $v) {
+                $barcode = trim((string)($v['barcode'] ?? ''));
+                if ($barcode === '') throw new UnexpectedValueException('Trendyol V2 barkodu eksik.');
+                $out[] = [
+                    'barcode' => $barcode,
+                    'title' => (string)($item['title'] ?? $barcode),
+                    'brand' => (string)($item['brand']['name'] ?? ''),
+                    'category' => (string)($item['category']['name'] ?? ''),
+                    'listPrice' => isset($v['price']['listPrice']) ? (float)$v['price']['listPrice'] : null,
+                    'salePrice' => isset($v['price']['salePrice']) ? (float)$v['price']['salePrice'] : null,
+                    'quantity' => isset($v['stock']['quantity']) ? (int)$v['stock']['quantity'] : null,
+                    'commission' => isset($v['commission']) ? (float)$v['commission'] : null,
+                    'vatRate' => isset($v['vatRate']) ? (float)$v['vatRate'] : null,
+                    'status' => !empty($v['onSale']) ? 'onSale' : 'notOnSale',
+                    'approved' => true,
+                    'productUrl' => (string)($v['productUrl'] ?? ''),
+                ];
             }
         }
-
-        return ['ok' => true, 'products' => $all, 'count' => count($all)];
+        return $out;
     }
 
     /**
-     * Tek bir ürünün detayını barcode ile çeker.
+     * Approved product V2. Offset pagination up to 10,000 content records,
+     * followed by nextPageToken. Never report a truncated fetch as success.
+     * Unapproved products are intentionally out of scope for this sales catalog.
      */
+    public function getProducts(int $maxPage = 500, string $approvalStatus = '', int $startDateMs = 0, string $dateQueryType = ''): array
+    {
+        if ($approvalStatus !== '' && $approvalStatus !== 'approved') {
+            return ['ok' => false, 'error' => 'Bu servis yalnızca onaylı ürünleri destekler.'];
+        }
+        $size = 100;
+        $path = "/integration/product/sellers/{$this->sellerId}/products/approved";
+        $base = ['size' => (string)$size];
+        if ($startDateMs > 0) {
+            $base['startDate'] = (string)$startDateMs;
+            $base['dateQueryType'] = $dateQueryType === 'CONTENT_MODIFIED_DATE'
+                ? 'CONTENT_MODIFIED_DATE' : 'VARIANT_MODIFIED_DATE';
+        }
+        $all = [];
+        $token = null;
+        $seenTokens = [];
+        $contentCount = 0;
+        $total = null;
+        for ($page = 0; $page < $maxPage; $page++) {
+            $params = $base;
+            if ($token === null) $params['page'] = (string)$page;
+            else $params['nextPageToken'] = $token;
+            $res = $this->request('GET', $path, $params);
+            $body = $res['body'] ?? null;
+            if (($res['http'] ?? 0) !== 200 || !is_array($body) || !is_array($body['content'] ?? null)) {
+                return ['ok' => false, 'error' => 'Ürün V2 sayfası alınamadı (HTTP ' . ($res['http'] ?? 0) . ').'];
+            }
+            if ($total === null) {
+                if (!isset($body['totalElements']) || !is_numeric($body['totalElements'])) {
+                    return ['ok' => false, 'error' => 'Ürün V2 toplam kayıt sayısı eksik.'];
+                }
+                $total = (int)$body['totalElements'];
+            }
+            $items = $body['content'];
+            try {
+                foreach (self::normalizeApprovedContent($items) as $p) $all[$p['barcode']] = $p;
+            } catch (UnexpectedValueException $e) {
+                return ['ok' => false, 'error' => $e->getMessage()];
+            }
+            $contentCount += count($items);
+            if ($contentCount >= $total && ($token === null || empty($body['nextPageToken']) || count($items) < $size)) {
+                return ['ok' => true, 'products' => array_values($all), 'count' => count($all)];
+            }
+            if (!$items) return ['ok' => false, 'error' => 'Ürün V2 eksik kayıt döndürdü.'];
+            if ($token !== null || ($page + 1) * $size >= 10000) {
+                $next = (string)($body['nextPageToken'] ?? '');
+                if ($next === '' || isset($seenTokens[$next])) {
+                    return ['ok' => false, 'error' => 'Ürün V2 sayfalama tokenı eksik veya tekrar ediyor.'];
+                }
+                $seenTokens[$next] = true;
+                $token = $next;
+            }
+        }
+        return ['ok' => false, 'error' => 'Ürün V2 sayfa sınırına ulaşıldı; senkron tamamlanmadı.'];
+    }
+
     public function getProduct(string $barcode): array
     {
-        $res = $this->request('GET', "/integration/product/sellers/{$this->sellerId}/product/" . rawurlencode($barcode));
-        if (isset($res['http']) && $res['http'] !== 200) {
-            return ['ok' => false, 'error' => ($res['error'] ?? 'Ürün bulunamadı') . " (HTTP {$res['http']})"];
+        $res = $this->request('GET', "/integration/product/sellers/{$this->sellerId}/products/approved",
+            ['barcode' => $barcode, 'size' => '100']);
+        if (($res['http'] ?? 0) !== 200 || !is_array($res['body']['content'] ?? null)) {
+            return ['ok' => false, 'error' => 'Ürün V2 sorgusu başarısız.'];
         }
-        return ['ok' => true, 'product' => $res['body']];
+        try {
+            foreach (self::normalizeApprovedContent($res['body']['content']) as $p) {
+                if ($p['barcode'] === $barcode) return ['ok' => true, 'product' => $p];
+            }
+        } catch (UnexpectedValueException $e) {
+            return ['ok' => false, 'error' => $e->getMessage()];
+        }
+        return ['ok' => false, 'error' => 'Barkod bulunamadı.'];
     }
 
     /**
@@ -147,8 +179,9 @@ final class TrendyolClient
      * (Eski /shipment-packages ucu deprecate oldu; 556 "Service Unavailable" dönüyor.)
      * @param string $status Created | Picking | Invoiced | Shipped | Cancelled | Delivered | UnDelivered | ...
      */
-    public function getOrders(string $status = '', string $startDate = '', string $endDate = '', int $maxPage = 10): array
+    public function getOrders(string $status = '', string $startDate = '', string $endDate = '', int $maxPage = 50): array
     {
+        $maxPage = max(1, min(50, $maxPage));
         $all = [];
         $seen = [];
         $size = 200;
@@ -156,8 +189,10 @@ final class TrendyolClient
         // Zaman aralığı (saniye). Trendyol sipariş ucu ~15 günlük pencereyle sınırlar;
         // daha geniş aralık istendiğinde 14 günlük parçalara bölüp birleştiriyoruz.
         $endTs = ($endDate !== '') ? strtotime($endDate) : time();
-        $endTs += 3600; // saat kayması buffer'ı (orderDate hafif "gelecekte" görünebilir)
-        $startTs = ($startDate !== '') ? strtotime($startDate) : ($endTs - 16 * 86400);
+        $startTs = ($startDate !== '') ? strtotime($startDate) : ($endTs - 7 * 86400);
+        if ($startTs === false || $endTs === false || $startTs >= $endTs) {
+            return ['ok' => false, 'error' => 'Geçersiz sipariş tarih aralığı.'];
+        }
 
         $chunk = 14 * 86400;
         for ($cs = $startTs; $cs < $endTs; $cs += $chunk) {
@@ -172,16 +207,26 @@ final class TrendyolClient
                 ];
                 if ($status !== '') $params['status'] = $status;
 
-                $res = $this->request('GET', "/integration/order/sellers/{$this->sellerId}/orders", $params);
+                $res = $this->request('GET', "/integration/order/sellers/{$this->sellerId}/v2/orders", $params);
 
                 if (isset($res['http']) && $res['http'] !== 200) {
                     return ['ok' => false, 'error' => ($res['error'] ?? 'Sipariş çekilemedi') . " (HTTP {$res['http']})"];
                 }
 
-                $items = $res['body']['content'] ?? [];
+                if (!is_array($res['body']['content'] ?? null) || !isset($res['body']['totalPages'], $res['body']['totalElements'])) {
+                    return ['ok' => false, 'error' => 'Sipariş V2 yanıtı eksik.'];
+                }
+                if ((int)$res['body']['totalElements'] > 10000 || (int)$res['body']['totalPages'] > $maxPage) {
+                    return ['ok' => false, 'error' => 'Sipariş V2 kayıt sınırı aşıldı; tarih aralığını daraltın.'];
+                }
+                $items = $res['body']['content'];
+                if (!$items && $page < (int)$res['body']['totalPages']) {
+                    return ['ok' => false, 'error' => 'Sipariş V2 eksik sayfa döndürdü.'];
+                }
                 foreach ($items as $it) {
                     $pkg = (string)($it['shipmentPackageId'] ?? ($it['id'] ?? ''));
-                    if ($pkg !== '' && isset($seen[$pkg])) continue; // parça sınırında tekrar etmesin
+                    if ($pkg === '') return ['ok' => false, 'error' => 'Sipariş paket kimliği eksik.'];
+                    if (isset($seen[$pkg])) continue; // parça sınırında tekrar etmesin
                     $seen[$pkg] = true;
 
                     $lines = [];

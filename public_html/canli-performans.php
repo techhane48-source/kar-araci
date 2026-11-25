@@ -82,7 +82,7 @@ $week = []; // dayKey (Y-m-d) => [sale, profit, count]
 
 foreach ($orders as $o) {
     $o['lines'] = json_decode($o['lines'] ?? '[]', true) ?: [];
-    $day = (int) floor((int)$o['order_date'] / 86400) * 86400;
+    $day = strtotime(date('Y-m-d', (int)$o['order_date']));
     $dayKey = date('Y-m-d', (int)$o['order_date']);
     if (!isset($week[$dayKey])) $week[$dayKey] = ['sale' => 0.0, 'profit' => 0.0, 'count' => 0];
 
