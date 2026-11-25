@@ -179,9 +179,9 @@ final class TrendyolClient
      * (Eski /shipment-packages ucu deprecate oldu; 556 "Service Unavailable" dönüyor.)
      * @param string $status Created | Picking | Invoiced | Shipped | Cancelled | Delivered | UnDelivered | ...
      */
-    public function getOrders(string $status = '', string $startDate = '', string $endDate = '', int $maxPage = 50): array
+    public function getOrders(string $status = '', string $startDate = '', string $endDate = '', int $maxPage = 2000): array
     {
-        $maxPage = max(1, min(50, $maxPage));
+        $maxPage = max(1, min(10000, $maxPage));
         $all = [];
         $seen = [];
         $size = 200;
@@ -196,33 +196,28 @@ final class TrendyolClient
 
         $chunk = 14 * 86400;
         for ($cs = $startTs; $cs < $endTs; $cs += $chunk) {
-            $ce = min($cs + $chunk, $endTs);
+            $ce = min($cs + $chunk - 1, $endTs);
             $page = 0;
+            $cursor = null;
+            $seenCursors = [];
             while (true) {
                 $params = [
-                    'page' => (string)$page,
-                    'size' => (string)$size,
-                    'startDate' => (string)($cs * 1000),
-                    'endDate' => (string)($ce * 1000),
+                    'size' => '200',
+                    'lastModifiedStartDate' => (string)($cs * 1000),
+                    'lastModifiedEndDate' => (string)($ce * 1000 + 999),
                 ];
                 if ($status !== '') $params['status'] = $status;
-
-                $res = $this->request('GET', "/integration/order/sellers/{$this->sellerId}/v2/orders", $params);
+                if ($cursor !== null) $params['nextCursor'] = $cursor;
+                $res = $this->request('GET', "/integration/order/sellers/{$this->sellerId}/orders/stream", $params);
 
                 if (isset($res['http']) && $res['http'] !== 200) {
                     return ['ok' => false, 'error' => ($res['error'] ?? 'Sipariş çekilemedi') . " (HTTP {$res['http']})"];
                 }
 
-                if (!is_array($res['body']['content'] ?? null) || !isset($res['body']['totalPages'], $res['body']['totalElements'])) {
-                    return ['ok' => false, 'error' => 'Sipariş V2 yanıtı eksik.'];
-                }
-                if ((int)$res['body']['totalElements'] > 10000 || (int)$res['body']['totalPages'] > $maxPage) {
-                    return ['ok' => false, 'error' => 'Sipariş V2 kayıt sınırı aşıldı; tarih aralığını daraltın.'];
+                if (!is_array($res['body']['content'] ?? null) || !is_bool($res['body']['hasMore'] ?? null)) {
+                    return ['ok' => false, 'error' => 'Sipariş akışı yanıtı eksik.'];
                 }
                 $items = $res['body']['content'];
-                if (!$items && $page < (int)$res['body']['totalPages']) {
-                    return ['ok' => false, 'error' => 'Sipariş V2 eksik sayfa döndürdü.'];
-                }
                 foreach ($items as $it) {
                     $pkg = (string)($it['shipmentPackageId'] ?? ($it['id'] ?? ''));
                     if ($pkg === '') return ['ok' => false, 'error' => 'Sipariş paket kimliği eksik.'];
@@ -259,14 +254,19 @@ final class TrendyolClient
                         'cargoCompany' => $it['cargoProviderName'] ?? '',
                         'lines' => $lines,
                         'orderDate' => $it['orderDate'] ?? null,
+                        'lastModifiedDate' => $it['lastModifiedDate'] ?? null,
+                        'currencyCode' => $it['currencyCode'] ?? null,
                     ];
                 }
 
-                $totalPages = (int)($res['body']['totalPages'] ?? 0);
-                $page++;
-                if ($page >= $totalPages || $page >= $maxPage || count($items) === 0) {
-                    break;
+                if (!$res['body']['hasMore']) break;
+                $next = (string)($res['body']['nextCursor'] ?? '');
+                if ($next === '' || isset($seenCursors[$next]) || ++$page >= $maxPage) {
+                    return ['ok' => false, 'error' => 'Sipariş akışı tamamlanamadı: cursor veya sayfa sınırı.'];
                 }
+                $seenCursors[$next] = true;
+                $cursor = $next;
+                sleep(5);
             }
         }
 
@@ -296,18 +296,19 @@ final class TrendyolClient
      * @param string $startDate      Y-m-d (işlem tarihi; paymentDate yoksa zorunlu, aralık ≤15 gün)
      * @param string $endDate        Y-m-d
      */
-    public function getSettlements(string $transactionType, string $startDate = '', string $endDate = '', int $maxPage = 2000): array
+    public function getSettlements(string $transactionType, string $startDate = '', string $endDate = '', int $maxPage = 2000, string $source = 'settlements'): array
     {
         $all = [];
         $page = 0;
         $size = 500;
+        if (!in_array($source, ['settlements', 'otherfinancials'], true)) return ['ok'=>false,'error'=>'Geçersiz finans servisi.'];
 
         while (true) {
             $params = ['page' => (string)$page, 'size' => (string)$size, 'transactionType' => $transactionType];
             if ($startDate !== '') $params['startDate'] = strtotime($startDate) * 1000;
             if ($endDate !== '') $params['endDate'] = strtotime($endDate) * 1000 + 999;
 
-            $res = $this->request('GET', "/integration/finance/che/sellers/{$this->sellerId}/settlements", $params);
+            $res = $this->request('GET', "/integration/finance/che/sellers/{$this->sellerId}/{$source}", $params);
 
             if (isset($res['http']) && $res['http'] !== 200) {
                 return ['ok' => false, 'error' => ($res['error'] ?? 'Cari hesap ekstresi çekilemedi') . " (HTTP {$res['http']})"];
@@ -330,6 +331,8 @@ final class TrendyolClient
                 $all[] = [
                     'externalId' => (string)$it['id'],
                     'queryType' => $transactionType,
+                    'source' => $source,
+                    'raw' => $it,
                     'paymentOrderId' => isset($it['paymentOrderId']) ? (string)$it['paymentOrderId'] : null,
                     'barcode' => (string)($it['barcode'] ?? ''),
                     'transactionType' => (string)($it['transactionType'] ?? ''),
@@ -354,6 +357,28 @@ final class TrendyolClient
         }
 
         return ['ok' => true, 'settlements' => $all, 'count' => count($all)];
+    }
+
+    /** Read actual invoice rows; no guessed allocation to shipment packages. */
+    public function getCargoInvoiceItems(string $serial, int $maxPage = 2000): array
+    {
+        $all = [];
+        $path = "/integration/finance/che/sellers/{$this->sellerId}/cargo-invoice/" . rawurlencode($serial) . "/items";
+        for ($page = 0; $page < $maxPage; $page++) {
+            $res = $this->request('GET', $path, ['page'=>(string)$page, 'size'=>'500']);
+            $body = $res['body'] ?? [];
+            if (($res['http'] ?? 0) !== 200 || !is_array($body['content'] ?? null) || !isset($body['totalPages'])) {
+                return ['ok'=>false,'error'=>'Kargo faturası yanıtı eksik veya başarısız.'];
+            }
+            if (!$body['content'] && $page < (int)$body['totalPages']) return ['ok'=>false,'error'=>'Kargo faturası eksik sayfa.'];
+            foreach ($body['content'] as $row) {
+                if (!isset($row['parcelUniqueId'], $row['orderNumber'], $row['amount'], $row['desi'], $row['shipmentPackageType'])
+                    || !is_numeric($row['amount']) || !is_numeric($row['desi'])) return ['ok'=>false,'error'=>'Kargo fatura kalemi eksik.'];
+                $all[] = $row;
+            }
+            if ($page + 1 >= (int)$body['totalPages']) return ['ok'=>true,'items'=>$all];
+        }
+        return ['ok'=>false,'error'=>'Kargo faturası sayfa sınırı aşıldı.'];
     }
 
     /**

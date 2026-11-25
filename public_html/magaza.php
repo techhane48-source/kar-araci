@@ -56,7 +56,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $supported) {
             $res = sync_settlements((int)$u['id'], $mp);
             if ($res['ok']) {
                 $ok = "Cari hesap ekstresi (resmi komisyon/kargo/hakediş) çekildi: {$res['records']} işlem işlendi (tekrar gelen kayıtlar güncellendi). Geçmiş komisyonlar ürün ayarlarını değiştirmez.";
-                if (!empty($res['errors'])) $ok .= ' (' . count($res['errors']) . ' tip/dilim atlandı.)';
+                $docs = sync_trendyol_documents((int)$u['id'], 30);
+                if ($docs['ok']) $ok .= " {$docs['documents']} finansal belge, {$docs['cargo_items']} kargo kalemi işlendi.";
+                else { $error = 'Finansal belgeler tamamlanmadı: ' . ($docs['error'] ?? 'Bilinmeyen hata'); $ok = ''; }
             } else {
                 $error = 'Cari hesap ekstresi hatası: ' . ($res['error'] ?? 'Bilinmeyen hata');
             }

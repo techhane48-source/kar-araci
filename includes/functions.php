@@ -268,10 +268,16 @@ function sync_orders(int $userId, string $marketplace, int $days = 7): array
         return ['ok' => false, 'error' => marketplace_label($marketplace) . ' için sipariş senkronu desteklenmiyor.'];
     }
 
-    $start = date('Y-m-d', time() - $days * 86400);
+    $start = date('c', time() - $days * 86400);
     $res = $client->getOrders('', $start, '');
     if (!$res['ok']) return $res;
 
+    foreach ($res['orders'] as $o) {
+        $rawDate = $o['orderDate'] ?? null;
+        if (!is_numeric($rawDate) || (float)$rawDate <= 0 || trim((string)($o['packageNumber'] ?? '')) === '') {
+            return ['ok'=>false,'error'=>'Sipariş kimliği veya tarihi eksik; veri kaydedilmedi.'];
+        }
+    }
     $ins = db()->prepare("INSERT INTO orders (user_id, marketplace, order_number, package_number, status, customer_name, total_price, order_date, lines)
                           VALUES (?,?,?,?,?,?,?,?,?)
                           ON CONFLICT(user_id, marketplace, package_number) DO UPDATE SET
@@ -283,7 +289,7 @@ function sync_orders(int $userId, string $marketplace, int $days = 7): array
         if (is_string($ts)) $ts = strtotime($ts) ?: 0;
         $ts = (int)$ts;
         if ($ts > 100000000000) $ts = (int)($ts / 1000); // milisaniye -> saniye
-        if ($ts <= 0) $ts = time();
+        if ($ts <= 0) return ['ok'=>false,'error'=>'Geçersiz sipariş tarihi.'];
         $ins->execute([
             $userId, $marketplace,
             (string)($o['orderNumber'] ?? ''),
@@ -434,4 +440,66 @@ function sync_settlements(int $userId, string $marketplace, int $days = 30): arr
     }
     // Historical transaction rates are not current product commission settings.
     return ['ok' => true, 'records' => $total, 'rates_updated' => 0, 'errors' => []];
+}
+
+/** Separate otherfinancials and invoice data from settlement sales to avoid double counting. */
+function sync_trendyol_documents(int $userId, int $days = 30): array
+{
+    $int = get_integration($userId, 'trendyol');
+    if (!$int) return ['ok'=>false,'error'=>'Trendyol mağazası bağlı değil.'];
+    $client = integration_client($int);
+    $db = db();
+    $up = $db->prepare("INSERT INTO trendyol_financial_documents
+        (user_id,external_id,query_type,transaction_type,payment_order_id,transaction_date,raw_json)
+        VALUES(?,?,?,?,?,?,?) ON CONFLICT(user_id,external_id) DO UPDATE SET
+        query_type=excluded.query_type,transaction_type=excluded.transaction_type,
+        payment_order_id=excluded.payment_order_id,transaction_date=excluded.transaction_date,raw_json=excluded.raw_json");
+    $end = time();
+    $start = $end - max(1,min(90,$days))*86400;
+    $count = 0; $invoices = [];
+    foreach (['Stoppage','CashAdvance','WireTransfer','IncomingTransfer','ReturnInvoice',
+        'CommissionAgreementInvoice','PaymentOrder','DeductionInvoices','FinancialItem'] as $type) {
+        for ($s=$start;$s<=$end;$s+=14*86400) {
+            $e=min($s+14*86400-1,$end);
+            $res=$client->getSettlements($type,date('c',$s),date('c',$e),2000,'otherfinancials');
+            if (!$res['ok']) return ['ok'=>false,'error'=>$type.': '.($res['error']??'Eksik finansal veri')];
+            $db->beginTransaction();
+            try {
+                foreach ($res['settlements'] as $row) {
+                    $ts=(int)$row['transactionDate']; if($ts>100000000000)$ts=intdiv($ts,1000);
+                    $up->execute([$userId,$row['externalId'],$type,$row['transactionType'],$row['paymentOrderId'],$ts,
+                        json_encode($row['raw'],JSON_THROW_ON_ERROR|JSON_UNESCAPED_UNICODE)]);
+                    if ($type==='DeductionInvoices' && in_array($row['transactionType'],['Kargo Faturası','Kargo Fatura'],true))
+                        $invoices[$row['externalId']]=true;
+                    $count++;
+                }
+                $db->commit();
+            } catch (Throwable $ex) {
+                if($db->inTransaction())$db->rollBack();
+                return ['ok'=>false,'error'=>'Finansal belge kaydedilemedi.'];
+            }
+        }
+    }
+    $cargoCount=0;
+    foreach (array_keys($invoices) as $serial) {
+        $serial=(string)$serial;
+        $res=$client->getCargoInvoiceItems($serial);
+        if(!$res['ok'])return ['ok'=>false,'error'=>'Kargo faturası '.$serial.': '.$res['error']];
+        $db->beginTransaction();
+        try {
+            $db->prepare("DELETE FROM trendyol_cargo_items WHERE user_id=? AND invoice_serial=?")->execute([$userId,$serial]);
+            $ins=$db->prepare("INSERT INTO trendyol_cargo_items
+                (user_id,invoice_serial,row_number,parcel_id,order_number,shipment_type,amount,desi) VALUES(?,?,?,?,?,?,?,?)");
+            foreach($res['items'] as $i=>$row) {
+                $ins->execute([$userId,$serial,$i,(string)$row['parcelUniqueId'],(string)$row['orderNumber'],
+                    (string)$row['shipmentPackageType'],(float)$row['amount'],(float)$row['desi']]);
+                $cargoCount++;
+            }
+            $db->commit();
+        } catch(Throwable $ex) {
+            if($db->inTransaction())$db->rollBack();
+            return ['ok'=>false,'error'=>'Kargo faturası kaydedilemedi.'];
+        }
+    }
+    return ['ok'=>true,'documents'=>$count,'invoices'=>count($invoices),'cargo_items'=>$cargoCount];
 }
