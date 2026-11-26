@@ -8,52 +8,64 @@ permissions:
   contents: read
 jobs:
   checks:
+    strategy:
+      fail-fast: false
+      matrix:
+        suite: [syntax, finance, integration, application, security-performance, http, calculator]
+    name: Regression / ${{ matrix.suite }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - uses: shivammathur/setup-php@v2
         with:
           php-version: '8.3'
           extensions: pdo_sqlite, mbstring, openssl, curl, zip, simplexml
           coverage: none
-      - name: PHP syntax
-        run: find includes public_html scripts -name '*.php' -print0 | xargs -0 -n1 php -l
-      - name: Regression tests
+      - name: Run suite (continue after individual failures)
+        shell: bash
+        env:
+          SUITE: ${{ matrix.suite }}
         run: |
-          php scripts/test-profit.php
-          php scripts/test-trendyol-v2.php
-          php scripts/test-verify-trendyol.php
-          php scripts/test-money-input.php
-          php scripts/test-order-estimate.php
-          php scripts/test-commission-evidence.php
-          php scripts/test-product-profit.php
-          php scripts/test-payout.php
-          php scripts/test-db-safety.php
-          php scripts/test-api-contract.php
-          php scripts/test-report-lines.php
-          php scripts/test-finance-integrity.php
-          php scripts/test-period-finance.php
-          php scripts/test-product-finance.php
-          php scripts/test-analysis-import.php
-          php scripts/test-billing.php
-          php scripts/test-sync-coverage.php
-          php scripts/test-claims.php
-          php scripts/test-return-inventory.php
-          php scripts/test-auto-sync.php
-          php scripts/test-auto-market-checks.php
-          php scripts/test-order-evidence.php
-          php scripts/test-cost-history.php
-          php scripts/test-profit-targets.php
-          php scripts/test-buybox-decision.php
-          php scripts/test-catalog-alerts.php
-          php scripts/test-cargo-audit.php
-          php scripts/test-cargo-estimate.php
-          php scripts/test-cargo-reprice.php
-          php scripts/test-payout-receipts.php
-          php scripts/test-large-catalog.php
-          php scripts/test-calculator-matrix.php /tmp/karfiyat-calculator-matrix.json
-          node scripts/test-calculator-parity.js /tmp/karfiyat-calculator-matrix.json
-      - name: Isolated HTTP smoke test
-        run: python3 scripts/test-http-smoke.py
-      - name: JavaScript syntax
-        run: node --check public_html/assets/app.js && node --check crawler/crawl.js
+          set +e
+          failures=0
+          run_test() {
+            if "$@"; then
+              echo "PASS command: $*"
+            else
+              echo "FAIL command: $*"
+              failures=$((failures + 1))
+            fi
+          }
+          case "$SUITE" in
+            syntax)
+              run_test bash -o pipefail -c "find includes public_html scripts -name '*.php' -print0 | xargs -0 -n1 php -l"
+              run_test node --check public_html/assets/app.js
+              run_test node --check crawler/crawl.js
+              ;;
+            finance)
+              for test in profit money-input order-estimate commission-evidence product-profit payout report-lines finance-integrity period-finance product-finance payout-receipts cargo-audit cargo-estimate cargo-reprice; do run_test php "scripts/test-$test.php"; done
+              ;;
+            integration)
+              for test in trendyol-v2 verify-trendyol api-contract sync-coverage claims return-inventory auto-sync auto-market-checks order-evidence; do run_test php "scripts/test-$test.php"; done
+              ;;
+            application)
+              for test in analysis-import billing cost-history profit-targets buybox-decision catalog-alerts; do run_test php "scripts/test-$test.php"; done
+              ;;
+            security-performance)
+              run_test php scripts/test-db-safety.php
+              run_test php scripts/test-large-catalog.php
+              ;;
+            http)
+              run_test python3 scripts/test-http-smoke.py
+              run_test python3 scripts/run-legacy-http-tests.py
+              ;;
+            calculator)
+              run_test php scripts/test-calculator-matrix.php /tmp/karfiyat-calculator-matrix.json
+              run_test node scripts/test-calculator-parity.js /tmp/karfiyat-calculator-matrix.json
+              ;;
+            *) exit 2 ;;
+          esac
+          echo "Failed commands: $failures"
+          test "$failures" -eq 0

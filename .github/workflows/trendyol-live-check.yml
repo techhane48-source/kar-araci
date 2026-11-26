@@ -78,6 +78,11 @@ jobs:
           state = payout.get("state") if isinstance(payout, dict) else None
           labels = {"matched":"PASS","difference":"FAIL (ARITHMETIC)","incomplete":"FAIL (INCOMPLETE EVIDENCE)","invalid_payment":"FAIL (INVALID PAYMENT)","request_failed":"FAIL (REQUEST)","not_verified":"NOT VERIFIED"}
           print("Payout sample arithmetic: " + labels.get(state, "NOT VERIFIED"))
+          for label, key, field in (("Cargo invoice item evidence", "cargo_invoice_items", "nonempty_evidence"), ("Orders evidence", "orders", "provider_rows"), ("Claims evidence", "claims", "rows"), ("Service fee evidence", "platform_service_fee", "rows")):
+              result = checks.get(key, {})
+              valid = isinstance(result, dict) and result.get("ok") is True
+              evidence = result.get(field) if valid else None
+              print(label + ": " + ("PRESENT" if evidence else ("NOT VERIFIED" if valid else "FAIL")))
           print("Independent financial reconciliation: NOT VERIFIED")
           sys.exit(0 if sys.argv[2] == "0" and report.get("ok") is True else 1)
           PY
