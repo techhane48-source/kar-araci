@@ -50,23 +50,27 @@ function return_accepted_counts(PDO $db,int $uid,array $claims): array
     foreach(array_chunk($packages,200) as $chunk){
         $q=$db->prepare("SELECT order_number,outbound_package,line_id,group_line_id,barcode FROM trendyol_claim_items WHERE user_id=? AND status='Accepted' AND outbound_package IN (".implode(',',array_fill(0,count($chunk),'?')).")");
         $q->execute(array_merge([$uid],$chunk));$rows=$q->fetchAll();
-        // Count accepted units by actual group, including ambiguous legacy rows conservatively.
+        // Aggregate once; avoid a quadratic scan on large return histories.
+        $baseKey=static fn(array $r)=>json_encode([(string)$r['order_number'],(string)$r['outbound_package'],(string)$r['barcode']],JSON_THROW_ON_ERROR);
+        $totals=[];$groups=[];$legacy=[];
+        foreach($rows as $r){
+            $key=$baseKey($r);$group=(string)$r['group_line_id'];
+            $totals[$key]=($totals[$key]??0)+1;
+            if($group==='')$legacy[$key]=($legacy[$key]??0)+1;
+            else $groups[$key][$group]=($groups[$key][$group]??0)+1;
+        }
+        $chunkSet=array_fill_keys($chunk,true);
         foreach($claims as $claim){
-            if(!in_array((string)$claim['outbound_package'],$chunk,true))continue;
-            $n=0;$group=(string)($claim['group_line_id']??'');
-            foreach($rows as $r){
-                if((string)$r['order_number']!==(string)$claim['order_number']||(string)$r['outbound_package']!==(string)$claim['outbound_package']||(string)$r['barcode']!==(string)$claim['barcode'])continue;
-                $other=(string)$r['group_line_id'];
-                if($group===''||$other===''||$group===$other)$n++;
-            }
-            $out[return_inventory_key($claim)]=$n;
+            if(!isset($chunkSet[(string)$claim['outbound_package']]))continue;
+            $key=$baseKey($claim);$group=(string)($claim['group_line_id']??'');
+            $out[return_inventory_key($claim)]=$group===''?($totals[$key]??0):(($groups[$key][$group]??0)+($legacy[$key]??0));
         }
     }
     return $out;
 }
 function return_inventory_key(array $r): string
 {
-    return json_encode([(string)$r['order_number'],(string)$r['outbound_package'],(string)(($r['group_line_id']??'')!==''?$r['group_line_id']:$r['line_id']),(string)$r['barcode']],JSON_THROW_ON_ERROR);
+    return json_encode([(string)$r['order_number'],(string)$r['outbound_package'],($r['group_line_id']??'')!==''?'group':'legacy',(string)(($r['group_line_id']??'')!==''?$r['group_line_id']:$r['line_id']),(string)$r['barcode']],JSON_THROW_ON_ERROR);
 }
 function return_inventory_save(PDO $db,int $uid,string $itemId,string $condition,string $raw): void
 {

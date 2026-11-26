@@ -25,4 +25,9 @@ $t['group identity inventory match']=return_inventory_evidence($group,$p,1,null)
 persist_claims($db,1,[$group,array_replace($group,['item_id'=>'I5','line_id'=>'UNIT2'])]);
 $counts=return_accepted_counts($db,1,[$group]);
 $t['group count includes ambiguous legacy rows conservatively']=$counts[return_inventory_key($group)]===5;
+$other=array_replace($group,['item_id'=>'I6','group_line_id'=>'L2','line_id'=>'UNIT3']);persist_claims($db,1,[$other]);
+$counts=return_accepted_counts($db,1,[$group,$other,$c]);
+$t['same barcode distinct groups not merged']=$counts[return_inventory_key($group)]===5&&$counts[return_inventory_key($other)]===4;
+// Legacy claims intentionally count all groups of the same barcode; their keys must remain separate.
+$t['legacy key remains separate and conservative']=count($counts)===3&&$counts[return_inventory_key($c)]===6;
 foreach($t as $n=>$ok)echo ($ok?'PASS':'FAIL')." $n\n";exit(in_array(false,$t,true)?1:0);

@@ -178,18 +178,24 @@ function verify_order_statement_overlap(array $orders,array $movements,array $cl
     foreach($movements as $r){
         $no=(string)($r['orderNumber']??'');if($no!==''&&isset($packages[$no]))$byOrder[$no][]=$r;
     }
-    $matched=0;$unresolved=0;$excluded=0;
+    $matched=0;$unresolved=0;$excluded=0;$saleOrders=0;$blockedClaim=0;$blockedAdjustment=0;$missingPackage=0;$ineligible=0;
     foreach($byOrder as $no=>$rows){
-        $byPackage=[];$blocked=isset($claimOrders[$no]);
+        $byPackage=[];$hasSale=false;$claimBlock=isset($claimOrders[$no]);$adjustment=false;$packageMissing=false;
         foreach($rows as $r){
             $pid=(string)($r['shipmentPackageId']??'');
-            if(($r['queryType']??null)!=='Sale'||!isset($packages[$no][$pid])){$blocked=true;continue;}
+            if(($r['queryType']??null)!=='Sale'){$adjustment=true;continue;}
+            $hasSale=true;
+            if(!isset($packages[$no][$pid])){$packageMissing=true;continue;}
             $byPackage[$pid][]=$r;
         }
-        if($blocked){$excluded++;continue;}
+        if(!$hasSale)continue;
+        $saleOrders++;
+        if($claimBlock||$adjustment||$packageMissing){
+            $excluded++;if($claimBlock)$blockedClaim++;if($adjustment)$blockedAdjustment++;if($packageMissing)$missingPackage++;continue;
+        }
         foreach($byPackage as $pid=>$sales){
             $o=$packages[$no][$pid];
-            if(($o['status']??null)!=='Delivered'||($o['currencyCode']??null)!=='TRY'||($o['orderCountryCode']??null)!=='TR'){$excluded++;continue;}
+            if(($o['status']??null)!=='Delivered'||($o['currencyCode']??null)!=='TRY'||($o['orderCountryCode']??null)!=='TR'){$excluded++;$ineligible++;continue;}
             $order=['marketplace'=>'trendyol','currency_code'=>'TRY','country_code'=>'TR','order_number'=>(string)$no,'package_number'=>(string)$pid,
                 'status'=>$o['status'],'total_price'=>$o['totalPrice']??null,'lines'=>$o['lines']??null];
             $seller=(string)($sales[0]['raw']['sellerId']??'');$converted=[];
@@ -200,7 +206,9 @@ function verify_order_statement_overlap(array $orders,array $movements,array $cl
         }
     }
     return ['ok'=>$unresolved===0,'state'=>$unresolved?'incomplete':($matched?'matched':'not_verified'),
-        'matched_packages'=>$matched,'unresolved_packages'=>$unresolved,'excluded_order_groups_or_packages'=>$excluded,'final_profit_verified'=>false];
+        'matched_packages'=>$matched,'unresolved_packages'=>$unresolved,'excluded_order_groups_or_packages'=>$excluded,
+        'reason'=>$unresolved?'AMOUNT_OR_LINE':($matched?null:(!$saleOrders?'NO_SALE_ORDER_OVERLAP':($missingPackage?'PACKAGE_MISSING':($blockedAdjustment?'ADJUSTMENTS_PRESENT':($blockedClaim?'CLAIMS_PRESENT':($ineligible?'STATUS_OR_SCOPE':'NO_ELIGIBLE_PACKAGE')))))),
+        'final_profit_verified'=>false];
 }
 /** An invoice order reference alone cannot assign a parcel charge to a shipment package. */
 function verify_cargo_order_overlap(array $orders,array $invoiceOrders): array
@@ -213,8 +221,7 @@ function verify_cargo_order_overlap(array $orders,array $invoiceOrders): array
     $count=count(array_intersect_key($known,$invoiceOrders));
     return ['ok'=>true,'state'=>$count?'present':'not_verified','matched_order_references'=>$count,'package_allocation_verified'=>false];
 }
-/** Expand only the overlap lookup, retaining recent package versions and only targeted orders.
- * 28 days is a conservative bounded lookback; original comparison window is unchanged. */
+/** Expand only overlap lookup; at most 56 days, in separate 14-day windows. */
 function verify_extend_order_overlap(object $client,array $recent,array $movements,array $invoiceOrders,int $from,int $now,callable $pause): ?array
 {
     $targets=$invoiceOrders;
@@ -223,19 +230,24 @@ function verify_extend_order_overlap(object $client,array $recent,array $movemen
         if($no!==''&&($row['queryType']??null)==='Sale')$targets[$no]=true;
     }
     if(!$targets)return $recent;
-    $earliest=$now-28*86400;
+    $earliest=$now-56*86400;
     if($from<=$earliest)return $recent;
     $seen=[];
     foreach($recent as $o){$pid=(string)($o['packageNumber']??'');if($pid!=='')$seen[$pid]=true;}
-    $pause();
-    $r=$client->getOrders('',date('c',$earliest),date('c',$from-1),100);
-    if(empty($r['ok'])||!is_array($r['orders']??null))return null;
-    foreach($r['orders'] as $o){
-        if(!is_array($o))return null;
-        $no=(string)($o['orderNumber']??'');$pid=(string)($o['packageNumber']??'');
-        if($pid===''||$no==='')return null;
-        if(!isset($targets[$no])||isset($seen[$pid]))continue;
-        $seen[$pid]=true;$recent[]=$o;
+    // Newest slice first; preserve more recent versions. Fail closed on partial reads.
+    for($end=$from-1;$end>=$earliest;$end=$start-1){
+        $start=max($earliest,$end-14*86400+1);
+        if($start===$end)$start--;
+        $pause();
+        $r=$client->getOrders('',date('c',$start),date('c',$end),100);
+        if(empty($r['ok'])||!is_array($r['orders']??null))return null;
+        foreach($r['orders'] as $o){
+            if(!is_array($o))return null;
+            $no=(string)($o['orderNumber']??'');$pid=(string)($o['packageNumber']??'');
+            if($pid===''||$no==='')return null;
+            if(!isset($targets[$no])||isset($seen[$pid]))continue;
+            $seen[$pid]=true;$recent[]=$o;
+        }
     }
     return $recent;
 }
