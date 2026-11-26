@@ -18,7 +18,8 @@ jobs:
         with:
           persist-credentials: false
       - name: Check PHP runtime
-        run: php -r 'exit(extension_loaded("curl") && extension_loaded("openssl") ? 0 : 1);'
+        run: |
+          php -r 'exit(extension_loaded("curl") && extension_loaded("openssl") ? 0 : 1);'
       - name: Read-only verification (no payloads or financial data in logs)
         env:
           TRENDYOL_SELLER_ID: ${{ secrets.TRENDYOL_SELLER_ID }}
