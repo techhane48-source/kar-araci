@@ -31,5 +31,13 @@ try{cost_history_group_values(['001','001'],'2025-04-01','125','10');$tests['dup
 try{cost_history_group_values(['001'],'2025-04-01','125','');$tests['unknown purchase VAT not saved']=false;}catch(InvalidArgumentException $e){$tests['unknown purchase VAT not saved']=true;}
 $before=(int)$db->query("SELECT COUNT(*) FROM product_cost_history")->fetchColumn();
 try{cost_history_save($db,1,cost_history_group_values(['001','999'],'2025-05-01','125','10'),false,'group');$tests['group atomic rollback']=false;}catch(InvalidArgumentException $e){$tests['group atomic rollback']=(int)$db->query("SELECT COUNT(*) FROM product_cost_history")->fetchColumn()===$before;}
+$today=(new DateTimeImmutable('now',new DateTimeZone('Europe/Istanbul')))->format('Y-m-d');
+$todayRows=cost_history_group_values(['001','002'],$today,'130','10');
+$r=cost_history_save($db,1,$todayRows,false,'group',true);
+$tests['today updates catalog and history atomically']=$r['catalog_updated']===2&&$r['inserted']===2&&(int)$db->query("SELECT COUNT(*) FROM products WHERE user_id=1 AND cost=130 AND cost_vat=10 AND price=200")->fetchColumn()===2;
+$r=cost_history_save($db,1,$todayRows,false,'group',true);
+$tests['repeat catalog update idempotent']=$r['catalog_updated']===0&&$r['unchanged']===2;
+try{cost_history_save($db,1,cost_history_group_values(['001'],'2025-06-01','95','10'),false,'group',true);$tests['historic date cannot change current catalog']=false;}catch(InvalidArgumentException $e){$tests['historic date cannot change current catalog']=(float)$db->query("SELECT cost FROM products WHERE user_id=1 AND barcode='001'")->fetchColumn()===130.0;}
+try{cost_history_save($db,1,cost_history_group_values(['001','999'],$today,'140','10'),true,'group',true);$tests['catalog and history both rolled back']=false;}catch(InvalidArgumentException $e){$tests['catalog and history both rolled back']=(float)$db->query("SELECT cost FROM products WHERE user_id=1 AND barcode='001'")->fetchColumn()===130.0&&(float)cost_history_at(cost_history_map($db,1,['001'],time())['001'],time())['cost']===130.0;}
 foreach($tests as $n=>$ok)echo ($ok?'PASS':'FAIL')." $n\n";
 exit(in_array(false,$tests,true)?1:0);

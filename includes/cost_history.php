@@ -53,26 +53,34 @@ function cost_history_group_values(array $barcodes,string $date,string $cost,str
     return cost_history_values(['Barkod','Geçerlilik Tarihi','Maliyet','Maliyet KDV Oranı'],$rows);
 }
 /** Append-only revisions. All rows validated first; explicit replacement required for conflicting effective date. */
-function cost_history_save(PDO $db,int $uid,array $rows,bool $replace=false,string $source='manual'): array
+function cost_history_save(PDO $db,int $uid,array $rows,bool $replace=false,string $source='manual',bool $updateCatalog=false): array
 {
     $db->beginTransaction();
     try{
         $q=$db->prepare("SELECT COUNT(*) FROM products WHERE user_id=? AND marketplace='trendyol' AND barcode=?");
         $old=$db->prepare("SELECT cost,cost_vat FROM product_cost_history WHERE user_id=? AND barcode=? AND effective_at=? ORDER BY id DESC LIMIT 1");
         $ins=$db->prepare("INSERT INTO product_cost_history(user_id,barcode,effective_at,cost,cost_vat,source,recorded_at) VALUES(?,?,?,?,?,?,?)");
-        $count=0;$same=0;
+        $count=0;$same=0;$catalogUpdated=0;
+        $today=(new DateTimeImmutable('now',new DateTimeZone('Europe/Istanbul')))->setTime(0,0)->getTimestamp();
+        $update=$db->prepare("UPDATE products SET cost=?,cost_vat=? WHERE user_id=? AND marketplace='trendyol' AND barcode=? AND (cost IS NULL OR cost<>? OR cost_vat IS NULL OR cost_vat<>?)");
         foreach($rows as $r){
             $bc=(string)$r['barcode'];$ts=(int)$r['effective_at'];$c=(float)$r['cost'];$v=(float)$r['vat'];
             if($c<=0||!is_finite($c)||$v<0||$v>100||!is_finite($v)||$ts<=0||$ts>time())throw new InvalidArgumentException('Geçersiz maliyet kaydı.');
             $q->execute([$uid,$bc]);if((int)$q->fetchColumn()!==1)throw new InvalidArgumentException('Barkod tek bir Trendyol ürünüyle eşleşmeli: '.$bc);
+            if($updateCatalog&&$ts!==$today)throw new InvalidArgumentException('Güncel katalog maliyeti yalnızca bugün geçerli olan kayıtla birlikte güncellenebilir.');
             $old->execute([$uid,$bc,$ts]);$existing=$old->fetch();
-            if($existing){
-                if(abs((float)$existing['cost']-$c)<0.000001&&abs((float)$existing['cost_vat']-$v)<0.000001){$same++;continue;}
-                if(!$replace)throw new InvalidArgumentException('Aynı tarihli farklı maliyet var: '.$bc.'. Düzeltme onayı gerekli.');
+            if($existing&&abs((float)$existing['cost']-$c)<0.000001&&abs((float)$existing['cost_vat']-$v)<0.000001){
+                $same++;
+            }else{
+                if($existing&&!$replace)throw new InvalidArgumentException('Aynı tarihli farklı maliyet var: '.$bc.'. Düzeltme onayı gerekli.');
+                $ins->execute([$uid,$bc,$ts,$c,$v,$source,time()]);$count++;
             }
-            $ins->execute([$uid,$bc,$ts,$c,$v,$source,time()]);$count++;
+            if($updateCatalog){
+                $update->execute([$c,$v,$uid,$bc,$c,$v]);
+                $catalogUpdated+=$update->rowCount();
+            }
         }
-        $db->commit();return ['inserted'=>$count,'unchanged'=>$same];
+        $db->commit();return ['inserted'=>$count,'unchanged'=>$same,'catalog_updated'=>$catalogUpdated];
     }catch(Throwable $e){if($db->inTransaction())$db->rollBack();throw $e;}
 }
 /** Return latest recorded revision of each effective day, ordered ascending by date/id. */

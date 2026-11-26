@@ -34,7 +34,7 @@ $pages=max(1,(int)ceil($total/100));$page=max(1,min($pages,(int)($_GET['page']??
 $q=db()->prepare("SELECT * FROM product_cost_history WHERE $filter ORDER BY effective_at DESC,id DESC LIMIT 100 OFFSET ".(($page-1)*100));$q->execute($args);$rows=$q->fetchAll();
 $pageTitle='Maliyet Geçmişi — '.APP_NAME;require __DIR__.'/../includes/header.php';?>
 <div class="wrap"><div class="toolbar"><h1>Maliyet geçmişi</h1><a href="urunler.php">Ürünlerim</a> · <a href="maliyet-senaryosu.php">Ürün grubuna toplu maliyet</a></div>
-<p class="hint">Trendyol barkodu için belirtilen tarihten itibaren geçerli KDV dahil birim alış maliyetini kaydedin. Sipariş tarihinde geçerli son sürüm kullanılır. Bu kullanıcı beyanıdır, fatura doğrulaması değildir. Güncel katalog maliyetini veya ilk gözlem kaydını değiştirmez; geçmiş raporların sonucunu etkiler.</p>
+<p class="hint">Trendyol barkodu için belirtilen tarihten itibaren geçerli KDV dahil birim alış maliyetini kaydedin. Sipariş tarihinde geçerli son sürüm kullanılır. Bu kullanıcı beyanıdır, fatura doğrulaması değildir. Bu sayfadaki tekil kayıt ve dosya aktarımı güncel katalog maliyetini veya ilk gözlem kaydını değiştirmez; geçmiş raporların sonucunu etkiler. Ürün grubu ekranındaki ayrı onayla bugünkü katalog maliyeti de güncellenebilir.</p>
 <?php if($error):?><div class="alert alert-error"><?=h($error)?></div><?php endif;?>
 <div class="card"><h2>Tek maliyet kaydı</h2><form method="post">
 <input type="hidden" name="csrf" value="<?=h(csrf_token())?>"><input type="hidden" name="action" value="save">
