@@ -12,5 +12,14 @@ $r=private_cost_scenario($c,[array_replace($o,['status'=>'Returned'])],['001'],1
 $t['returned package excluded']=$r['other_packages_excluded']===1&&$r['net_profit']===null;
 try{private_cost_scenario($c,[$o],['unknown'],100);$t['unknown barcode rejected']=false;}catch(InvalidArgumentException $e){$t['unknown barcode rejected']=true;}
 $t['preview does not assign cost']=count(private_cost_candidates($c,'synthetic'))===1;
+$product=['barcode'=>'001','cost'=>80,'rate'=>20,'kdv'=>20,'cost_vat'=>10,'cargo'=>25];
+$local=['marketplace'=>'trendyol','package_number'=>'P','currency_code'=>'TRY','country_code'=>'TR','status'=>'Delivered','total_price'=>500,'cargo_override'=>40,'commission_override'=>100,'lines'=>$o['lines']];
+$r=private_local_cost_scenario([$product],[$local],['001'],100,null);
+$t['unknown purchase VAT blocks tax estimate']=$r['gross_difference_before_deductions']===300.0&&$r['estimated_profit']===null;
+$r=private_local_cost_scenario([$product],[$local],['001'],100,10);
+$t['explicit VAT uses existing estimate model']=$r['estimated_packages']===1&&is_float($r['estimated_profit'])&&$r['net_profit']===null;
+unset($local['cargo_override']);
+$r=private_local_cost_scenario([$product],[$local],['001'],100,10);
+$t['delivered cargo cannot fallback']=$r['estimated_packages']===0&&$r['estimated_profit']===null&&$r['estimate_gaps']!==[];
 foreach($t as $name=>$ok)echo ($ok?'PASS':'FAIL')." $name\n";
 exit(in_array(false,$t,true)?1:0);

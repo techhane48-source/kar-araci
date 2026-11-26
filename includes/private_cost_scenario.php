@@ -56,3 +56,41 @@ function private_cost_candidates(array $catalog,string $phrase): array
         $out[]=['barcode'=>(string)$p['barcode'],'title'=>(string)$p['title']];
     return $out;
 }
+
+/** Local read-only scenario. Existing financial overlays remain authoritative; no cost is persisted.
+ * An explicit purchase VAT rate is required before invoking the existing estimate model. */
+function private_local_cost_scenario(array $products,array $orders,array $barcodes,mixed $grossCost,?float $purchaseVat): array
+{
+    if($purchaseVat!==null&&(!is_finite($purchaseVat)||$purchaseVat<0||$purchaseVat>100))throw new InvalidArgumentException('Maliyet KDV oranı geçersiz.');
+    $catalog=[];$map=[];$remote=[];
+    foreach($products as $p){
+        $bc=(string)($p['barcode']??'');if($bc==='')continue;
+        $catalog[]=['barcode'=>$bc];$map[$bc]=$p;
+    }
+    foreach($orders as $o){
+        $remote[]=['packageNumber'=>$o['package_number']??null,'currencyCode'=>$o['currency_code']??null,
+          'orderCountryCode'=>$o['country_code']??null,'status'=>$o['status']??null,'totalPrice'=>$o['total_price']??null,'lines'=>$o['lines']??null];
+    }
+    $out=private_cost_scenario($catalog,$remote,$barcodes,$grossCost);
+    $out['estimated_packages']=0;$out['estimated_profit']=null;$out['estimated_sale']=null;$out['estimate_gaps']=[];
+    if($purchaseVat===null)return $out;
+    $selected=array_fill_keys($barcodes,true);$sum=0.0;$sale=0.0;
+    foreach($orders as $o){
+        if(($o['marketplace']??null)!=='trendyol'||($o['status']??null)!=='Delivered'||!order_is_domestic_try($o)||!is_array($o['lines']??null)||!$o['lines'])continue;
+        $valid=true;$ids=[];
+        foreach($o['lines'] as &$line){
+            if(!is_array($line)||!isset($selected[(string)($line['barcode']??'')])){$valid=false;break;}
+            $id=(string)($line['line_id']??'');
+            if($id===''||isset($ids[$id])){$valid=false;break;}$ids[$id]=true;
+            $line['cost_snapshot']=(float)$grossCost;$line['cost_vat_snapshot']=$purchaseVat;
+        }unset($line);
+        if(!$valid||report_order_lines($o,[])===null)continue;
+        // A delivered order cannot fall back to today's product freight. Missing evidence is a gap.
+        if(!array_key_exists('cargo_override',$o)){$o['cargo_override']=null;$o['cargo_source']='Gönderi kargo kanıtı eksik';}
+        $p=calc_order_profit($o,$map);
+        if(!$p['ok']){$reason=(string)($p['reason']??'Veri eksik');$out['estimate_gaps'][$reason]=($out['estimate_gaps'][$reason]??0)+1;continue;}
+        $out['estimated_packages']++;$sum+=$p['profit'];$sale+=$p['sale'];
+    }
+    if($out['estimated_packages']){$out['estimated_profit']=$sum;$out['estimated_sale']=$sale;}
+    return $out;
+}

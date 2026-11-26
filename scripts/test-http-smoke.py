@@ -94,6 +94,17 @@ with tempfile.TemporaryDirectory(prefix="karfiyat-http-") as tmp:
             assert status == 200 and "CI-PARCEL" in page, "Populated cargo page missing parcel"
             status, csv = request("kargo-kontrol.php?q=CI-PARCEL&export=csv")
             assert status == 200 and "CI-PARCEL" in csv and "Beklenen desi" in csv, "Cargo CSV missing record"
+            status, page = request("maliyet-senaryosu.php")
+            assert status == 200 and "Özel maliyet senaryosu" in page
+            status, page = request("maliyet-senaryosu.php", {"csrf":csrf,"phrase":"CI product","cost":"100","vat":"","days":"30","action":"preview"})
+            assert status == 200 and "CI001" in page
+            status, page = request("maliyet-senaryosu.php", {"csrf":csrf,"phrase":"CI product","cost":"100","vat":"","days":"30","action":"calculate","barcodes[]":"CI001"})
+            assert status == 200 and "Senaryo sonucu" in page and "617,74" in page and "vergi sonrası tahmin gösterilmedi" in page
+            status, page = request("maliyet-senaryosu.php", {"csrf":csrf,"phrase":"CI product","cost":"100","vat":"10","days":"30","action":"calculate","barcodes[]":"OTHER"})
+            assert status == 200 and "Ürün seçimi geçersiz" in page
+            with sqlite3.connect(db) as con:
+                assert con.execute("SELECT cost FROM products WHERE barcode='CI001'").fetchone()[0] == 400
+            print("PASS private scenario preview, selection, unknown VAT and unchanged persisted cost")
             print("PASS populated dashboard, order finance and cargo views")
             print("PASS registration, CSRF rejection, saved VAT and withholding settings")
         finally:

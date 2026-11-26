@@ -214,7 +214,7 @@ require __DIR__ . '/../includes/header.php';
 ?>
 <div class="page-head">
   <h1>Raporlar</h1><?php if($rapor==='claims'&&$mp==='trendyol'): ?><p><a class="btn-ghost" href="iade-kontrol.php">İade depo kontrolü</a></p><?php endif; ?>
-  <p class="muted">Kârlılık analizleri · <a href="raporlar.php?r=<?= h($rapor) ?>&mp=<?= urlencode($mp) ?>&days=<?= $days ?>&export=1">⬇ Raporu İndir (CSV)</a></p>
+  <p class="muted">Kârlılık analizleri · <a href="maliyet-senaryosu.php">Özel maliyet senaryosu</a> · <a href="raporlar.php?r=<?= h($rapor) ?>&mp=<?= urlencode($mp) ?>&days=<?= $days ?>&export=1">⬇ Raporu İndir (CSV)</a></p>
 </div>
 
 <div class="card">
