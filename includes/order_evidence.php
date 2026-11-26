@@ -4,6 +4,43 @@ require_once __DIR__.'/finance.php';
 require_once __DIR__.'/profit.php';
 require_once __DIR__.'/cost_history.php';
 
+/** Recorded statement movements only: no inferred signs, tax or realized profit.
+ * Unknown or unmatched adjustments withhold the adjustment balance. */
+function order_adjustment_evidence(array $packages,array $rows,string $seller): array
+{
+    $ids=[];$orderNo=(string)($packages[0]['order_number']??'');
+    foreach($packages as $p){
+        $id=(string)($p['package_number']??'');
+        if($id===''||$orderNo===''||(string)($p['order_number']??'')!==$orderNo||isset($ids[$id])||!order_is_domestic_try($p))
+            return ['state'=>'incomplete','rows'=>0,'balance'=>null];
+        $lines=$p['lines']??[];if(is_string($lines))$lines=json_decode($lines,true);
+        $ids[$id]=[];
+        foreach(is_array($lines)?$lines:[] as $l)if(is_array($l)&&trim((string)($l['barcode']??''))!=='')$ids[$id][(string)$l['barcode']]=true;
+    }
+    $allowed=['Return','Discount','DiscountCancel','Coupon','CouponCancel','TyDiscount','TyDiscountCancel','TyCoupon','TyCouponCancel',
+        'ProvisionPositive','ProvisionNegative','ManualRefund','ManualRefundCancel','SellerRevenuePositive','SellerRevenueNegative',
+        'SellerRevenuePositiveCancel','SellerRevenueNegativeCancel','CommissionPositive','CommissionNegative','CommissionPositiveCancel','CommissionNegativeCancel',
+        'DeliveryFee','DeliveryFeeCancel','PayByLink'];
+    $seen=[];$n=0;$balance=0;$bad=0;
+    foreach($rows as $row){
+        $type=(string)($row['query_type']??'');if($type==='Sale')continue;
+        $id=(string)($row['external_id']??'');$pid=(string)($row['shipment_package_id']??'');
+        $raw=$row['raw_json']??null;if(is_string($raw))$raw=json_decode($raw,true);
+        if($seller===''||$id===''||isset($seen[$id])||!isset($ids[$pid])||!is_array($raw)||!finance_is_domestic($raw)||
+           (string)($raw['sellerId']??'')!==$seller||(string)($raw['id']??'')!==$id||
+           (string)($row['order_number']??'')!==$orderNo||(string)($raw['orderNumber']??'')!==$orderNo||
+           (string)($raw['shipmentPackageId']??'')!==$pid||!in_array($type,$allowed,true)){$bad++;continue;}
+        $seen[$id]=true;
+        $bc=(string)($raw['barcode']??'');
+        if($bc===''||!isset($ids[$pid][$bc])){$bad++;continue;}
+        try{
+            $credit=finance_units($raw['credit']??null);$debt=finance_units($raw['debt']??null);
+            if($credit<0||$debt<0||($credit>0&&$debt>0))throw new InvalidArgumentException('Geçersiz hareket');
+            $balance+=$credit-$debt;$n++;
+        }catch(InvalidArgumentException $e){$bad++;}
+    }
+    return ['state'=>$bad?'incomplete':($n?'matched':'not_verified'),'rows'=>$n,'balance'=>!$bad&&$n?$balance/10000.0:null];
+}
 /**
  * Order-level evidence aggregation. The order number and package ID are separate
  * identifiers. Cargo invoice parcelUniqueId is NOT shipmentPackageId.
@@ -136,6 +173,7 @@ function order_evidence(array $packages,array $settlements,array $cargo,array $c
         }
         if(!$single)$unallocatedCargo=$outbound/10000.0;
     }
+    $adjustments=order_adjustment_evidence($packages,$settlements,$seller);
     // Deliberately not a net-profit result: invoices, VAT, withholding, service,
     // merchant shipping, returns and future adjustments are not fully reconciled.
     return ['order_number'=>$orderNo,'packages'=>count($byPackage),'active_packages'=>$active,
@@ -145,6 +183,7 @@ function order_evidence(array $packages,array $settlements,array $cargo,array $c
         'sale_credit'=>$sales?$saleCredit/10000.0:null,'sale_commission'=>$sales?$saleCommission/10000.0:null,'sale_revenue'=>$sales?$saleRevenue/10000.0:null,
         'cargo_rows'=>$cargoN,'outbound_cargo'=>$outboundN?$outbound/10000.0:null,'return_cargo'=>$returnN?$returnCargo/10000.0:null,'other_cargo'=>$cargoN?$otherCargo/10000.0:null,
         'claim_items'=>count($claims),'issues'=>array_values(array_unique($issues)),
+        'adjustment_state'=>$adjustments['state'],'adjustment_rows'=>$adjustments['rows'],'adjustment_balance'=>$adjustments['balance'],
         'known_subtotal'=>$subtotal,'product_components'=>$productComponents,'unallocated_product_cargo'=>$unallocatedCargo,'profit'=>null,'state'=>$issues?'Eksik / inceleme gerekli':'Temel kalemler eşleşti; kesin kâr değil'];
 }
 

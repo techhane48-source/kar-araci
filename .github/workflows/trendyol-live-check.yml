@@ -99,6 +99,9 @@ jobs:
           cargo = checks.get("cargo_invoice_items", {})
           basis = cargo.get("basis_state") if isinstance(cargo, dict) else None
           print("Cargo invoice arithmetic basis: " + {"matched":"PASS (VAT ASSUMPTION)","incomplete":"NOT VERIFIED (UNRESOLVED)","not_verified":"NOT VERIFIED"}.get(basis,"NOT VERIFIED"))
+          adjustment = checks.get("adjustment_overlap", {})
+          state = adjustment.get("state") if isinstance(adjustment, dict) else None
+          print("Adjustment/order evidence: " + {"matched":"PASS (OBSERVED RECORDS)","incomplete":"NOT VERIFIED (UNRESOLVED)","request_failed":"FAIL (REQUEST)","not_verified":"NOT VERIFIED"}.get(state,"NOT VERIFIED"))
           print("Independent financial reconciliation: NOT VERIFIED")
           sys.exit(0 if sys.argv[2] == "0" and report.get("ok") is True else 1)
           PY

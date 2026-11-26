@@ -6,6 +6,7 @@ require_once __DIR__.'/finance.php';
 require_once __DIR__.'/commission_evidence.php';
 require_once __DIR__.'/period_finance.php';
 require_once __DIR__.'/cargo_estimate.php';
+require_once __DIR__.'/order_evidence.php';
 
 /** Open only an existing database; no application migrations or key generation. */
 function verify_open_db(string $path): PDO
@@ -209,6 +210,30 @@ function verify_order_statement_overlap(array $orders,array $movements,array $cl
         'matched_packages'=>$matched,'unresolved_packages'=>$unresolved,'excluded_order_groups_or_packages'=>$excluded,
         'reason'=>$unresolved?'AMOUNT_OR_LINE':($matched?null:(!$saleOrders?'NO_SALE_ORDER_OVERLAP':($missingPackage?'PACKAGE_MISSING':($blockedAdjustment?'ADJUSTMENTS_PRESENT':($blockedClaim?'CLAIMS_PRESENT':($ineligible?'STATUS_OR_SCOPE':'NO_ELIGIBLE_PACKAGE')))))),
         'final_profit_verified'=>false];
+}
+/** Separate adjustment evidence from final net profit and from pure Sale matching. */
+function verify_adjustment_overlap(array $orders,array $movements): array
+{
+    $packages=[];$rows=[];
+    foreach($orders as $o){
+        $no=(string)($o['orderNumber']??'');$pid=(string)($o['packageNumber']??'');
+        if($no===''||$pid==='')continue;
+        $packages[$no][]=['marketplace'=>'trendyol','order_number'=>$no,'package_number'=>$pid,
+            'currency_code'=>$o['currencyCode']??null,'country_code'=>$o['orderCountryCode']??null,'lines'=>$o['lines']??[]];
+    }
+    foreach($movements as $s){
+        $no=(string)($s['orderNumber']??'');if(!isset($packages[$no])||($s['queryType']??null)==='Sale')continue;
+        $rows[$no][]=['external_id'=>$s['externalId']??null,'order_number'=>$no,'shipment_package_id'=>$s['shipmentPackageId']??null,
+            'query_type'=>$s['queryType']??null,'raw_json'=>$s['raw']??null];
+    }
+    $matched=0;$unresolved=0;
+    foreach($rows as $no=>$group){
+        $seller=(string)($group[0]['raw_json']['sellerId']??'');
+        $e=order_adjustment_evidence($packages[$no],$group,$seller);
+        if($e['state']==='matched')$matched++;else $unresolved++;
+    }
+    // A missing identity is an unresolved coverage condition, not a proven wrong monetary calculation.
+    return ['ok'=>true,'state'=>$unresolved?'incomplete':($matched?'matched':'not_verified'),'matched_orders'=>$matched,'unresolved_orders'=>$unresolved,'final_profit_verified'=>false];
 }
 /** An invoice order reference alone cannot assign a parcel charge to a shipment package. */
 function verify_cargo_order_overlap(array $orders,array $invoiceOrders): array
@@ -427,6 +452,7 @@ function verify_trendyol_read_only(object $client,?PDO $db,?int $uid,int $days,i
     $record('claim_order_overlap',static fn()=>$overlapRows===null||$claimRows===null?['ok'=>false,'state'=>'request_failed']:verify_claim_order_overlap($claimRows,$overlapRows));
     $record('cargo_order_overlap',static fn()=>!$cargoAvailable||$overlapRows===null?['ok'=>false,'state'=>'request_failed']:verify_cargo_order_overlap($overlapRows,$invoiceOrders));
     $record('order_statement_overlap',static fn()=>!$movementCoverage||$overlapRows===null||$claimRows===null?['ok'=>false,'state'=>'request_failed']:verify_order_statement_overlap($overlapRows,$movements,$claimRows));
+    $record('adjustment_overlap',static fn()=>!$movementCoverage||$overlapRows===null?['ok'=>false,'state'=>'request_failed']:verify_adjustment_overlap($overlapRows,$movements));
     $payoutItems=null;
     $record('payout_page',static function()use($client,&$payoutItems){
         $r=$client->getPaymentOrders(0);if(empty($r['ok'])||!is_array($r['items']??null))return ['ok'=>false];
