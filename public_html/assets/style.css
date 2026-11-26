@@ -347,3 +347,12 @@ tbody tr:hover{background:var(--bg-softer)}
 .tar{text-align:right}
 .btn-group{display:inline-flex;gap:4px;align-items:center;flex-wrap:wrap}
 .btn-active{background:var(--accent);color:#fff;border-color:var(--accent)}
+
+/* Keep all authenticated navigation reachable on narrow screens without widening the page. */
+.signed-in-header .header-inner{height:auto;min-height:68px;flex-wrap:wrap;gap:8px;padding-block:12px}
+.signed-in-header .main-nav{display:none}
+.signed-in-header .nav-auth{flex:1 1 100%;min-width:0;overflow-x:auto;gap:6px;padding:4px 0;scrollbar-width:thin}
+.signed-in-header .nav-auth>*{flex-shrink:0;white-space:nowrap}
+.signed-in-header .user-menu{margin-left:auto}
+a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible{outline:2px solid var(--accent);outline-offset:3px}
+@media(max-width:600px){.signed-in-header .header-inner{padding-inline:12px}.signed-in-header .nav-auth{margin-inline:0}.table-card{max-width:100%;overflow-x:auto}}

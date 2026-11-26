@@ -5,6 +5,7 @@ require_once __DIR__.'/trendyol.php';
 require_once __DIR__.'/finance.php';
 require_once __DIR__.'/commission_evidence.php';
 require_once __DIR__.'/period_finance.php';
+require_once __DIR__.'/cargo_estimate.php';
 
 /** Open only an existing database; no application migrations or key generation. */
 function verify_open_db(string $path): PDO
@@ -85,9 +86,9 @@ function verify_cargo_invoices(object $client,?PDO $db,?int $uid,array $document
            (string)($raw['id']??'')!==(string)$serial){$invalid++;continue;}
         if(!finance_is_domestic($raw)){$outside++;continue;}
         if(isset($serials[(string)$serial])){$invalid++;continue;}
-        $serials[(string)$serial]=true;
+        $serials[(string)$serial]=$raw;
     }
-    $checked=0;
+    $checked=0;$basisMatched=0;$basisUnknown=0;
     if($db)$q=$db->prepare("SELECT parcel_id,order_number,shipment_type,amount,desi FROM trendyol_cargo_items WHERE user_id=? AND invoice_serial=?");
     foreach(array_keys($serials) as $serial){
         $pause();
@@ -96,6 +97,12 @@ function verify_cargo_invoices(object $client,?PDO $db,?int $uid,array $document
         }catch(Throwable $e){$remote=null;}
         if($remote===null){$failed++;continue;}
         $checked++;$rows+=count($remote);if(!$remote)$empty++;
+        if($remote){
+            $raw=$serials[$serial];$items=[];
+            foreach($r['items'] as $item)$items[]=['parcel_id'=>$item['parcelUniqueId'],'shipment_type'=>$item['shipmentPackageType'],'amount'=>$item['amount'],'invoice_serial'=>(string)$serial];
+            $basis=cargo_invoice_basis($raw,$items,(string)($raw['sellerId']??''),(string)$serial);
+            if($basis===null)$basisUnknown++;else $basisMatched++;
+        }
         if($observedOrders!==null)foreach($remote as $entry)$observedOrders[(string)$entry[0]]=true;
         if(!$db)continue;
         $q->execute([$uid,(string)$serial]);$local=verify_cargo_item_map($q->fetchAll(),true);
@@ -108,7 +115,7 @@ function verify_cargo_invoices(object $client,?PDO $db,?int $uid,array $document
         'checked_invoices'=>$checked,'failed_invoices'=>$failed,'empty_invoices'=>$empty,'provider_rows'=>$rows,
         'missing_local'=>$db?$missing:null,'extra_local'=>$db?$extra:null,'different_local'=>$db?$different:null,
         'invalid_local_invoices'=>$db?$invalidLocal:null,'nonempty_evidence'=>$rows>0,
-        'matched'=>$db?($rows>0&&$ok&&$empty===0):null,'invoice_vat_verified'=>false];
+        'matched'=>$db?($rows>0&&$ok&&$empty===0):null,'invoice_vat_verified'=>false,'basis_state'=>$basisUnknown?'incomplete':($basisMatched?'matched':'not_verified'),'basis_matched'=>$basisMatched,'basis_unknown'=>$basisUnknown];
 }
 /** Translate only known internal errors; arbitrary provider text never leaves the runner. */
 function verify_catalog_error_code(mixed $error): string
@@ -243,6 +250,24 @@ function verify_service_fee_overlap(array $all,array $filtered): array
     $domestic=0;
     foreach($filtered as $row)if(isset($ids[(string)$row['externalId']])&&finance_is_domestic($row['raw']))$domestic++;
     return ['ok'=>true,'state'=>$domestic?'matched':'not_verified'];
+}
+/** Claim/package/barcode identity only, not refund, inventory or profit evidence. */
+function verify_claim_order_overlap(array $claims,array $orders): array
+{
+    $byPackage=[];$matched=0;$unresolved=0;$unavailable=0;
+    foreach($orders as $o){
+        $id=(string)($o['packageNumber']??'');if($id==='')continue;
+        $byPackage[$id]=['marketplace'=>'trendyol','order_number'=>$o['orderNumber']??null,'package_number'=>$id,
+          'currency_code'=>$o['currencyCode']??null,'country_code'=>$o['orderCountryCode']??null,'lines'=>$o['lines']??[]];
+    }
+    foreach($claims as $c){
+        $id=(string)($c['outbound_package']??'');
+        if($id===''||!isset($byPackage[$id])){$unavailable++;continue;}
+        $r=claim_order_match($c,$byPackage[$id]);
+        if($r['scope']==='domestic'&&$r['state']==='Paket ve ürün satırı eşleşti')$matched++;else $unresolved++;
+    }
+    return ['ok'=>$unresolved===0,'state'=>$unresolved?'incomplete':($matched?'matched':'not_verified'),
+      'matched'=>$matched,'unresolved'=>$unresolved,'unavailable'=>$unavailable,'refund_verified'=>false,'inventory_verified'=>false];
 }
 /** Check one completed payment from the validated first page, using the production arithmetic.
  * No payment identifier, amount, provider message or candidate details are returned. */
@@ -382,6 +407,7 @@ function verify_trendyol_read_only(object $client,?PDO $db,?int $uid,int $days,i
             });
         }
     }
+    $record('claim_order_overlap',static fn()=>$overlapRows===null||$claimRows===null?['ok'=>false,'state'=>'request_failed']:verify_claim_order_overlap($claimRows,$overlapRows));
     $record('cargo_order_overlap',static fn()=>!$cargoAvailable||$overlapRows===null?['ok'=>false,'state'=>'request_failed']:verify_cargo_order_overlap($overlapRows,$invoiceOrders));
     $record('order_statement_overlap',static fn()=>!$movementCoverage||$overlapRows===null||$claimRows===null?['ok'=>false,'state'=>'request_failed']:verify_order_statement_overlap($overlapRows,$movements,$claimRows));
     $payoutItems=null;

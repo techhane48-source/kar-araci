@@ -83,11 +83,14 @@ jobs:
               valid = isinstance(result, dict) and result.get("ok") is True
               evidence = result.get(field) if valid else None
               print(label + ": " + ("PRESENT" if evidence else ("NOT VERIFIED" if valid else "FAIL")))
-          for label, key in (("Order/statement overlap", "order_statement_overlap"), ("Cargo/order reference overlap", "cargo_order_overlap"), ("Service fee statement overlap", "service_fee_statement_overlap")):
+          for label, key in (("Order/statement overlap", "order_statement_overlap"), ("Cargo/order reference overlap", "cargo_order_overlap"), ("Service fee statement overlap", "service_fee_statement_overlap"), ("Claim/order line overlap", "claim_order_overlap")):
               result = checks.get(key, {})
               state = result.get("state") if isinstance(result, dict) else None
               labels = {"matched":"PASS","present":"PRESENT (NOT PACKAGE ALLOCATION)","incomplete":"FAIL (UNRESOLVED)","request_failed":"FAIL (REQUEST)","not_verified":"NOT VERIFIED"}
               print(label + ": " + labels.get(state, "NOT VERIFIED"))
+          cargo = checks.get("cargo_invoice_items", {})
+          basis = cargo.get("basis_state") if isinstance(cargo, dict) else None
+          print("Cargo invoice arithmetic basis: " + {"matched":"PASS (VAT ASSUMPTION)","incomplete":"NOT VERIFIED (UNRESOLVED)","not_verified":"NOT VERIFIED"}.get(basis,"NOT VERIFIED"))
           print("Independent financial reconciliation: NOT VERIFIED")
           sys.exit(0 if sys.argv[2] == "0" and report.get("ok") is True else 1)
           PY

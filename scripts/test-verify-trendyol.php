@@ -115,6 +115,18 @@ $t['service fee matched and redacted']=$r['ok']&&$r['state']==='matched'&&!str_c
 $badFee=$fee;$badFee['raw']['debt']=11;
 $t['fee differences rejected']=!verify_service_fee_overlap([$fee],[$badFee])['ok'];
 $t['empty fee not evidence']=verify_service_fee_overlap([$fee],[])['state']==='not_verified';
+$claim=['outbound_package'=>'PRIVATE-PACKAGE','order_number'=>'PRIVATE-ORDER','line_id'=>'PRIVATE-LINE','barcode'=>'PRIVATE-BARCODE'];
+$r=verify_claim_order_overlap([$claim],[$overlapOrder]);
+$t['claim line matched without refund assumption']=$r['ok']&&$r['state']==='matched'&&!$r['refund_verified']&&!$r['inventory_verified']&&!str_contains(json_encode($r),'PRIVATE');
+$claim['barcode']='WRONG';
+$t['claim line mismatch fails']=!verify_claim_order_overlap([$claim],[$overlapOrder])['ok'];
+$t['claim outside order window not verified']=verify_claim_order_overlap([$claim],[])['state']==='not_verified';
+$client->documents=[['externalId'=>'PRIVATE-INVOICE','transactionType'=>'Kargo Faturası','raw'=>['id'=>'PRIVATE-INVOICE','sellerId'=>'123','affiliate'=>'TRENDYOLTR','country'=>'TR','credit'=>0,'debt'=>96]]];
+$client->cargo=[['parcelUniqueId'=>'PRIVATE-PARCEL','orderNumber'=>'PRIVATE-ORDER','shipmentPackageType'=>'Gönderi Kargo Bedeli','amount'=>80,'desi'=>5]];
+$r=verify_cargo_invoices($client,null,null,$client->documents,static fn()=>null);
+$t['cargo header matches net assumption']=$r['basis_state']==='matched'&&!$r['invoice_vat_verified']&&!str_contains(json_encode($r),'PRIVATE');
+$client->documents[0]['raw']['debt']=111;
+$t['unresolved cargo header not verified']=verify_cargo_invoices($client,null,null,$client->documents,static fn()=>null)['basis_state']==='incomplete';
 $payoutClient=new class{
     public bool $mismatch=false;
     public bool $fail=false;

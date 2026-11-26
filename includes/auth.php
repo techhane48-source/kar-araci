@@ -55,6 +55,11 @@ function require_login(): array
         header('Location: giris.php?next=' . rawurlencode($_SERVER['REQUEST_URI'] ?? ''));
         exit;
     }
+    // A temporary administrator password must be changed before accessing protected screens.
+    if(!empty($u['is_admin'])&&!empty($u['must_change_password'])&&basename((string)($_SERVER['SCRIPT_NAME']??''))!=='admin.php'){
+        header('Location: admin.php');
+        exit;
+    }
     return $u;
 }
 

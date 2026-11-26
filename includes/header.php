@@ -18,20 +18,20 @@ $flash = flash_get();
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="assets/style.css?v=10">
+<link rel="stylesheet" href="assets/style.css?v=11">
 </head>
 <body>
-<header class="site-header">
+<header class="site-header<?= $u ? ' signed-in-header' : '' ?>">
   <div class="header-inner">
     <a href="index.php" class="logo"><span class="logo-mark">K</span>Kâr<span>&</span>Fiyat</a>
-    <nav class="main-nav">
+    <nav class="main-nav" aria-label="Genel menü">
       <a href="index.php#hesapla">Hesapla</a>
       <a href="index.php#ozellikler">Özellikler</a>
       <a href="index.php#fiyatlandirma">Fiyatlandırma</a>
       <a href="index.php#sss">SSS</a>
       <a href="blog.php">Blog</a>
     </nav>
-    <div class="nav-auth">
+    <div class="nav-auth"<?= $u ? ' role="navigation" aria-label="Mağaza yönetimi"' : '' ?>>
       <?php if ($u): ?>
         <a href="dashboard.php" class="nav-link">Dashboard</a>
         <a href="urunler.php" class="nav-link">Ürünlerim</a>
