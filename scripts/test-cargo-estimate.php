@@ -57,4 +57,9 @@ $primary=['from'=>'2026-11-25','through'=>'2026-11-26','source'=>'synthetic','ro
 $high=array_replace($low,['totalPrice'=>500]);
 $tests['primary date takes precedence']=cargo_order_quote($high,['001'=>['expected_desi'=>3]],[$ref,$primary])['amount']===150.0;
 $tests['primary gap not filled']=cargo_order_quote($high,['001'=>['expected_desi'=>4]],[$ref,$primary])===null;
+$compare=cargo_effective([$p],[array_replace($r,['invoice_basis'=>'gross'])],'123');
+$tests['automatic comparable gross delta']=$compare['gross_difference']===-5.0&&$compare['desi_difference']===1.0;
+$tests['unknown basis no automatic delta']=cargo_effective([$p],[$r],'123')['gross_difference']===null;
+$tests['multi package no automatic delta']=cargo_effective([$p,$p],[array_replace($r,['invoice_basis'=>'gross'])],'123')['gross_difference']===null;
+$tests['return charge no automatic delta']=cargo_effective([$p],[array_replace($r,['invoice_basis'=>'gross']),array_replace($r,['shipment_type'=>'İade Kargo Bedeli'])],'123')['gross_difference']===null;
 foreach($tests as $n=>$ok)echo ($ok?'PASS':'FAIL')." $n\n";exit(in_array(false,$tests,true)?1:0);
