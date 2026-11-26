@@ -40,6 +40,18 @@ function cost_history_values(array $headers,iterable $rows): array
     if(!$out)throw new InvalidArgumentException('Geçerli maliyet satırı yok.');
     return $out;
 }
+/** Explicit barcode selection for an entire group; no name-based automatic cost assignment. */
+function cost_history_group_values(array $barcodes,string $date,string $cost,string $vat): array
+{
+    if(!$barcodes||count($barcodes)>200)throw new InvalidArgumentException('1–200 ürün seçin.');
+    if(trim($vat)==='')throw new InvalidArgumentException('Alış KDV oranı kaydetmek için gerekli.');
+    $rows=[];
+    foreach($barcodes as $bc){
+        if(!is_string($bc)||$bc===''||trim($bc)!==$bc)throw new InvalidArgumentException('Geçersiz barkod seçimi.');
+        $rows[]=[$bc,$date,$cost,$vat];
+    }
+    return cost_history_values(['Barkod','Geçerlilik Tarihi','Maliyet','Maliyet KDV Oranı'],$rows);
+}
 /** Append-only revisions. All rows validated first; explicit replacement required for conflicting effective date. */
 function cost_history_save(PDO $db,int $uid,array $rows,bool $replace=false,string $source='manual'): array
 {

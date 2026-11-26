@@ -237,7 +237,7 @@ require __DIR__ . '/../includes/header.php';
   </form>
 </div>
 
-<div class="card">
+<div class="card table-card">
   <p class="hint"><?= h($reportNote) ?></p>
   <?php if(in_array($rapor,['order','product','category'],true)&&$excludedCurrency): ?><p class="hint"><?= $excludedCurrency ?> paket ülke/para birimi doğrulanmadığından kapsam dışı.</p><?php endif; ?>
   <div style="display:flex;gap:24px;flex-wrap:wrap;margin-bottom:12px">

@@ -22,5 +22,14 @@ $tests['dated overlay keeps original']=$over['lines'][0]['cost_snapshot']===110.
 $bad=cost_history_values($h,[['001','2025-03-01','120','10'],['999','2025-03-01','100','20']]);
 try{cost_history_save($db,1,$bad);$tests['atomic bad upload']=false;}catch(InvalidArgumentException $e){$tests['atomic bad upload']=(int)$db->query("SELECT COUNT(*) FROM product_cost_history")->fetchColumn()===3;}
 $tests['current catalogue unchanged']=(float)$db->query("SELECT cost FROM products WHERE barcode='001'")->fetchColumn()===999.0;
+$db->prepare("INSERT INTO products(user_id,marketplace,name,barcode,category,rate,cost,price) VALUES(?,?,?,?,?,?,?,?)")->execute([1,'trendyol','Perde 2','002','Ev Tekstili',19,900,200]);
+$group=cost_history_group_values(['001','002'],'2025-04-01','125','10');
+$tests['group saves once per selected barcode']=cost_history_save($db,1,$group,false,'group')['inserted']===2;
+$tests['group repeat idempotent']=cost_history_save($db,1,$group,false,'group')['unchanged']===2;
+$tests['group new cost effective only from given day']=(float)cost_history_at(cost_history_map($db,1,['001'],time())['001'],cost_effective_day('2025-03-31'))['cost']===150.0;
+try{cost_history_group_values(['001','001'],'2025-04-01','125','10');$tests['duplicate group rejected']=false;}catch(InvalidArgumentException $e){$tests['duplicate group rejected']=true;}
+try{cost_history_group_values(['001'],'2025-04-01','125','');$tests['unknown purchase VAT not saved']=false;}catch(InvalidArgumentException $e){$tests['unknown purchase VAT not saved']=true;}
+$before=(int)$db->query("SELECT COUNT(*) FROM product_cost_history")->fetchColumn();
+try{cost_history_save($db,1,cost_history_group_values(['001','999'],'2025-05-01','125','10'),false,'group');$tests['group atomic rollback']=false;}catch(InvalidArgumentException $e){$tests['group atomic rollback']=(int)$db->query("SELECT COUNT(*) FROM product_cost_history")->fetchColumn()===$before;}
 foreach($tests as $n=>$ok)echo ($ok?'PASS':'FAIL')." $n\n";
 exit(in_array(false,$tests,true)?1:0);

@@ -104,6 +104,17 @@ with tempfile.TemporaryDirectory(prefix="karfiyat-http-") as tmp:
             assert status == 200 and "Ürün seçimi geçersiz" in page
             with sqlite3.connect(db) as con:
                 assert con.execute("SELECT cost FROM products WHERE barcode='CI001'").fetchone()[0] == 400
+            status, page = request("maliyet-senaryosu.php", {"csrf":csrf,"phrase":"CI product","cost":"100","vat":"10","days":"30","action":"save_group","barcodes[]":"CI001","date":"2025-01-01"})
+            assert status == 200 and "açık onay gerekli" in page
+            payload={"csrf":csrf,"phrase":"CI product","cost":"100","vat":"10","days":"30","action":"save_group","barcodes[]":"CI001","date":"2025-01-01","confirm_save":"1"}
+            status, page = request("maliyet-senaryosu.php", payload)
+            assert status == 200 and "Maliyet geçmişi" in page
+            status, page = request("maliyet-senaryosu.php", payload)
+            assert status == 200
+            with sqlite3.connect(db) as con:
+                assert con.execute("SELECT COUNT(*) FROM product_cost_history WHERE user_id=? AND barcode='CI001'",(uid,)).fetchone()[0] == 1
+                assert con.execute("SELECT cost FROM products WHERE barcode='CI001'").fetchone()[0] == 400
+            print("PASS explicit dated group cost confirmation and idempotent save")
             print("PASS private scenario preview, selection, unknown VAT and unchanged persisted cost")
             print("PASS populated dashboard, order finance and cargo views")
             print("PASS registration, CSRF rejection, saved VAT and withholding settings")

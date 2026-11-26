@@ -33,7 +33,7 @@ $q=db()->prepare("SELECT COUNT(*) FROM product_cost_history WHERE $filter");$q->
 $pages=max(1,(int)ceil($total/100));$page=max(1,min($pages,(int)($_GET['page']??1)));
 $q=db()->prepare("SELECT * FROM product_cost_history WHERE $filter ORDER BY effective_at DESC,id DESC LIMIT 100 OFFSET ".(($page-1)*100));$q->execute($args);$rows=$q->fetchAll();
 $pageTitle='Maliyet Geçmişi — '.APP_NAME;require __DIR__.'/../includes/header.php';?>
-<div class="wrap"><div class="toolbar"><h1>Maliyet geçmişi</h1><a href="urunler.php">Ürünlerim</a></div>
+<div class="wrap"><div class="toolbar"><h1>Maliyet geçmişi</h1><a href="urunler.php">Ürünlerim</a> · <a href="maliyet-senaryosu.php">Ürün grubuna toplu maliyet</a></div>
 <p class="hint">Trendyol barkodu için belirtilen tarihten itibaren geçerli KDV dahil birim alış maliyetini kaydedin. Sipariş tarihinde geçerli son sürüm kullanılır. Bu kullanıcı beyanıdır, fatura doğrulaması değildir. Güncel katalog maliyetini veya ilk gözlem kaydını değiştirmez; geçmiş raporların sonucunu etkiler.</p>
 <?php if($error):?><div class="alert alert-error"><?=h($error)?></div><?php endif;?>
 <div class="card"><h2>Tek maliyet kaydı</h2><form method="post">

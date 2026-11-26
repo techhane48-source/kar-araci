@@ -3,24 +3,35 @@ declare(strict_types=1);
 require_once __DIR__.'/../includes/functions.php';
 require_once __DIR__.'/../includes/private_cost_scenario.php';
 $u=require_login();$uid=(int)$u['id'];header('Cache-Control: no-store, private');
-$phrase='';$cost='';$vat='';$days=30;$error='';$candidates=[];$result=null;$chosen=[];
+$phrase='';$cost='';$vat='';$days=30;$date='';$error='';$candidates=[];$result=null;$chosen=[];
 if($_SERVER['REQUEST_METHOD']==='POST'){
     if(!csrf_verify($_POST['csrf']??null)){http_response_code(403);exit('Geçersiz oturum.');}
     try{
-        foreach(['phrase','cost','vat','days','action'] as $key)if(isset($_POST[$key])&&!is_string($_POST[$key]))throw new InvalidArgumentException('Geçersiz girdi.');
-        $phrase=trim($_POST['phrase']??'');$cost=trim($_POST['cost']??'');$vat=trim($_POST['vat']??'');
+        foreach(['phrase','cost','vat','days','action','date','confirm_save','replace'] as $key)if(isset($_POST[$key])&&!is_string($_POST[$key]))throw new InvalidArgumentException('Geçersiz girdi.');
+        $phrase=trim($_POST['phrase']??'');$cost=trim($_POST['cost']??'');$vat=trim($_POST['vat']??'');$date=trim($_POST['date']??'');
         $days=(int)($_POST['days']??30);if(!in_array($days,[7,15,30,90],true))throw new InvalidArgumentException('Geçersiz tarih aralığı.');
         $q=db()->prepare("SELECT * FROM products WHERE user_id=? AND marketplace='trendyol' AND barcode<>'' ORDER BY name,barcode LIMIT 20001");$q->execute([$uid]);$products=$q->fetchAll();
         if(count($products)>20000)throw new InvalidArgumentException('Katalog sınırı aşıldı.');
         $catalog=array_map(static fn($p)=>['barcode'=>(string)$p['barcode'],'title'=>(string)$p['name']],$products);
         $candidates=private_cost_candidates($catalog,$phrase);
         if(count($candidates)>200)throw new InvalidArgumentException('En fazla 200 aday; aramanızı daraltın.');
-        if(($_POST['action']??'')==='calculate'){
+        $action=$_POST['action']??'';
+        if(in_array($action,['calculate','save_group'],true)){
             $chosen=$_POST['barcodes']??[];if(!is_array($chosen)||!$chosen||count($chosen)>200)throw new InvalidArgumentException('En az bir ürün seçin.');
             $allowed=array_fill_keys(array_column($candidates,'barcode'),true);
             foreach($chosen as $bc)if(!is_string($bc)||!isset($allowed[$bc]))throw new InvalidArgumentException('Ürün seçimi geçersiz.');
             $gross=parse_money_input($cost);if($gross===null||$gross<=0)throw new InvalidArgumentException('KDV dahil maliyet girin.');
             $purchaseVat=$vat===''?null:parse_money_input($vat);if($vat!==''&&($purchaseVat===null||$purchaseVat<0||$purchaseVat>100))throw new InvalidArgumentException('KDV oranı geçersiz.');
+            if($action==='save_group'){
+                if(!is_pro($u))throw new InvalidArgumentException('Toplu maliyet kaydı Pro özelliğidir.');
+                if(($_POST['confirm_save']??'')!=='1')throw new InvalidArgumentException('Kalıcı tarihli maliyet kaydı için açık onay gerekli.');
+                $values=cost_history_group_values($chosen,$date,$cost,$vat);
+                $replace=($_POST['replace']??'')==='1';
+                $saved=with_marketplace_lock($uid,'trendyol',static fn()=>['ok'=>true]+cost_history_save(db(),$uid,$values,$replace,'group'));
+                if(empty($saved['ok']))throw new InvalidArgumentException($saved['error']??'Maliyet kaydedilemedi.');
+                flash_set('success',$saved['inserted'].' maliyet sürümü kaydedildi; '.$saved['unchanged'].' aynı kayıt atlandı.');
+                e_redirect('maliyet-gecmisi.php');
+            }
             $q=db()->prepare("SELECT * FROM orders WHERE user_id=? AND marketplace='trendyol' AND order_date>=? ORDER BY order_date DESC LIMIT 20001");
             $q->execute([$uid,strtotime('today')-($days-1)*86400]);$orders=$q->fetchAll();
             if(count($orders)>20000)throw new InvalidArgumentException('Sipariş sınırı aşıldı; daha kısa aralık seçin.');
@@ -35,7 +46,7 @@ $pageTitle='Maliyet Senaryosu — '.APP_NAME;require __DIR__.'/../includes/heade
 ?>
 <div class="wrap">
 <h1>Özel maliyet senaryosu</h1>
-<p class="hint">Mevcut kayıtlı Trendyol verileriyle geçici hesap. Maliyet geçmişini veya mağaza verilerini değiştirmez. İade ve düzeltme kanıtları eksikse kesin kâr gösterilmez.</p>
+<p class="hint">Mevcut kayıtlı Trendyol verileriyle geçici hesap. Hesapla işlemi hiçbir maliyeti değiştirmez. Tarihli maliyeti kaydetmek ayrı ve açık onay gerektiren yerel işlemdir. Mağazaya yazma yapılmaz.</p>
 <?php if($error!==''): ?><p class="flash flash-error" role="alert"><?=h($error)?></p><?php endif; ?>
 <div class="card">
 <form method="post">
@@ -50,6 +61,14 @@ $pageTitle='Maliyet Senaryosu — '.APP_NAME;require __DIR__.'/../includes/heade
 <?php foreach($candidates as $p): ?><tr><td><input type="checkbox" name="barcodes[]" aria-label="<?=h($p['title'].' '.$p['barcode'])?>" value="<?=h($p['barcode'])?>" <?=!$chosen||in_array($p['barcode'],$chosen,true)?'checked':''?>></td><td><?=h($p['barcode'])?></td><td><?=h($p['title'])?></td></tr><?php endforeach; ?>
 </tbody></table></div>
 <button class="btn-primary" name="action" value="calculate">Seçili ürünleri hesapla</button>
+<?php if(is_pro($u)): ?>
+<fieldset style="margin-top:16px"><legend>Tarihli toplu maliyet kaydı (isteğe bağlı)</legend>
+<p class="hint">Yalnızca işaretli barkodlar için geçerli tarih ve alış KDV oranı girin. Önceki maliyetler korunur; kayıt geçmiş raporları etkileyebilir. Güncel katalog maliyeti değiştirilmez.</p>
+<label>Geçerlilik tarihi <input type="date" name="date" value="<?=h($date)?>" max="<?=h((new DateTimeImmutable('now',new DateTimeZone('Europe/Istanbul')))->format('Y-m-d'))?>"></label>
+<label><input type="checkbox" name="confirm_save" value="1"> Seçili ürünler için belirtilen tarihten itibaren bu maliyetin geçerli olduğunu onaylıyorum.</label>
+<label><input type="checkbox" name="replace" value="1"> Aynı tarihli farklı maliyeti düzelt (eski sürümü koru).</label>
+<button class="btn-ghost" name="action" value="save_group">Tarihli maliyetleri kaydet</button>
+</fieldset><?php endif; ?>
 <?php elseif($phrase!==''&&$error===''): ?><p class="hint">Eşleşen ürün yok.</p><?php endif; ?>
 </form></div>
 <?php if($result!==null): ?>
