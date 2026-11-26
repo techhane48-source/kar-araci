@@ -254,7 +254,7 @@ function verify_service_fee_overlap(array $all,array $filtered): array
 /** Claim/package/barcode identity only, not refund, inventory or profit evidence. */
 function verify_claim_order_overlap(array $claims,array $orders): array
 {
-    $byPackage=[];$matched=0;$unresolved=0;$unavailable=0;
+    $byPackage=[];$matched=0;$unresolved=0;$unavailable=0;$scopeMismatch=false;$lineMismatch=false;$orderMismatch=false;
     foreach($orders as $o){
         $id=(string)($o['packageNumber']??'');if($id==='')continue;
         $byPackage[$id]=['marketplace'=>'trendyol','order_number'=>$o['orderNumber']??null,'package_number'=>$id,
@@ -264,10 +264,15 @@ function verify_claim_order_overlap(array $claims,array $orders): array
         $id=(string)($c['outbound_package']??'');
         if($id===''||!isset($byPackage[$id])){$unavailable++;continue;}
         $r=claim_order_match($c,$byPackage[$id]);
-        if($r['scope']==='domestic'&&$r['state']==='Paket ve ürün satırı eşleşti')$matched++;else $unresolved++;
+        if($r['scope']==='domestic'&&$r['state']==='Paket ve ürün satırı eşleşti')$matched++;
+        else{$unresolved++;
+            if($r['state']==='Sipariş eşleşmedi')$orderMismatch=true;
+            elseif($r['scope']!=='domestic')$scopeMismatch=true;
+            else $lineMismatch=true;
+        }
     }
     return ['ok'=>$unresolved===0,'state'=>$unresolved?'incomplete':($matched?'matched':'not_verified'),
-      'matched'=>$matched,'unresolved'=>$unresolved,'unavailable'=>$unavailable,'refund_verified'=>false,'inventory_verified'=>false];
+      'matched'=>$matched,'unresolved'=>$unresolved,'unavailable'=>$unavailable,'reason'=>$orderMismatch?'ORDER_ID':($scopeMismatch?'SCOPE':($lineMismatch?'LINE_ID_OR_BARCODE':null)),'refund_verified'=>false,'inventory_verified'=>false];
 }
 /** Check one completed payment from the validated first page, using the production arithmetic.
  * No payment identifier, amount, provider message or candidate details are returned. */

@@ -12,8 +12,8 @@ function return_inventory_evidence(array $claim,?array $order,int $acceptedCount
     $match=claim_order_match($claim,$order);
     if($match['cost']===null||$match['scope']!=='domestic')return array_replace($out,['state'=>'Tarihli / gözlemlenen maliyet veya sipariş eşleşmesi eksik']);
     $lines=is_array($order['lines'])?$order['lines']:json_decode((string)$order['lines'],true);
-    $line=null;
-    foreach($lines as $l)if((string)($l['line_id']??'')===$claim['line_id']&&(string)($l['barcode']??'')===$claim['barcode'])$line=$l;
+    $matches=claim_matching_lines($claim,is_array($lines)?$lines:[]);
+    $line=count($matches)===1?$matches[0]:null;
     $qty=$line['quantity']??null;
     if(!is_numeric($qty)||!is_finite((float)$qty)||(float)$qty!==(float)(int)$qty||(int)$qty<1||$acceptedCount<1||$acceptedCount>(int)$qty)
         return array_replace($out,['state'=>'Kabul edilmiş iade adedi sipariş adediyle çelişiyor']);
@@ -48,15 +48,25 @@ function return_accepted_counts(PDO $db,int $uid,array $claims): array
     $packages=array_values(array_unique(array_filter(array_column($claims,'outbound_package'),static fn($p)=>$p!=='')));
     $out=[];
     foreach(array_chunk($packages,200) as $chunk){
-        $q=$db->prepare("SELECT order_number,outbound_package,line_id,barcode,COUNT(*) AS n FROM trendyol_claim_items WHERE user_id=? AND status='Accepted' AND outbound_package IN (".implode(',',array_fill(0,count($chunk),'?')).") GROUP BY order_number,outbound_package,line_id,barcode");
-        $q->execute(array_merge([$uid],$chunk));
-        while($r=$q->fetch())$out[return_inventory_key($r)]=(int)$r['n'];
+        $q=$db->prepare("SELECT order_number,outbound_package,line_id,group_line_id,barcode FROM trendyol_claim_items WHERE user_id=? AND status='Accepted' AND outbound_package IN (".implode(',',array_fill(0,count($chunk),'?')).")");
+        $q->execute(array_merge([$uid],$chunk));$rows=$q->fetchAll();
+        // Count accepted units by actual group, including ambiguous legacy rows conservatively.
+        foreach($claims as $claim){
+            if(!in_array((string)$claim['outbound_package'],$chunk,true))continue;
+            $n=0;$group=(string)($claim['group_line_id']??'');
+            foreach($rows as $r){
+                if((string)$r['order_number']!==(string)$claim['order_number']||(string)$r['outbound_package']!==(string)$claim['outbound_package']||(string)$r['barcode']!==(string)$claim['barcode'])continue;
+                $other=(string)$r['group_line_id'];
+                if($group===''||$other===''||$group===$other)$n++;
+            }
+            $out[return_inventory_key($claim)]=$n;
+        }
     }
     return $out;
 }
 function return_inventory_key(array $r): string
 {
-    return json_encode([(string)$r['order_number'],(string)$r['outbound_package'],(string)$r['line_id'],(string)$r['barcode']],JSON_THROW_ON_ERROR);
+    return json_encode([(string)$r['order_number'],(string)$r['outbound_package'],(string)(($r['group_line_id']??'')!==''?$r['group_line_id']:$r['line_id']),(string)$r['barcode']],JSON_THROW_ON_ERROR);
 }
 function return_inventory_save(PDO $db,int $uid,string $itemId,string $condition,string $raw): void
 {

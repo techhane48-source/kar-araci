@@ -19,4 +19,10 @@ try{return_inventory_save($db,2,'I1','unusable','');$t['tenant isolation']=false
 try{return_inventory_save($db,1,'I1','partial','55');$t['invalid recovery rejected']=false;}catch(InvalidArgumentException $e){$t['invalid recovery rejected']=true;}
 persist_claims($db,1,[array_replace($c,['item_id'=>'I2']),array_replace($c,['item_id'=>'I3'])]);
 try{return_inventory_save($db,1,'I1','unusable','');$t['all accepted units checked']=false;}catch(InvalidArgumentException $e){$t['all accepted units checked']=true;}
+$group=$c;$group['group_line_id']='L1';$group['line_id']='UNIT1';$group['item_id']='I4';
+$p['lines'][0]['discount_details']=[['lineItemId'=>'UNIT1'],['lineItemId'=>'UNIT2']];
+$t['group identity inventory match']=return_inventory_evidence($group,$p,1,null)['cost']===50.0;
+persist_claims($db,1,[$group,array_replace($group,['item_id'=>'I5','line_id'=>'UNIT2'])]);
+$counts=return_accepted_counts($db,1,[$group]);
+$t['group count includes ambiguous legacy rows conservatively']=$counts[return_inventory_key($group)]===5;
 foreach($t as $n=>$ok)echo ($ok?'PASS':'FAIL')." $n\n";exit(in_array(false,$t,true)?1:0);

@@ -88,6 +88,10 @@ jobs:
               state = result.get("state") if isinstance(result, dict) else None
               labels = {"matched":"PASS","present":"PRESENT (NOT PACKAGE ALLOCATION)","incomplete":"FAIL (UNRESOLVED)","request_failed":"FAIL (REQUEST)","not_verified":"NOT VERIFIED"}
               print(label + ": " + labels.get(state, "NOT VERIFIED"))
+          claim = checks.get("claim_order_overlap", {})
+          reason = claim.get("reason") if isinstance(claim, dict) else None
+          if reason in ("ORDER_ID","SCOPE","LINE_ID_OR_BARCODE"):
+              print("Claim overlap diagnostic: " + reason)
           cargo = checks.get("cargo_invoice_items", {})
           basis = cargo.get("basis_state") if isinstance(cargo, dict) else None
           print("Cargo invoice arithmetic basis: " + {"matched":"PASS (VAT ASSUMPTION)","incomplete":"NOT VERIFIED (UNRESOLVED)","not_verified":"NOT VERIFIED"}.get(basis,"NOT VERIFIED"))

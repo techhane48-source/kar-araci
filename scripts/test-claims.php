@@ -28,5 +28,15 @@ $order=['package_number'=>'123','order_number'=>'0001','currency_code'=>'TRY','c
 $match=claim_order_match($rows[0],$order);$tests['exact outbound line match']=$match['cost']===45.0;
 $order['package_number']='456';$tests['return package not treated as outbound']=claim_order_match($rows[0],$order)['cost']===null;
 $order['package_number']='123';$order['currency_code']='EUR';$tests['foreign cost not TL']=claim_order_match($rows[0],$order)['cost']===null;
+$groupClaim=$claim;$groupClaim['items'][0]['orderLine']['id']=777;
+$groupClaim['items'][0]['claimItems'][0]['orderLineItemId']=888;
+$groupRow=normalize_claim($groupClaim)[0];
+$tests['group and unit identities separate']=$groupRow['group_line_id']==='777'&&$groupRow['line_id']==='888';
+$order=['package_number'=>'123','order_number'=>'0001','currency_code'=>'TRY','country_code'=>'TR','lines'=>[['line_id'=>'777','barcode'=>'001','cost_snapshot'=>45,'discount_details'=>[['lineItemId'=>'888']]]]];
+$tests['group and unit match']=claim_order_match($groupRow,$order)['cost']===45.0;
+$tests['conflicting unit rejected']=claim_order_match(array_replace($groupRow,['line_id'=>'999']),$order)['cost']===null;
+$tests['conflicting group rejected']=claim_order_match(array_replace($groupRow,['group_line_id'=>'999']),$order)['cost']===null;
+$groupRow['modified_ms']+=2;persist_claims($db,1,[$groupRow]);
+$tests['group identity persisted']=$db->query("SELECT group_line_id FROM trendyol_claim_items WHERE user_id=1 AND item_id='item-a'")->fetchColumn()==='777';
 foreach($tests as $n=>$ok)echo ($ok?'PASS':'FAIL')." $n\n";
 exit(in_array(false,$tests,true)?1:0);

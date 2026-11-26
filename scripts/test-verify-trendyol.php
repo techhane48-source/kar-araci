@@ -119,7 +119,7 @@ $claim=['outbound_package'=>'PRIVATE-PACKAGE','order_number'=>'PRIVATE-ORDER','l
 $r=verify_claim_order_overlap([$claim],[$overlapOrder]);
 $t['claim line matched without refund assumption']=$r['ok']&&$r['state']==='matched'&&!$r['refund_verified']&&!$r['inventory_verified']&&!str_contains(json_encode($r),'PRIVATE');
 $claim['barcode']='WRONG';
-$t['claim line mismatch fails']=!verify_claim_order_overlap([$claim],[$overlapOrder])['ok'];
+$t['claim line mismatch fails']=!verify_claim_order_overlap([$claim],[$overlapOrder])['ok']&&verify_claim_order_overlap([$claim],[$overlapOrder])['reason']==='LINE_ID_OR_BARCODE';
 $t['claim outside order window not verified']=verify_claim_order_overlap([$claim],[])['state']==='not_verified';
 $client->documents=[['externalId'=>'PRIVATE-INVOICE','transactionType'=>'Kargo Faturası','raw'=>['id'=>'PRIVATE-INVOICE','sellerId'=>'123','affiliate'=>'TRENDYOLTR','country'=>'TR','credit'=>0,'debt'=>96]]];
 $client->cargo=[['parcelUniqueId'=>'PRIVATE-PARCEL','orderNumber'=>'PRIVATE-ORDER','shipmentPackageType'=>'Gönderi Kargo Bedeli','amount'=>80,'desi'=>5]];

@@ -30,7 +30,7 @@ function migrate(): void
 {
     $pdo = db();
     // Versioned, serialized and atomic; normal reads avoid schema writes.
-    $version=8;
+    $version=9;
     if((int)$pdo->query('PRAGMA user_version')->fetchColumn()>=$version)return;
     $pdo->exec('BEGIN IMMEDIATE');
     try{
@@ -200,6 +200,8 @@ function migrate(): void
         auto_accepted INTEGER,seller_accepted INTEGER,created_ms INTEGER NOT NULL,modified_ms INTEGER NOT NULL,
         PRIMARY KEY(user_id,item_id)
     )");
+    $claimCols=array_column($pdo->query("PRAGMA table_info(trendyol_claim_items)")->fetchAll(),'name');
+    if(!in_array('group_line_id',$claimCols,true))$pdo->exec("ALTER TABLE trendyol_claim_items ADD COLUMN group_line_id TEXT NOT NULL DEFAULT ''");
     $pdo->exec("CREATE INDEX IF NOT EXISTS idx_claim_order ON trendyol_claim_items(user_id,order_number,outbound_package)");
     $pdo->exec("CREATE INDEX IF NOT EXISTS idx_claim_modified ON trendyol_claim_items(user_id,modified_ms,status)");
     $pdo->exec("CREATE TABLE IF NOT EXISTS return_inventory_checks (
