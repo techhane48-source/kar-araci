@@ -72,6 +72,29 @@ $t['cargo request failure redacted']=!$r['ok']&&!str_contains(json_encode($r),'P
 $client->cargoFail=false;$client->documents=[];$client->cargo=[];
 $client->fail=true;$r=verify_trendyol_read_only($client,null,null,7,time(),static fn()=>null);
 $t['failure reported without private data']=!$r['ok']&&in_array('settlement_Sale',$r['failed_checks'],true)&&!str_contains(json_encode($r),'PRIVATE');
+$payoutClient=new class{
+    public bool $mismatch=false;
+    public bool $fail=false;
+    function getSettlements($type,...$args){
+        if($this->fail)return ['ok'=>false,'error'=>'PRIVATE-ERROR'];
+        if(!in_array($type,['Sale','PaymentOrder'],true))return ['ok'=>true,'settlements'=>[]];
+        $id=$type==='Sale'?'PRIVATE-SALE':'PRIVATE-PAYMENT';
+        $raw=['id'=>$id,'sellerId'=>'123','paymentOrderId'=>'456','affiliate'=>'TRENDYOLTR','country'=>'TR',
+            'credit'=>$type==='Sale'?100:0,'debt'=>$type==='PaymentOrder'?80:0,'sellerRevenue'=>80,'commissionAmount'=>20];
+        return ['ok'=>true,'settlements'=>[['externalId'=>$id,'queryType'=>$type,'paymentOrderId'=>'456','raw'=>$raw]]];
+    }
+};
+$paid=[['id'=>'456','sellerId'=>'123','status'=>'PAID','amount'=>80,'payoutDate'=>(time()-3*86400)*1000]];
+$r=verify_payout_sample($payoutClient,$paid,time(),static fn()=>null);
+$t['real payout sample arithmetic match shape']=$r['ok']&&$r['state']==='matched'&&!$r['bank_verified']&&!str_contains(json_encode($r),'PRIVATE');
+$paid[0]['amount']=81;
+$r=verify_payout_sample($payoutClient,$paid,time(),static fn()=>null);
+$t['payout arithmetic mismatch rejected']=!$r['ok']&&$r['state']==='difference';
+$payoutClient->fail=true;
+$r=verify_payout_sample($payoutClient,$paid,time(),static fn()=>null);
+$t['payout request failure redacted']=!$r['ok']&&$r['state']==='request_failed'&&!str_contains(json_encode($r),'PRIVATE');
+$r=verify_payout_sample($payoutClient,[],time(),static fn()=>null);
+$t['empty payout no evidence']=$r['ok']&&$r['state']==='not_verified'&&!$r['bank_verified'];
 $db->exec("UPDATE integration_bindings SET seller_id='999'");
 try{verify_saved_credentials($ro,DB_PATH,$uid);$t['binding mismatch rejected']=false;}catch(RuntimeException $e){$t['binding mismatch rejected']=true;}
 foreach($t as $name=>$ok)echo ($ok?'PASS':'FAIL')." $name\n";exit(in_array(false,$t,true)?1:0);

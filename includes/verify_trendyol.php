@@ -127,6 +127,43 @@ function verify_catalog_error_code(mixed $error): string
         default=>'UNKNOWN'
     };
 }
+/** Check one completed payment from the validated first page, using the production arithmetic.
+ * No payment identifier, amount, provider message or candidate details are returned. */
+function verify_payout_sample(object $client,array $items,int $now,callable $pause): array
+{
+    $tz=new DateTimeZone('Europe/Istanbul');
+    $today=(new DateTimeImmutable('@'.$now))->setTimezone($tz)->setTime(0,0)->getTimestamp();
+    $eligible=[];
+    foreach($items as $row){
+        if(!is_array($row)||($row['status']??null)!=='PAID'||!ctype_digit((string)($row['id']??''))||
+           !ctype_digit((string)($row['sellerId']??''))||!is_numeric($row['amount']??null)||!is_finite((float)$row['amount'])||(float)$row['amount']<0||
+           !is_numeric($row['payoutDate']??null)||!is_finite((float)$row['payoutDate'])||(float)$row['payoutDate']<=0||
+           (float)$row['payoutDate']!==(float)(int)$row['payoutDate'])
+            return ['ok'=>false,'state'=>'invalid_payment','bank_verified'=>false];
+        $ts=(int)$row['payoutDate'];if($ts>100000000000)$ts=intdiv($ts,1000);
+        if($ts<$today)$eligible[]=[$ts,$row];
+    }
+    if(!$eligible)return ['ok'=>true,'state'=>'not_verified','bank_verified'=>false];
+    usort($eligible,static fn($a,$b)=>$b[0]<=>$a[0]);
+    $payment=$eligible[0][1];$id=(string)$payment['id'];$seller=(string)$payment['sellerId'];
+    $types=['settlements'=>['Sale','Return','Discount','DiscountCancel','Coupon','CouponCancel','ProvisionPositive','ProvisionNegative',
+        'ManualRefund','ManualRefundCancel','TyDiscount','TyDiscountCancel','TyCoupon','TyCouponCancel','SellerRevenuePositive','SellerRevenueNegative',
+        'CommissionPositive','CommissionNegative','SellerRevenuePositiveCancel','SellerRevenueNegativeCancel','CommissionPositiveCancel',
+        'CommissionNegativeCancel','DeliveryFee','DeliveryFeeCancel','PayByLink'],
+        'otherfinancials'=>['Stoppage','CashAdvance','WireTransfer','IncomingTransfer','ReturnInvoice','CommissionAgreementInvoice','PaymentOrder','DeductionInvoices','FinancialItem']];
+    $rows=['settlements'=>[],'otherfinancials'=>[]];
+    foreach($types as $source=>$list)foreach($list as $type){
+        $pause();
+        try{$r=$client->getSettlements($type,'','',2000,$source,$id);}
+        catch(Throwable $e){return ['ok'=>false,'state'=>'request_failed','bank_verified'=>false];}
+        if(empty($r['ok'])||!is_array($r['settlements']??null))return ['ok'=>false,'state'=>'request_failed','bank_verified'=>false];
+        foreach($r['settlements'] as $row){if(!is_array($row))return ['ok'=>false,'state'=>'invalid_payment','bank_verified'=>false];$rows[$source][]=$row;}
+    }
+    try{$result=finance_payout_candidate($rows['settlements'],$rows['otherfinancials'],$id,(float)$payment['amount'],$seller);}
+    catch(Throwable $e){return ['ok'=>false,'state'=>'incomplete','bank_verified'=>false];}
+    $state=$result['state'];
+    return ['ok'=>$state==='matched','state'=>$state,'bank_verified'=>false];
+}
 /** Only counts, booleans and fixed labels leave this function. Never output provider errors or payloads. */
 function verify_trendyol_read_only(object $client,?PDO $db,?int $uid,int $days,int $now,?callable $pace=null): array
 {
@@ -202,7 +239,12 @@ function verify_trendyol_read_only(object $client,?PDO $db,?int $uid,int $days,i
         $r=$client->getSettlements('DeductionInvoices',$start,$end,2000,'otherfinancials',null,'PlatformServiceFee');return ['ok'=>!empty($r['ok']),'rows'=>count($r['settlements']??[])];
     });
     $record('claims',static function()use($client,$from,$now){$r=$client->getClaims(max($from,$now-14*86400+1),$now);return ['ok'=>!empty($r['ok']),'rows'=>count($r['items']??[])];});
-    $record('payout_page',static function()use($client){$r=$client->getPaymentOrders(0);return ['ok'=>!empty($r['ok']),'rows'=>count($r['items']??[]),'pages'=>(int)($r['totalPages']??0)];});
+    $payoutItems=null;
+    $record('payout_page',static function()use($client,&$payoutItems){
+        $r=$client->getPaymentOrders(0);if(empty($r['ok'])||!is_array($r['items']??null))return ['ok'=>false];
+        $payoutItems=$r['items'];return ['ok'=>true,'rows'=>count($payoutItems),'pages'=>(int)($r['totalPages']??0)];
+    });
+    $record('payout_sample_arithmetic',static fn()=>$payoutItems===null?['ok'=>false,'state'=>'request_failed']:verify_payout_sample($client,$payoutItems,$now,$pause));
     if($barcodes)$record('buybox',static function()use($client,$barcodes){$r=$client->getBuybox($barcodes);return ['ok'=>!empty($r['ok']),'rows'=>count($r['items']??[]),'missing'=>count($r['missing']??[])];});
     // Successful HTTP calls are not enough: malformed normalized data must fail in both modes.
     foreach(['catalog'=>['unknown_price_or_stock'],'orders'=>['unknown_lines','unknown_order_fields']] as $label=>$fields){

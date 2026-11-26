@@ -69,6 +69,10 @@ jobs:
           allowed = {"UNKNOWN","TRANSPORT","RESPONSE_SCHEMA","HTTP_400","HTTP_401","HTTP_403","HTTP_404","HTTP_429","HTTP_OTHER","TOTAL_MISSING","TOTAL_CHANGED","DUPLICATE_CONTENT","DUPLICATE_BARCODE","VARIANTS_MISSING","BARCODE_MISSING","TOTAL_MISMATCH","PAGE_TOKEN","PAGE_LIMIT","PRICE_AND_STOCK_INVALID","PRICE_INVALID","ACTIVE_PRICE_INVALID","UNKNOWN_STATUS_PRICE_INVALID","STOCK_INVALID"}
           if isinstance(reason, str) and reason in allowed:
               print("Catalog diagnostic: " + reason)
+          payout = checks.get("payout_sample_arithmetic", {})
+          state = payout.get("state") if isinstance(payout, dict) else None
+          labels = {"matched":"PASS","difference":"FAIL (ARITHMETIC)","incomplete":"FAIL (INCOMPLETE EVIDENCE)","invalid_payment":"FAIL (INVALID PAYMENT)","request_failed":"FAIL (REQUEST)","not_verified":"NOT VERIFIED"}
+          print("Payout sample arithmetic: " + labels.get(state, "NOT VERIFIED"))
           print("Independent financial reconciliation: NOT VERIFIED")
           sys.exit(0 if sys.argv[2] == "0" and report.get("ok") is True else 1)
           PY
