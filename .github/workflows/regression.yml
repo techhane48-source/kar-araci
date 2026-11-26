@@ -45,7 +45,7 @@ jobs:
               run_test node --check crawler/crawl.js
               ;;
             finance)
-              for test in profit money-input order-estimate commission-evidence product-profit payout report-lines finance-integrity period-finance product-finance payout-receipts cargo-audit cargo-estimate cargo-reprice; do run_test php "scripts/test-$test.php"; done
+              for test in private-cost-scenario profit money-input order-estimate commission-evidence product-profit payout report-lines finance-integrity period-finance product-finance payout-receipts cargo-audit cargo-estimate cargo-reprice; do run_test php "scripts/test-$test.php"; done
               ;;
             integration)
               for test in trendyol-v2 verify-trendyol api-contract sync-coverage claims return-inventory auto-sync auto-market-checks order-evidence; do run_test php "scripts/test-$test.php"; done
