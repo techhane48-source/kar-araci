@@ -4,6 +4,7 @@ require_once __DIR__.'/crypto.php';
 require_once __DIR__.'/trendyol.php';
 require_once __DIR__.'/finance.php';
 require_once __DIR__.'/commission_evidence.php';
+require_once __DIR__.'/period_finance.php';
 
 /** Open only an existing database; no application migrations or key generation. */
 function verify_open_db(string $path): PDO
@@ -205,6 +206,44 @@ function verify_cargo_order_overlap(array $orders,array $invoiceOrders): array
     $count=count(array_intersect_key($known,$invoiceOrders));
     return ['ok'=>true,'state'=>$count?'present':'not_verified','matched_order_references'=>$count,'package_allocation_verified'=>false];
 }
+/** Expand only the overlap lookup, retaining recent package versions and only targeted orders.
+ * 28 days is a conservative bounded lookback; original comparison window is unchanged. */
+function verify_extend_order_overlap(object $client,array $recent,array $movements,array $invoiceOrders,int $from,int $now,callable $pause): ?array
+{
+    $targets=$invoiceOrders;
+    foreach($movements as $row){
+        $no=(string)($row['orderNumber']??'');
+        if($no!==''&&($row['queryType']??null)==='Sale')$targets[$no]=true;
+    }
+    if(!$targets)return $recent;
+    $earliest=$now-28*86400;
+    if($from<=$earliest)return $recent;
+    $seen=[];
+    foreach($recent as $o){$pid=(string)($o['packageNumber']??'');if($pid!=='')$seen[$pid]=true;}
+    $pause();
+    $r=$client->getOrders('',date('c',$earliest),date('c',$from-1),100);
+    if(empty($r['ok'])||!is_array($r['orders']??null))return null;
+    foreach($r['orders'] as $o){
+        if(!is_array($o))return null;
+        $no=(string)($o['orderNumber']??'');$pid=(string)($o['packageNumber']??'');
+        if($pid===''||$no==='')return null;
+        if(!isset($targets[$no])||isset($seen[$pid]))continue;
+        $seen[$pid]=true;$recent[]=$o;
+    }
+    return $recent;
+}
+/** Reuse production invoice classification; successful empty filters are not evidence. */
+function verify_service_fee_overlap(array $all,array $filtered): array
+{
+    if(!$filtered)return ['ok'=>true,'state'=>'not_verified'];
+    $seller=(string)($filtered[0]['raw']['sellerId']??'');
+    if(!ctype_digit($seller))return ['ok'=>false,'state'=>'incomplete'];
+    try{$ids=service_fee_ids($all,$filtered,$seller);}
+    catch(Throwable $e){return ['ok'=>false,'state'=>'incomplete'];}
+    $domestic=0;
+    foreach($filtered as $row)if(isset($ids[(string)$row['externalId']])&&finance_is_domestic($row['raw']))$domestic++;
+    return ['ok'=>true,'state'=>$domestic?'matched':'not_verified'];
+}
 /** Check one completed payment from the validated first page, using the production arithmetic.
  * No payment identifier, amount, provider message or candidate details are returned. */
 function verify_payout_sample(object $client,array $items,int $now,callable $pause): array
@@ -322,13 +361,29 @@ function verify_trendyol_read_only(object $client,?PDO $db,?int $uid,int $days,i
     }
     $invoiceOrders=[];
     $record('cargo_invoice_items',static function()use($client,$db,$uid,$deductionDocuments,$pause,&$invoiceOrders){return $deductionDocuments===null?['ok'=>false]:verify_cargo_invoices($client,$db,$uid,$deductionDocuments,$pause,$invoiceOrders);});
-    $record('cargo_order_overlap',static fn()=>empty($checks['cargo_invoice_items']['ok'])||$orderRows===null?['ok'=>false,'state'=>'request_failed']:verify_cargo_order_overlap($orderRows,$invoiceOrders));
-    $pause();$record('platform_service_fee',static function()use($client,$start,$end){
-        $r=$client->getSettlements('DeductionInvoices',$start,$end,2000,'otherfinancials',null,'PlatformServiceFee');return ['ok'=>!empty($r['ok']),'rows'=>count($r['settlements']??[])];
+    $cargoAvailable=!empty($checks['cargo_invoice_items']['ok']);
+    $feeRows=null;
+    $pause();$record('platform_service_fee',static function()use($client,$start,$end,&$feeRows){
+        $r=$client->getSettlements('DeductionInvoices',$start,$end,2000,'otherfinancials',null,'PlatformServiceFee');
+        if(empty($r['ok'])||!is_array($r['settlements']??null))return ['ok'=>false];
+        $feeRows=$r['settlements'];return ['ok'=>true,'rows'=>count($feeRows)];
     });
+    $record('service_fee_statement_overlap',static fn()=>$deductionDocuments===null||$feeRows===null?['ok'=>false,'state'=>'request_failed']:verify_service_fee_overlap($deductionDocuments,$feeRows));
     $claimRows=null;
     $record('claims',static function()use($client,$from,$now,&$claimRows){$r=$client->getClaims(max($from,$now-14*86400+1),$now);if(empty($r['ok'])||!is_array($r['items']??null))return ['ok'=>false];$claimRows=$r['items'];return ['ok'=>true,'rows'=>count($claimRows)];});
-    $record('order_statement_overlap',static fn()=>!$movementCoverage||$orderRows===null||$claimRows===null?['ok'=>false,'state'=>'request_failed']:verify_order_statement_overlap($orderRows,$movements,$claimRows));
+    $overlapRows=$orderRows;
+    if($orderRows!==null&&$movementCoverage&&$claimRows!==null){
+        $saleProbe=verify_order_statement_overlap($orderRows,$movements,$claimRows);
+        $cargoProbe=verify_cargo_order_overlap($orderRows,$invoiceOrders);
+        if($saleProbe['state']==='not_verified'||$cargoProbe['state']==='not_verified'){
+            $record('overlap_history',static function()use($client,$orderRows,$movements,$invoiceOrders,$from,$now,$pause,&$overlapRows){
+                $overlapRows=verify_extend_order_overlap($client,$orderRows,$movements,$invoiceOrders,$from,$now,$pause);
+                return ['ok'=>$overlapRows!==null,'state'=>$overlapRows===null?'request_failed':'checked'];
+            });
+        }
+    }
+    $record('cargo_order_overlap',static fn()=>!$cargoAvailable||$overlapRows===null?['ok'=>false,'state'=>'request_failed']:verify_cargo_order_overlap($overlapRows,$invoiceOrders));
+    $record('order_statement_overlap',static fn()=>!$movementCoverage||$overlapRows===null||$claimRows===null?['ok'=>false,'state'=>'request_failed']:verify_order_statement_overlap($overlapRows,$movements,$claimRows));
     $payoutItems=null;
     $record('payout_page',static function()use($client,&$payoutItems){
         $r=$client->getPaymentOrders(0);if(empty($r['ok'])||!is_array($r['items']??null))return ['ok'=>false];

@@ -22,7 +22,7 @@ $client=new class{
     function testConnection(){return ['ok'=>true];}
     function getProducts(){return ['ok'=>true,'products'=>[['barcode'=>'PRIVATE-BARCODE','salePrice'=>$this->badCatalog?null:100,'quantity'=>5,'status'=>$this->catalogStatus,'sale_price_state'=>$this->priceState]]];}
     function getOrders(...$args){return ['ok'=>true,'orders'=>$this->orders];}
-    function getSettlements($type,...$args){return $this->fail&&$type==='Sale'?['ok'=>false,'error'=>'PRIVATE-ERROR']:['ok'=>true,'settlements'=>$type==='DeductionInvoices'?$this->documents:[]];}
+    function getSettlements($type,...$args){return $this->fail&&$type==='Sale'?['ok'=>false,'error'=>'PRIVATE-ERROR']:['ok'=>true,'settlements'=>$type==='DeductionInvoices'&&($args[5]??null)!=='PlatformServiceFee'?$this->documents:[]];}
     function getCargoInvoiceItems($serial){return $this->cargoFail?['ok'=>false,'error'=>'PRIVATE-ERROR']:['ok'=>true,'items'=>$this->cargo];}
     function getClaims(...$args){return ['ok'=>true,'items'=>[]];}
     function getPaymentOrders($page){return ['ok'=>true,'items'=>[],'totalPages'=>0];}
@@ -96,6 +96,25 @@ $t['no overlap not verified']=verify_order_statement_overlap([$overlapOrder],[],
 $r=verify_cargo_order_overlap([$overlapOrder],['PRIVATE-ORDER'=>true]);
 $t['cargo reference only not allocated']=$r['state']==='present'&&!$r['package_allocation_verified']&&!str_contains(json_encode($r),'PRIVATE');
 $t['cargo missing overlap not verified']=verify_cargo_order_overlap([$overlapOrder],[])['state']==='not_verified';
+$historyClient=new class{
+    public array $rows=[];
+    public bool $fail=false;
+    function getOrders(...$args){return $this->fail?['ok'=>false]:['ok'=>true,'orders'=>$this->rows];}
+};
+$historyClient->rows=[$overlapOrder,array_replace($overlapOrder,['orderNumber'=>'UNRELATED','packageNumber'=>'OTHER'])];
+$recent=array_replace($overlapOrder,['status'=>'Shipped']);
+$history=verify_extend_order_overlap($historyClient,[$recent],[$overlapSale],[],time()-14*86400,time(),static fn()=>null);
+$t['history preserves recent version and ignores unrelated']=count($history)===1&&$history[0]['status']==='Shipped';
+$history=verify_extend_order_overlap($historyClient,[],[$overlapSale],[],time()-14*86400,time(),static fn()=>null);
+$t['older relevant order found']=count($history)===1&&verify_order_statement_overlap($history,[$overlapSale],[])['state']==='matched';
+$historyClient->fail=true;
+$t['history failure explicit']=verify_extend_order_overlap($historyClient,[],[$overlapSale],[],time()-14*86400,time(),static fn()=>null)===null;
+$fee=['externalId'=>'PRIVATE-FEE','raw'=>['id'=>'PRIVATE-FEE','sellerId'=>'123','affiliate'=>'TRENDYOLTR','country'=>'TR','transactionDate'=>123,'credit'=>0,'debt'=>10,'transactionSubType'=>'PlatformServiceFee']];
+$r=verify_service_fee_overlap([$fee],[$fee]);
+$t['service fee matched and redacted']=$r['ok']&&$r['state']==='matched'&&!str_contains(json_encode($r),'PRIVATE');
+$badFee=$fee;$badFee['raw']['debt']=11;
+$t['fee differences rejected']=!verify_service_fee_overlap([$fee],[$badFee])['ok'];
+$t['empty fee not evidence']=verify_service_fee_overlap([$fee],[])['state']==='not_verified';
 $payoutClient=new class{
     public bool $mismatch=false;
     public bool $fail=false;

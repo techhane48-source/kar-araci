@@ -83,7 +83,7 @@ jobs:
               valid = isinstance(result, dict) and result.get("ok") is True
               evidence = result.get(field) if valid else None
               print(label + ": " + ("PRESENT" if evidence else ("NOT VERIFIED" if valid else "FAIL")))
-          for label, key in (("Order/statement overlap", "order_statement_overlap"), ("Cargo/order reference overlap", "cargo_order_overlap")):
+          for label, key in (("Order/statement overlap", "order_statement_overlap"), ("Cargo/order reference overlap", "cargo_order_overlap"), ("Service fee statement overlap", "service_fee_statement_overlap")):
               result = checks.get(key, {})
               state = result.get("state") if isinstance(result, dict) else None
               labels = {"matched":"PASS","present":"PRESENT (NOT PACKAGE ALLOCATION)","incomplete":"FAIL (UNRESOLVED)","request_failed":"FAIL (REQUEST)","not_verified":"NOT VERIFIED"}
