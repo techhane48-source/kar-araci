@@ -3,6 +3,7 @@ declare(strict_types=1);
 require_once __DIR__.'/crypto.php';
 require_once __DIR__.'/trendyol.php';
 require_once __DIR__.'/finance.php';
+require_once __DIR__.'/commission_evidence.php';
 
 /** Open only an existing database; no application migrations or key generation. */
 function verify_open_db(string $path): PDO
@@ -73,7 +74,7 @@ function verify_cargo_item_map(array $rows,bool $local=false): ?array
     return $map;
 }
 /** Only domestic invoice documents discovered in the selected period are checked. */
-function verify_cargo_invoices(object $client,?PDO $db,?int $uid,array $documents,callable $pause): array
+function verify_cargo_invoices(object $client,?PDO $db,?int $uid,array $documents,callable $pause,?array &$observedOrders=null): array
 {
     $serials=[];$outside=0;$invalid=0;$failed=0;$empty=0;$rows=0;$missing=0;$extra=0;$different=0;$invalidLocal=0;
     foreach($documents as $d){
@@ -94,6 +95,7 @@ function verify_cargo_invoices(object $client,?PDO $db,?int $uid,array $document
         }catch(Throwable $e){$remote=null;}
         if($remote===null){$failed++;continue;}
         $checked++;$rows+=count($remote);if(!$remote)$empty++;
+        if($observedOrders!==null)foreach($remote as $entry)$observedOrders[(string)$entry[0]]=true;
         if(!$db)continue;
         $q->execute([$uid,(string)$serial]);$local=verify_cargo_item_map($q->fetchAll(),true);
         if($local===null){$invalidLocal++;continue;}
@@ -153,6 +155,55 @@ function verify_sale_return_arithmetic(array $rows,string $type): array
     }
     return ['ok'=>$invalid===0,'state'=>$invalid?'difference':($checked?'matched':'not_verified'),
         'validated_rows'=>$checked,'invalid_rows'=>$invalid,'outside_scope'=>$outside];
+}
+/** Compare eligible overlapping delivered packages to Sale evidence in this limited window.
+ * This does not establish that there are no adjustments outside the window. */
+function verify_order_statement_overlap(array $orders,array $movements,array $claims): array
+{
+    $byOrder=[];$claimOrders=[];$packages=[];$seen=[];
+    foreach($orders as $o){
+        $no=(string)($o['orderNumber']??'');$pid=(string)($o['packageNumber']??'');
+        if($no===''||$pid===''||isset($seen[$pid]))continue;
+        $seen[$pid]=true;$packages[$no][$pid]=$o;
+    }
+    foreach($claims as $c){$no=(string)($c['order_number']??'');if($no!=='')$claimOrders[$no]=true;}
+    foreach($movements as $r){
+        $no=(string)($r['orderNumber']??'');if($no!==''&&isset($packages[$no]))$byOrder[$no][]=$r;
+    }
+    $matched=0;$unresolved=0;$excluded=0;
+    foreach($byOrder as $no=>$rows){
+        $byPackage=[];$blocked=isset($claimOrders[$no]);
+        foreach($rows as $r){
+            $pid=(string)($r['shipmentPackageId']??'');
+            if(($r['queryType']??null)!=='Sale'||!isset($packages[$no][$pid])){$blocked=true;continue;}
+            $byPackage[$pid][]=$r;
+        }
+        if($blocked){$excluded++;continue;}
+        foreach($byPackage as $pid=>$sales){
+            $o=$packages[$no][$pid];
+            if(($o['status']??null)!=='Delivered'||($o['currencyCode']??null)!=='TRY'||($o['orderCountryCode']??null)!=='TR'){$excluded++;continue;}
+            $order=['marketplace'=>'trendyol','currency_code'=>'TRY','country_code'=>'TR','order_number'=>(string)$no,'package_number'=>(string)$pid,
+                'status'=>$o['status'],'total_price'=>$o['totalPrice']??null,'lines'=>$o['lines']??null];
+            $seller=(string)($sales[0]['raw']['sellerId']??'');$converted=[];
+            foreach($sales as $s)$converted[]=['external_id'=>$s['externalId']??null,'order_number'=>$s['orderNumber']??null,
+                'shipment_package_id'=>$s['shipmentPackageId']??null,'query_type'=>$s['queryType']??null,'raw_json'=>json_encode($s['raw']??null,JSON_THROW_ON_ERROR)];
+            $e=order_commission_evidence($order,$converted,$seller);
+            if(is_numeric($e['amount']??null))$matched++;else $unresolved++;
+        }
+    }
+    return ['ok'=>$unresolved===0,'state'=>$unresolved?'incomplete':($matched?'matched':'not_verified'),
+        'matched_packages'=>$matched,'unresolved_packages'=>$unresolved,'excluded_order_groups_or_packages'=>$excluded,'final_profit_verified'=>false];
+}
+/** An invoice order reference alone cannot assign a parcel charge to a shipment package. */
+function verify_cargo_order_overlap(array $orders,array $invoiceOrders): array
+{
+    $known=[];
+    foreach($orders as $o){
+        if(($o['currencyCode']??null)!=='TRY'||($o['orderCountryCode']??null)!=='TR')continue;
+        $no=(string)($o['orderNumber']??'');if($no!=='')$known[$no]=true;
+    }
+    $count=count(array_intersect_key($known,$invoiceOrders));
+    return ['ok'=>true,'state'=>$count?'present':'not_verified','matched_order_references'=>$count,'package_allocation_verified'=>false];
 }
 /** Check one completed payment from the validated first page, using the production arithmetic.
  * No payment identifier, amount, provider message or candidate details are returned. */
@@ -232,8 +283,10 @@ function verify_trendyol_read_only(object $client,?PDO $db,?int $uid,int $days,i
         return ['ok'=>true,'provider_rows'=>count($seen),'unknown_price_or_stock'=>$unknown,'inactive_unpriced'=>$inactiveUnpriced,'reason'=>$badPrice?($badStock?'PRICE_AND_STOCK_INVALID':($activeBadPrice?'ACTIVE_PRICE_INVALID':($unknownBadPrice?'UNKNOWN_STATUS_PRICE_INVALID':'PRICE_INVALID'))):($badStock?'STOCK_INVALID':null),'missing_local'=>$db?$missing:null,'extra_local'=>$extra,'duplicate_local'=>$db?$duplicate:null,'price_differences'=>$db?$price:null,'stock_differences'=>$db?$stock:null,'matched'=>$db?($missing+$extra+$duplicate+$price+$stock+$unknown===0):null];
     });
     $from=$now-$days*86400;$start=date('c',$from);$end=date('c',$now);
-    $record('orders',static function()use($client,$db,$uid,$start,$end){
+    $orderRows=null;
+    $record('orders',static function()use($client,$db,$uid,$start,$end,&$orderRows){
         $r=$client->getOrders('',$start,$end);if(empty($r['ok'])||!is_array($r['orders']??null))return ['ok'=>false];
+        $orderRows=$r['orders'];
         $missing=0;$diff=0;$unknown=0;$unknownOrderFields=0;$seen=[];
         if($db)$q=$db->prepare("SELECT total_price,status,lines,currency_code,country_code FROM orders WHERE user_id=? AND marketplace='trendyol' AND package_number=?");
         foreach($r['orders'] as $o){
@@ -247,11 +300,12 @@ function verify_trendyol_read_only(object $client,?PDO $db,?int $uid,int $days,i
         }
         return ['ok'=>true,'provider_rows'=>count($seen),'unknown_lines'=>$unknown,'unknown_order_fields'=>$unknownOrderFields,'missing_local'=>$db?$missing:null,'differences'=>$db?$diff:null,'matched'=>$db?($missing+$diff+$unknown+$unknownOrderFields===0):null];
     });
-    $saleReturnChecks=[];
+    $saleReturnChecks=[];$movements=[];$movementCoverage=true;
     foreach(['Sale','Return','Discount','DiscountCancel','Coupon','CouponCancel','TyDiscount','TyCoupon','DeliveryFee','DeliveryFeeCancel'] as $type){
-        $pause();$record('settlement_'.$type,static function()use($client,$start,$end,$type,&$saleReturnChecks){
+        $pause();$record('settlement_'.$type,static function()use($client,$start,$end,$type,&$saleReturnChecks,&$movements,&$movementCoverage){
             $r=$client->getSettlements($type,$start,$end);
-            if(empty($r['ok'])||!is_array($r['settlements']??null))return ['ok'=>false];
+            if(empty($r['ok'])||!is_array($r['settlements']??null)){$movementCoverage=false;return ['ok'=>false];}
+            foreach($r['settlements'] as $row)$movements[]=$row;
             if(in_array($type,['Sale','Return'],true))$saleReturnChecks[$type]=verify_sale_return_arithmetic($r['settlements'],$type);
             return ['ok'=>true,'rows'=>count($r['settlements'])];
         });
@@ -266,11 +320,15 @@ function verify_trendyol_read_only(object $client,?PDO $db,?int $uid,int $days,i
             return ['ok'=>true,'rows'=>count($r['settlements'])];
         });
     }
-    $record('cargo_invoice_items',static fn()=>$deductionDocuments===null?['ok'=>false]:verify_cargo_invoices($client,$db,$uid,$deductionDocuments,$pause));
+    $invoiceOrders=[];
+    $record('cargo_invoice_items',static function()use($client,$db,$uid,$deductionDocuments,$pause,&$invoiceOrders){return $deductionDocuments===null?['ok'=>false]:verify_cargo_invoices($client,$db,$uid,$deductionDocuments,$pause,$invoiceOrders);});
+    $record('cargo_order_overlap',static fn()=>empty($checks['cargo_invoice_items']['ok'])||$orderRows===null?['ok'=>false,'state'=>'request_failed']:verify_cargo_order_overlap($orderRows,$invoiceOrders));
     $pause();$record('platform_service_fee',static function()use($client,$start,$end){
         $r=$client->getSettlements('DeductionInvoices',$start,$end,2000,'otherfinancials',null,'PlatformServiceFee');return ['ok'=>!empty($r['ok']),'rows'=>count($r['settlements']??[])];
     });
-    $record('claims',static function()use($client,$from,$now){$r=$client->getClaims(max($from,$now-14*86400+1),$now);return ['ok'=>!empty($r['ok']),'rows'=>count($r['items']??[])];});
+    $claimRows=null;
+    $record('claims',static function()use($client,$from,$now,&$claimRows){$r=$client->getClaims(max($from,$now-14*86400+1),$now);if(empty($r['ok'])||!is_array($r['items']??null))return ['ok'=>false];$claimRows=$r['items'];return ['ok'=>true,'rows'=>count($claimRows)];});
+    $record('order_statement_overlap',static fn()=>!$movementCoverage||$orderRows===null||$claimRows===null?['ok'=>false,'state'=>'request_failed']:verify_order_statement_overlap($orderRows,$movements,$claimRows));
     $payoutItems=null;
     $record('payout_page',static function()use($client,&$payoutItems){
         $r=$client->getPaymentOrders(0);if(empty($r['ok'])||!is_array($r['items']??null))return ['ok'=>false];

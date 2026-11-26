@@ -84,6 +84,18 @@ $t['duplicate sale rejected']=!verify_sale_return_arithmetic([$sale,$sale],'Sale
 $t['empty statement not verified']=verify_sale_return_arithmetic([],'Sale')['state']==='not_verified';
 $sale['raw']['country']='OTHER';
 $t['foreign statement not TL evidence']=verify_sale_return_arithmetic([$sale],'Sale')['state']==='not_verified';
+$overlapOrder=['orderNumber'=>'PRIVATE-ORDER','packageNumber'=>'PRIVATE-PACKAGE','status'=>'Delivered','currencyCode'=>'TRY','orderCountryCode'=>'TR','totalPrice'=>100,'lines'=>[['barcode'=>'PRIVATE-BARCODE','line_id'=>'PRIVATE-LINE','quantity'=>1,'price'=>100]]];
+$overlapSale=['externalId'=>'PRIVATE-SALE','queryType'=>'Sale','orderNumber'=>'PRIVATE-ORDER','shipmentPackageId'=>'PRIVATE-PACKAGE','raw'=>['id'=>'PRIVATE-SALE','sellerId'=>'123','affiliate'=>'TRENDYOLTR','country'=>'TR','orderNumber'=>'PRIVATE-ORDER','shipmentPackageId'=>'PRIVATE-PACKAGE','barcode'=>'PRIVATE-BARCODE','credit'=>100,'debt'=>0,'sellerRevenue'=>80,'commissionAmount'=>20]];
+$r=verify_order_statement_overlap([$overlapOrder],[$overlapSale],[]);
+$t['overlap package matches production commission logic']=$r['ok']&&$r['state']==='matched'&&!$r['final_profit_verified']&&!str_contains(json_encode($r),'PRIVATE');
+$bad=$overlapSale;$bad['raw']['barcode']='WRONG';
+$t['overlap mismatch unresolved']=!verify_order_statement_overlap([$overlapOrder],[$bad],[])['ok'];
+$t['overlap with claim excluded']=verify_order_statement_overlap([$overlapOrder],[$overlapSale],[['order_number'=>'PRIVATE-ORDER']])['state']==='not_verified';
+$t['overlap with adjustment excluded']=verify_order_statement_overlap([$overlapOrder],[$overlapSale,array_replace($overlapSale,['queryType'=>'Return'])],[])['state']==='not_verified';
+$t['no overlap not verified']=verify_order_statement_overlap([$overlapOrder],[],[])['state']==='not_verified';
+$r=verify_cargo_order_overlap([$overlapOrder],['PRIVATE-ORDER'=>true]);
+$t['cargo reference only not allocated']=$r['state']==='present'&&!$r['package_allocation_verified']&&!str_contains(json_encode($r),'PRIVATE');
+$t['cargo missing overlap not verified']=verify_cargo_order_overlap([$overlapOrder],[])['state']==='not_verified';
 $payoutClient=new class{
     public bool $mismatch=false;
     public bool $fail=false;

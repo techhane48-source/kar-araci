@@ -83,6 +83,11 @@ jobs:
               valid = isinstance(result, dict) and result.get("ok") is True
               evidence = result.get(field) if valid else None
               print(label + ": " + ("PRESENT" if evidence else ("NOT VERIFIED" if valid else "FAIL")))
+          for label, key in (("Order/statement overlap", "order_statement_overlap"), ("Cargo/order reference overlap", "cargo_order_overlap")):
+              result = checks.get(key, {})
+              state = result.get("state") if isinstance(result, dict) else None
+              labels = {"matched":"PASS","present":"PRESENT (NOT PACKAGE ALLOCATION)","incomplete":"FAIL (UNRESOLVED)","request_failed":"FAIL (REQUEST)","not_verified":"NOT VERIFIED"}
+              print(label + ": " + labels.get(state, "NOT VERIFIED"))
           print("Independent financial reconciliation: NOT VERIFIED")
           sys.exit(0 if sys.argv[2] == "0" and report.get("ok") is True else 1)
           PY
