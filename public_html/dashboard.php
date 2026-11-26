@@ -36,6 +36,7 @@ foreach ($catalogProducts as $p) {
 $q = db()->prepare("SELECT * FROM orders WHERE user_id = ? AND marketplace = ? AND order_date >= ? ORDER BY order_date DESC");
 $q->execute([$u['id'], $mp, $fromTs]);
 $expenseEvidence=$mp==='trendyol'?period_expense_evidence(db(),(int)$u['id'],$fromTs,time()):null;
+$tariffState=$mp==='trendyol'?cargo_tariff_status(cargo_tariffs(),(new DateTimeImmutable('now',new DateTimeZone('Europe/Istanbul')))->format('Y-m-d')):null;
 $orders = commission_profit_overlay(db(),(int)$u['id'],cargo_profit_overlay(db(),(int)$u['id'],cost_history_overlay(db(),(int)$u['id'],$q->fetchAll())));
 
 // Aggregasyon
@@ -120,6 +121,14 @@ require __DIR__ . '/../includes/header.php';
   <p><?= $catalogAlerts['products'] ?> ürün · <?= $catalogAlerts['evaluated'] ?> kâr hesabı · <?= $catalogAlerts['flagged'] ?> uyarılı ürün</p>
   <p><?= $catalogAlerts['counts']['loss'] ?> tahmini zarar · <?= $catalogAlerts['counts']['below_target'] ?> hedef altı · <?= $catalogAlerts['counts']['missing_cost'] ?> maliyet eksik</p>
   <a href="uyarilar.php">Uyarı merkezini aç</a> · <a href="kar-hedefleri.php">Kâr hedefleri</a></div><?php endif; ?>
+  <?php if($tariffState!==null): ?>
+  <section class="card" style="margin:12px 0" aria-labelledby="tariff-status">
+    <h2 id="tariff-status">Kargo tarifesi durumu</h2>
+    <p class="hint"><?php echo h(['operator_reference'=>'Bugün için yönetici tarafından eklenmiş tarihli tarife mevcut; resmî doğrulama değildir.','secondary_partial'=>'Bugün için yalnız sınırlı ikincil kaynak tahmini var.','conflict'=>'Tarife tarihleri çakışıyor; belirsiz fiyatlar kullanılmaz.','missing'=>'Bugün için geçerli tarife bulunamadı; eksik kargo fiyatı sıfır kabul edilmez.'][$tariffState['state']]); ?></p>
+    <?php if($tariffState['state']==='missing'&&$tariffState['last_expired_through']!==null): ?><p class="hint">Son süresi dolan tarife: <?=h($tariffState['last_expired_through'])?></p><?php endif; ?>
+    <a href="raporlar.php?r=cargo_effective">Kargo tahminleri ve faturalar</a>
+  </section>
+  <?php endif; ?>
   <?php if (!$orders): ?>
     <div class="card" style="padding:32px;text-align:center">
       <h2>Henüz veri yok</h2>

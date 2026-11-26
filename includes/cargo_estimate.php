@@ -73,6 +73,20 @@ function cargo_tariffs(): array
     if(cargo_tariff_valid($fallback))$out[]=cargo_tariff_index($fallback);
     return $out;
 }
+/** Date coverage only; a table's presence does not prove official provenance or every desi. */
+function cargo_tariff_status(array $tariffs,string $day): array
+{
+    $primary=0;$secondary=0;$latest=null;
+    foreach($tariffs as $t){
+        if(!is_array($t)||!isset($t['from'],$t['through']))continue;
+        if($t['from']<=$day&&$t['through']>=$day){
+            if(($t['confidence']??'')==='secondary_partial')$secondary++;else $primary++;
+        }
+        if($t['through']<$day&&($latest===null||$t['through']>$latest))$latest=$t['through'];
+    }
+    return ['state'=>$primary>1?'conflict':($primary===1?'operator_reference':($secondary===1?'secondary_partial':($secondary>1?'conflict':'missing'))),
+        'last_expired_through'=>$latest,'official_verified'=>false];
+}
 function cargo_has_shipped(array $order): bool
 {
     return in_array(strtolower((string)($order['status']??'')),['shipped','delivered','atcollectionpoint','undelivered','returned'],true);
@@ -114,6 +128,7 @@ function cargo_quote_from_context(array $context,array $tariffs): ?array
        !in_array($context['desi_source']??null,['shipment_api','declared_product','pre_shipment_api'],true))return null;
     // Operator table wins only for its own effective dates; never fill a missing official row from secondary data.
     $primary=array_values(array_filter($tariffs,static fn($t)=>($t['confidence']??'')!=='secondary_partial'&&$day>=($t['from']??'9999')&&$day<=($t['through']??'0000')));
+    if(count($primary)>1)return null; // Ambiguous date coverage is not resolved by a coincidental matching row.
     $candidates=$primary?:$tariffs;$quotes=[];
     foreach($candidates as $t){$q=cargo_tariff_quote($t,$carrier,$desi,(float)$sale,$day);if($q)$quotes[]=$q;}
     if(count($quotes)!==1)return null;

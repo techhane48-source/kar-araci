@@ -62,4 +62,7 @@ $tests['automatic comparable gross delta']=$compare['gross_difference']===-5.0&&
 $tests['unknown basis no automatic delta']=cargo_effective([$p],[$r],'123')['gross_difference']===null;
 $tests['multi package no automatic delta']=cargo_effective([$p,$p],[array_replace($r,['invoice_basis'=>'gross'])],'123')['gross_difference']===null;
 $tests['return charge no automatic delta']=cargo_effective([$p],[array_replace($r,['invoice_basis'=>'gross']),array_replace($r,['shipment_type'=>'İade Kargo Bedeli'])],'123')['gross_difference']===null;
+$tests['expired tariff status']=cargo_tariff_status([$ref],'2026-11-26')['state']==='missing';
+$tests['secondary tariff status not official']=cargo_tariff_status([$ref],'2026-11-25')['state']==='secondary_partial'&&!cargo_tariff_status([$ref],'2026-11-25')['official_verified'];
+$tests['overlapping primary date withheld']=cargo_order_quote($high,['001'=>['expected_desi'=>3]],[$primary,array_replace($primary,['rows'=>[['carrier'=>'ARAS','desi'=>3,'min_sale'=>350,'max_sale'=>null,'gross_tl'=>140]]])])===null;
 foreach($tests as $n=>$ok)echo ($ok?'PASS':'FAIL')." $n\n";exit(in_array(false,$tests,true)?1:0);
