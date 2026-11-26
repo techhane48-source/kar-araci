@@ -13,12 +13,14 @@ try{$ro->exec("DELETE FROM integrations");$t['read only database']=false;}catch(
 $client=new class{
     public bool $fail=false;
     public bool $badCatalog=false;
+    public string $catalogStatus='onSale';
+    public string $priceState='missing';
     public array $orders=[];
     public array $documents=[];
     public array $cargo=[];
     public bool $cargoFail=false;
     function testConnection(){return ['ok'=>true];}
-    function getProducts(){return ['ok'=>true,'products'=>[['barcode'=>'PRIVATE-BARCODE','salePrice'=>$this->badCatalog?null:100,'quantity'=>5]]];}
+    function getProducts(){return ['ok'=>true,'products'=>[['barcode'=>'PRIVATE-BARCODE','salePrice'=>$this->badCatalog?null:100,'quantity'=>5,'status'=>$this->catalogStatus,'sale_price_state'=>$this->priceState]]];}
     function getOrders(...$args){return ['ok'=>true,'orders'=>$this->orders];}
     function getSettlements($type,...$args){return $this->fail&&$type==='Sale'?['ok'=>false,'error'=>'PRIVATE-ERROR']:['ok'=>true,'settlements'=>$type==='DeductionInvoices'?$this->documents:[]];}
     function getCargoInvoiceItems($serial){return $this->cargoFail?['ok'=>false,'error'=>'PRIVATE-ERROR']:['ok'=>true,'items'=>$this->cargo];}
@@ -32,9 +34,18 @@ $r=verify_trendyol_read_only($client,null,null,7,time(),static fn()=>null);
 $t['API only not acceptance']=$r['ok']&&!$r['live_acceptance']&&$r['local_comparison']===null&&!$r['bank_verified'];
 $client->badCatalog=true;
 $r=verify_trendyol_read_only($client,null,null,7,time(),static fn()=>null);
-$t['catalog fixed diagnostic']=($r['checks']['catalog']['reason']??null)==='PRICE_INVALID'&&verify_catalog_error_code('PRIVATE-ERROR')==='UNKNOWN'&&verify_catalog_error_code('Ürün V2 sayfası alınamadı (HTTP 403).')==='HTTP_403';
+$t['catalog fixed diagnostic']=($r['checks']['catalog']['reason']??null)==='ACTIVE_PRICE_INVALID'&&verify_catalog_error_code('PRIVATE-ERROR')==='UNKNOWN'&&verify_catalog_error_code('Ürün V2 sayfası alınamadı (HTTP 403).')==='HTTP_403';
 $t['API only invalid product rejected']=!$r['ok']&&in_array('catalog',$r['failed_checks'],true)&&$r['checks']['catalog']['unknown_price_or_stock']===1;
-$client->badCatalog=false;
+$client->catalogStatus='notOnSale';
+$r=verify_trendyol_read_only($client,null,null,7,time(),static fn()=>null);
+$t['explicit inactive missing price not usable but permitted']=$r['ok']&&$r['checks']['catalog']['inactive_unpriced']===1;
+$client->priceState='invalid';
+$r=verify_trendyol_read_only($client,null,null,7,time(),static fn()=>null);
+$t['inactive malformed price rejected']=!$r['ok'];
+$client->catalogStatus='unknown';$client->priceState='missing';
+$r=verify_trendyol_read_only($client,null,null,7,time(),static fn()=>null);
+$t['unknown status missing price rejected']=!$r['ok']&&$r['checks']['catalog']['reason']==='UNKNOWN_STATUS_PRICE_INVALID';
+$client->badCatalog=false;$client->catalogStatus='onSale';
 $client->orders=[['packageNumber'=>'PRIVATE-PACKAGE','totalPrice'=>100,'status'=>'Delivered','lines'=>[]]];
 $r=verify_trendyol_read_only($client,null,null,7,time(),static fn()=>null);
 $t['API only invalid lines rejected']=!$r['ok']&&in_array('orders',$r['failed_checks'],true)&&$r['checks']['orders']['unknown_lines']===1;

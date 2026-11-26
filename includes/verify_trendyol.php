@@ -141,21 +141,31 @@ function verify_trendyol_read_only(object $client,?PDO $db,?int $uid,int $days,i
     $barcodes=[];
     $record('catalog',static function()use($client,$db,$uid,&$barcodes){
         $r=$client->getProducts();if(empty($r['ok'])||!is_array($r['products']??null))return ['ok'=>false,'reason'=>verify_catalog_error_code($r['error']??null)];
-        $local=[];$duplicate=0;$missing=0;$price=0;$stock=0;$unknown=0;$badPrice=false;$badStock=false;$seen=[];
-        if($db){$q=$db->prepare("SELECT barcode,price,quantity FROM products WHERE user_id=? AND marketplace='trendyol' AND barcode<>''");$q->execute([$uid]);while($p=$q->fetch()){if(isset($local[$p['barcode']]))$duplicate++;$local[$p['barcode']]=$p;}}
+        $local=[];$duplicate=0;$missing=0;$price=0;$stock=0;$unknown=0;$badPrice=false;$badStock=false;$inactiveUnpriced=0;$activeBadPrice=false;$unknownBadPrice=false;$seen=[];
+        if($db){$q=$db->prepare("SELECT barcode,price,quantity,sale_price_observed_at FROM products WHERE user_id=? AND marketplace='trendyol' AND barcode<>''");$q->execute([$uid]);while($p=$q->fetch()){if(isset($local[$p['barcode']]))$duplicate++;$local[$p['barcode']]=$p;}}
         foreach($r['products'] as $p){
             $bc=(string)($p['barcode']??'');if($bc===''||isset($seen[$bc]))return ['ok'=>false,'reason'=>$bc===''?'BARCODE_MISSING':'DUPLICATE_BARCODE'];$seen[$bc]=true;
             if(count($barcodes)<10)$barcodes[]=$bc;
             $priceValid=is_numeric($p['salePrice']??null)&&is_finite((float)$p['salePrice'])&&(float)$p['salePrice']>0;
             $stockValid=is_numeric($p['quantity']??null)&&is_finite((float)$p['quantity'])&&(float)$p['quantity']>=0&&(float)$p['quantity']===(float)(int)$p['quantity'];
-            $badPrice=$badPrice||!$priceValid;$badStock=$badStock||!$stockValid;$valid=$priceValid&&$stockValid;
-            if(!$valid)$unknown++;
+            // Explicitly inactive variants may have no sale price; never treat it as a usable price.
+            $status=$p['status']??'unknown';
+            $inactiveNoPrice=!$priceValid&&$status==='notOnSale'&&in_array($p['sale_price_state']??null,['missing','zero'],true);
+            if($inactiveNoPrice)$inactiveUnpriced++;
+            if(!$priceValid&&!$inactiveNoPrice){
+                $badPrice=true;$activeBadPrice=$activeBadPrice||$status==='onSale';
+                $unknownBadPrice=$unknownBadPrice||$status!=='onSale'&&$status!=='notOnSale';
+            }
+            $badStock=$badStock||!$stockValid;
+            if((!$priceValid&&!$inactiveNoPrice)||!$stockValid)$unknown++;
             if(!$db)continue;
             if(!isset($local[$bc])){$missing++;continue;}
-            if($valid){if(abs((float)$local[$bc]['price']-(float)$p['salePrice'])>0.005)$price++;if((int)$local[$bc]['quantity']!==(int)$p['quantity'])$stock++;}
+            if($priceValid&&abs((float)$local[$bc]['price']-(float)$p['salePrice'])>0.005)$price++;
+            if($inactiveNoPrice&&$local[$bc]['sale_price_observed_at']!==null)$price++;
+            if($stockValid&&(int)$local[$bc]['quantity']!==(int)$p['quantity'])$stock++;
         }
         $extra=$db?count(array_diff_key($local,$seen)):null;
-        return ['ok'=>true,'provider_rows'=>count($seen),'unknown_price_or_stock'=>$unknown,'reason'=>$badPrice?($badStock?'PRICE_AND_STOCK_INVALID':'PRICE_INVALID'):($badStock?'STOCK_INVALID':null),'missing_local'=>$db?$missing:null,'extra_local'=>$extra,'duplicate_local'=>$db?$duplicate:null,'price_differences'=>$db?$price:null,'stock_differences'=>$db?$stock:null,'matched'=>$db?($missing+$extra+$duplicate+$price+$stock+$unknown===0):null];
+        return ['ok'=>true,'provider_rows'=>count($seen),'unknown_price_or_stock'=>$unknown,'inactive_unpriced'=>$inactiveUnpriced,'reason'=>$badPrice?($badStock?'PRICE_AND_STOCK_INVALID':($activeBadPrice?'ACTIVE_PRICE_INVALID':($unknownBadPrice?'UNKNOWN_STATUS_PRICE_INVALID':'PRICE_INVALID'))):($badStock?'STOCK_INVALID':null),'missing_local'=>$db?$missing:null,'extra_local'=>$extra,'duplicate_local'=>$db?$duplicate:null,'price_differences'=>$db?$price:null,'stock_differences'=>$db?$stock:null,'matched'=>$db?($missing+$extra+$duplicate+$price+$stock+$unknown===0):null];
     });
     $from=$now-$days*86400;$start=date('c',$from);$end=date('c',$now);
     $record('orders',static function()use($client,$db,$uid,$start,$end){

@@ -74,7 +74,8 @@ final class TrendyolClient
                     'quantity' => isset($v['stock']['quantity']) && is_numeric($v['stock']['quantity']) && (float)$v['stock']['quantity']>=0 && floor((float)$v['stock']['quantity'])===(float)$v['stock']['quantity'] ? (int)$v['stock']['quantity'] : null,
                     'commission' => isset($v['commission']) ? (float)$v['commission'] : null,
                     'vatRate' => isset($v['vatRate']) ? (float)$v['vatRate'] : null,
-                    'status' => !empty($v['onSale']) ? 'onSale' : 'notOnSale',
+                    'status' => ($v['onSale']??null)===true?'onSale':(($v['onSale']??null)===false?'notOnSale':'unknown'),
+                    'sale_price_state' => !isset($v['price']['salePrice'])?'missing':(is_numeric($v['price']['salePrice'])&&is_finite((float)$v['price']['salePrice'])?((float)$v['price']['salePrice']>0?'positive':((float)$v['price']['salePrice']===0.0?'zero':'invalid')):'invalid'),
                     'approved' => true,
                     'productUrl' => (string)($v['productUrl'] ?? ''),
                 ];
