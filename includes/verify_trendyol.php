@@ -127,6 +127,33 @@ function verify_catalog_error_code(mixed $error): string
         default=>'UNKNOWN'
     };
 }
+/** Validate domestic Sale/Return statement arithmetic without revealing any values. */
+function verify_sale_return_arithmetic(array $rows,string $type): array
+{
+    if(!in_array($type,['Sale','Return'],true))throw new InvalidArgumentException('Geçersiz işlem türü.');
+    $seen=[];$checked=0;$invalid=0;$outside=0;
+    foreach($rows as $row){
+        $raw=is_array($row)?($row['raw']??null):null;
+        $id=is_array($row)?($row['externalId']??null):null;
+        if(!is_array($raw)||(!is_string($id)&&!is_int($id))||trim((string)$id)===''||
+           (string)($raw['id']??'')!==(string)$id||($row['queryType']??null)!==$type||isset($seen[(string)$id])){
+            $invalid++;continue;
+        }
+        $seen[(string)$id]=true;
+        if(!finance_is_domestic($raw)){$outside++;continue;}
+        try{
+            $credit=finance_units($raw['credit']??null);$debt=finance_units($raw['debt']??null);
+            $components=settlement_signed_components($raw,$type);
+            $valid=$type==='Sale'
+                ?($credit>0&&$debt===0&&abs($credit-$components['revenue']+$components['commission'])<=100)
+                :($debt>0&&$credit===0&&abs($debt+$components['revenue']-$components['commission'])<=100);
+            if(!$valid){$invalid++;continue;}
+            $checked++;
+        }catch(InvalidArgumentException $e){$invalid++;}
+    }
+    return ['ok'=>$invalid===0,'state'=>$invalid?'difference':($checked?'matched':'not_verified'),
+        'validated_rows'=>$checked,'invalid_rows'=>$invalid,'outside_scope'=>$outside];
+}
 /** Check one completed payment from the validated first page, using the production arithmetic.
  * No payment identifier, amount, provider message or candidate details are returned. */
 function verify_payout_sample(object $client,array $items,int $now,callable $pause): array
@@ -220,11 +247,16 @@ function verify_trendyol_read_only(object $client,?PDO $db,?int $uid,int $days,i
         }
         return ['ok'=>true,'provider_rows'=>count($seen),'unknown_lines'=>$unknown,'unknown_order_fields'=>$unknownOrderFields,'missing_local'=>$db?$missing:null,'differences'=>$db?$diff:null,'matched'=>$db?($missing+$diff+$unknown+$unknownOrderFields===0):null];
     });
+    $saleReturnChecks=[];
     foreach(['Sale','Return','Discount','DiscountCancel','Coupon','CouponCancel','TyDiscount','TyCoupon','DeliveryFee','DeliveryFeeCancel'] as $type){
-        $pause();$record('settlement_'.$type,static function()use($client,$start,$end,$type){
-            $r=$client->getSettlements($type,$start,$end);return ['ok'=>!empty($r['ok']),'rows'=>count($r['settlements']??[])];
+        $pause();$record('settlement_'.$type,static function()use($client,$start,$end,$type,&$saleReturnChecks){
+            $r=$client->getSettlements($type,$start,$end);
+            if(empty($r['ok'])||!is_array($r['settlements']??null))return ['ok'=>false];
+            if(in_array($type,['Sale','Return'],true))$saleReturnChecks[$type]=verify_sale_return_arithmetic($r['settlements'],$type);
+            return ['ok'=>true,'rows'=>count($r['settlements'])];
         });
     }
+    foreach(['Sale','Return'] as $type)$record('statement_arithmetic_'.$type,static fn()=>$saleReturnChecks[$type]??['ok'=>false,'state'=>'request_failed']);
     $deductionDocuments=null;
     foreach(['Stoppage','DeductionInvoices','PaymentOrder','CommissionAgreementInvoice','FinancialItem'] as $type){
         $pause();$record('document_'.$type,static function()use($client,$start,$end,$type,&$deductionDocuments){

@@ -72,6 +72,18 @@ $t['cargo request failure redacted']=!$r['ok']&&!str_contains(json_encode($r),'P
 $client->cargoFail=false;$client->documents=[];$client->cargo=[];
 $client->fail=true;$r=verify_trendyol_read_only($client,null,null,7,time(),static fn()=>null);
 $t['failure reported without private data']=!$r['ok']&&in_array('settlement_Sale',$r['failed_checks'],true)&&!str_contains(json_encode($r),'PRIVATE');
+$sale=['externalId'=>'PRIVATE-SALE','queryType'=>'Sale','raw'=>['id'=>'PRIVATE-SALE','affiliate'=>'TRENDYOLTR','country'=>'TR','credit'=>100,'debt'=>0,'sellerRevenue'=>80,'commissionAmount'=>20]];
+$return=['externalId'=>'PRIVATE-RETURN','queryType'=>'Return','raw'=>['id'=>'PRIVATE-RETURN','affiliate'=>'TRENDYOLTR','country'=>'TR','credit'=>0,'debt'=>100,'sellerRevenue'=>80,'commissionAmount'=>20]];
+$r=verify_sale_return_arithmetic([$sale],'Sale');
+$t['sale arithmetic verified without identities']=$r['ok']&&$r['state']==='matched'&&!str_contains(json_encode($r),'PRIVATE');
+$r=verify_sale_return_arithmetic([$return],'Return');
+$t['return arithmetic verified']=$r['ok']&&$r['state']==='matched';
+$return['raw']['debt']=90;
+$t['return arithmetic mismatch rejected']=!verify_sale_return_arithmetic([$return],'Return')['ok'];
+$t['duplicate sale rejected']=!verify_sale_return_arithmetic([$sale,$sale],'Sale')['ok'];
+$t['empty statement not verified']=verify_sale_return_arithmetic([],'Sale')['state']==='not_verified';
+$sale['raw']['country']='OTHER';
+$t['foreign statement not TL evidence']=verify_sale_return_arithmetic([$sale],'Sale')['state']==='not_verified';
 $payoutClient=new class{
     public bool $mismatch=false;
     public bool $fail=false;
