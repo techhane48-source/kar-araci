@@ -14,10 +14,14 @@ $client=new class{
     public bool $fail=false;
     public bool $badCatalog=false;
     public array $orders=[];
+    public array $documents=[];
+    public array $cargo=[];
+    public bool $cargoFail=false;
     function testConnection(){return ['ok'=>true];}
     function getProducts(){return ['ok'=>true,'products'=>[['barcode'=>'PRIVATE-BARCODE','salePrice'=>$this->badCatalog?null:100,'quantity'=>5]]];}
     function getOrders(...$args){return ['ok'=>true,'orders'=>$this->orders];}
-    function getSettlements($type,...$args){return $this->fail&&$type==='Sale'?['ok'=>false,'error'=>'PRIVATE-ERROR']:['ok'=>true,'settlements'=>[]];}
+    function getSettlements($type,...$args){return $this->fail&&$type==='Sale'?['ok'=>false,'error'=>'PRIVATE-ERROR']:['ok'=>true,'settlements'=>$type==='DeductionInvoices'?$this->documents:[]];}
+    function getCargoInvoiceItems($serial){return $this->cargoFail?['ok'=>false,'error'=>'PRIVATE-ERROR']:['ok'=>true,'items'=>$this->cargo];}
     function getClaims(...$args){return ['ok'=>true,'items'=>[]];}
     function getPaymentOrders($page){return ['ok'=>true,'items'=>[],'totalPages'=>0];}
     function getBuybox($barcodes){return ['ok'=>true,'items'=>[],'missing'=>$barcodes];}
@@ -37,6 +41,23 @@ $client->orders=[['packageNumber'=>'PRIVATE-PACKAGE','totalPrice'=>null,'status'
 $r=verify_trendyol_read_only($client,null,null,7,time(),static fn()=>null);
 $t['API only invalid order fields rejected']=!$r['ok']&&$r['checks']['orders']['unknown_order_fields']===1&&$r['checks']['orders']['unknown_lines']===0&&!str_contains(json_encode($r),'PRIVATE');
 $client->orders=[];
+$r=verify_trendyol_read_only($client,null,null,7,time(),static fn()=>null);
+$t['empty invoice evidence not verified']=$r['ok']&&!$r['checks']['cargo_invoice_items']['nonempty_evidence'];
+$client->documents=[['externalId'=>'PRIVATE-INVOICE','transactionType'=>'Kargo Faturası','raw'=>['id'=>'PRIVATE-INVOICE','affiliate'=>'TRENDYOLTR','country'=>'TR']]];
+$client->cargo=[['parcelUniqueId'=>'PRIVATE-PARCEL','orderNumber'=>'PRIVATE-ORDER','shipmentPackageType'=>'Gönderi Kargo Bedeli','amount'=>80,'desi'=>5]];
+$db->prepare("INSERT INTO trendyol_cargo_items(user_id,invoice_serial,row_number,parcel_id,order_number,shipment_type,amount,desi) VALUES(?,?,?,?,?,?,?,?)")->execute([$uid,'PRIVATE-INVOICE',0,'PRIVATE-PARCEL','PRIVATE-ORDER','Gönderi Kargo Bedeli',80,5]);
+$r=verify_trendyol_read_only($client,$ro,$uid,7,time(),static fn()=>null);
+$t['cargo exact match without identity exposure']=$r['checks']['cargo_invoice_items']['matched']===true&&!str_contains(json_encode($r),'PRIVATE');
+$client->cargo[0]['amount']=81;
+$r=verify_trendyol_read_only($client,$ro,$uid,7,time(),static fn()=>null);
+$t['cargo mismatch fails']=$r['checks']['cargo_invoice_items']['different_local']===1&&!$r['checks']['cargo_invoice_items']['ok']&&in_array('cargo_invoice_items',$r['failed_checks'],true);
+$client->cargo[]=$client->cargo[0];
+$r=verify_trendyol_read_only($client,null,null,7,time(),static fn()=>null);
+$t['duplicate cargo item fails']=$r['checks']['cargo_invoice_items']['failed_invoices']===1&&!$r['ok'];
+$client->cargoFail=true;
+$r=verify_trendyol_read_only($client,null,null,7,time(),static fn()=>null);
+$t['cargo request failure redacted']=!$r['ok']&&!str_contains(json_encode($r),'PRIVATE');
+$client->cargoFail=false;$client->documents=[];$client->cargo=[];
 $client->fail=true;$r=verify_trendyol_read_only($client,null,null,7,time(),static fn()=>null);
 $t['failure reported without private data']=!$r['ok']&&in_array('settlement_Sale',$r['failed_checks'],true)&&!str_contains(json_encode($r),'PRIVATE');
 $db->exec("UPDATE integration_bindings SET seller_id='999'");

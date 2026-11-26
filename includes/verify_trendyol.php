@@ -50,13 +50,70 @@ function verify_order_lines(mixed $lines): ?array
     }
     ksort($out,SORT_STRING);return $out;
 }
+/** Compare item identity and money without relying on response row order. */
+function verify_cargo_item_map(array $rows,bool $local=false): ?array
+{
+    $map=[];
+    foreach($rows as $r){
+        if(!is_array($r))return null;
+        $parcel=$r[$local?'parcel_id':'parcelUniqueId']??null;
+        $order=$r[$local?'order_number':'orderNumber']??null;
+        $type=$r[$local?'shipment_type':'shipmentPackageType']??null;
+        if((!is_string($parcel)&&!is_int($parcel))||trim((string)$parcel)===''||
+           (!is_string($order)&&!is_int($order))||trim((string)$order)===''||
+           !in_array($type,['Gönderi Kargo Bedeli','İade Kargo Bedeli'],true))return null;
+        $key=json_encode([(string)$parcel,$type],JSON_THROW_ON_ERROR);
+        if(isset($map[$key]))return null;
+        try{
+            $amount=finance_units($r['amount']??null);$desi=finance_units($r['desi']??null);
+            if((float)$r['amount']<0||(float)$r['desi']<0)return null;
+        }catch(InvalidArgumentException $e){return null;}
+        $map[$key]=[(string)$order,$amount,$desi];
+    }
+    return $map;
+}
+/** Only domestic invoice documents discovered in the selected period are checked. */
+function verify_cargo_invoices(object $client,?PDO $db,?int $uid,array $documents,callable $pause): array
+{
+    $serials=[];$outside=0;$invalid=0;$failed=0;$empty=0;$rows=0;$missing=0;$extra=0;$different=0;$invalidLocal=0;
+    foreach($documents as $d){
+        if(!in_array($d['transactionType']??null,['Kargo Faturası','Kargo Fatura'],true))continue;
+        $raw=$d['raw']??null;$serial=$d['externalId']??null;
+        if(!is_array($raw)||(!is_string($serial)&&!is_int($serial))||trim((string)$serial)===''||
+           (string)($raw['id']??'')!==(string)$serial){$invalid++;continue;}
+        if(!finance_is_domestic($raw)){$outside++;continue;}
+        if(isset($serials[(string)$serial])){$invalid++;continue;}
+        $serials[(string)$serial]=true;
+    }
+    $checked=0;
+    if($db)$q=$db->prepare("SELECT parcel_id,order_number,shipment_type,amount,desi FROM trendyol_cargo_items WHERE user_id=? AND invoice_serial=?");
+    foreach(array_keys($serials) as $serial){
+        $pause();
+        try{$r=$client->getCargoInvoiceItems((string)$serial);
+            $remote=!empty($r['ok'])&&is_array($r['items']??null)?verify_cargo_item_map($r['items']):null;
+        }catch(Throwable $e){$remote=null;}
+        if($remote===null){$failed++;continue;}
+        $checked++;$rows+=count($remote);if(!$remote)$empty++;
+        if(!$db)continue;
+        $q->execute([$uid,(string)$serial]);$local=verify_cargo_item_map($q->fetchAll(),true);
+        if($local===null){$invalidLocal++;continue;}
+        $missing+=count(array_diff_key($remote,$local));$extra+=count(array_diff_key($local,$remote));
+        foreach($remote as $key=>$value)if(isset($local[$key])&&$local[$key]!==$value)$different++;
+    }
+    $ok=$invalid+$failed+$invalidLocal+$missing+$extra+$different===0;
+    return ['ok'=>$ok,'domestic_invoices'=>count($serials),'outside_scope'=>$outside,'invalid_documents'=>$invalid,
+        'checked_invoices'=>$checked,'failed_invoices'=>$failed,'empty_invoices'=>$empty,'provider_rows'=>$rows,
+        'missing_local'=>$db?$missing:null,'extra_local'=>$db?$extra:null,'different_local'=>$db?$different:null,
+        'invalid_local_invoices'=>$db?$invalidLocal:null,'nonempty_evidence'=>$rows>0,
+        'matched'=>$db?($rows>0&&$ok&&$empty===0):null,'invoice_vat_verified'=>false];
+}
 /** Only counts, booleans and fixed labels leave this function. Never output provider errors or payloads. */
 function verify_trendyol_read_only(object $client,?PDO $db,?int $uid,int $days,int $now,?callable $pace=null): array
 {
     if($days<1||$days>14||($db!==null&&($uid===null||$uid<1)))throw new InvalidArgumentException('Geçersiz doğrulama kapsamı.');
     $checks=[];$errors=[];$pause=$pace??static fn()=>usleep(650000);
     $record=static function(string $label,callable $check)use(&$checks,&$errors){
-        try{$v=$check();if(!is_array($v)||empty($v['ok'])){$errors[]=$label;$checks[$label]=['ok'=>false];}else $checks[$label]=$v;}
+        try{$v=$check();if(!is_array($v)||empty($v['ok'])){$errors[]=$label;$checks[$label]=is_array($v)?$v:['ok'=>false];}else $checks[$label]=$v;}
         catch(Throwable $e){$errors[]=$label;$checks[$label]=['ok'=>false];}
     };
     $record('connection',static fn()=>['ok'=>!empty($client->testConnection()['ok'])]);
@@ -99,11 +156,16 @@ function verify_trendyol_read_only(object $client,?PDO $db,?int $uid,int $days,i
             $r=$client->getSettlements($type,$start,$end);return ['ok'=>!empty($r['ok']),'rows'=>count($r['settlements']??[])];
         });
     }
+    $deductionDocuments=null;
     foreach(['Stoppage','DeductionInvoices','PaymentOrder','CommissionAgreementInvoice','FinancialItem'] as $type){
-        $pause();$record('document_'.$type,static function()use($client,$start,$end,$type){
-            $r=$client->getSettlements($type,$start,$end,2000,'otherfinancials');return ['ok'=>!empty($r['ok']),'rows'=>count($r['settlements']??[])];
+        $pause();$record('document_'.$type,static function()use($client,$start,$end,$type,&$deductionDocuments){
+            $r=$client->getSettlements($type,$start,$end,2000,'otherfinancials');
+            if(empty($r['ok'])||!is_array($r['settlements']??null))return ['ok'=>false];
+            if($type==='DeductionInvoices')$deductionDocuments=$r['settlements'];
+            return ['ok'=>true,'rows'=>count($r['settlements'])];
         });
     }
+    $record('cargo_invoice_items',static fn()=>$deductionDocuments===null?['ok'=>false]:verify_cargo_invoices($client,$db,$uid,$deductionDocuments,$pause));
     $pause();$record('platform_service_fee',static function()use($client,$start,$end){
         $r=$client->getSettlements('DeductionInvoices',$start,$end,2000,'otherfinancials',null,'PlatformServiceFee');return ['ok'=>!empty($r['ok']),'rows'=>count($r['settlements']??[])];
     });
@@ -121,5 +183,5 @@ function verify_trendyol_read_only(object $client,?PDO $db,?int $uid,int $days,i
     }
     $match=$db?(!empty($checks['catalog']['matched'])&&!empty($checks['orders']['matched'])):null;
     return ['ok'=>!$errors&&($match!==false),'checks'=>$checks,'failed_checks'=>$errors,'local_comparison'=>$match,
-        'read_only'=>true,'live_acceptance'=>false,'bank_verified'=>false,'limits'=>['Seçili sorgular ve yerel katalog/sipariş gözlemi; tüm mali hareketlerin panel mutabakatı değildir.','Boş sonuçlar ilgili senaryonun doğrulandığını kanıtlamaz.','Kargo fatura detayı, gerçek tarife, vergi ve banka mutabakatı ayrıca gerekir.']];
+        'read_only'=>true,'live_acceptance'=>false,'bank_verified'=>false,'limits'=>['Seçili sorgular ve yerel katalog/sipariş gözlemi; tüm mali hareketlerin panel mutabakatı değildir.','Boş sonuçlar ilgili senaryonun doğrulandığını kanıtlamaz.','Kargo karşılaştırması seçilen yerli fatura kalemleriyle sınırlıdır; tarife, KDV, belge toplamı ve banka mutabakatı ayrıca gerekir.']];
 }
