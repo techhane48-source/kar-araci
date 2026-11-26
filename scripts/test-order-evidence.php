@@ -64,7 +64,9 @@ $adjust=array_replace($s,['external_id'=>'ADJ','query_type'=>'Discount','raw_jso
 $e=order_evidence([$p],[$s,$adjust],[$c],[],'123');
 $tests['adjustment balance separately observed']=$e['adjustment_balance']===-10.0&&$e['adjustment_rows']===1&&$e['known_subtotal']===null&&$e['profit']===null;
 $tests['adjustment duplicate withheld']=order_adjustment_evidence([$p],[$adjust,$adjust],'123')['balance']===null;
-$tests['adjustment wrong barcode withheld']=order_adjustment_evidence([$p],[array_replace($adjust,['raw_json'=>json_encode(array_replace($adjustRaw,['barcode'=>'OTHER']))])],'123')['balance']===null;
+$bad=order_adjustment_evidence([$p],[array_replace($adjust,['raw_json'=>json_encode(array_replace($adjustRaw,['barcode'=>'OTHER']))])],'123');
+$tests['adjustment wrong barcode withheld']=$bad['balance']===null&&$bad['reason']==='BARCODE_REFERENCE';
+$tests['missing package diagnostic']=order_adjustment_evidence([$p],[array_replace($adjust,['shipment_package_id'=>'OTHER'])],'123')['reason']==='PACKAGE_REFERENCE';
 $tests['adjustment missing evidence not zero']=order_adjustment_evidence([$p],[$s],'123')['balance']===null;
 $tests['adjustment unknown type withheld']=order_adjustment_evidence([$p],[array_replace($adjust,['query_type'=>'UNKNOWN'])],'123')['balance']===null;
 foreach($tests as $name=>$ok)echo ($ok?'PASS':'FAIL')." $name\n";

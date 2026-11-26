@@ -12,7 +12,7 @@ function order_adjustment_evidence(array $packages,array $rows,string $seller): 
     foreach($packages as $p){
         $id=(string)($p['package_number']??'');
         if($id===''||$orderNo===''||(string)($p['order_number']??'')!==$orderNo||isset($ids[$id])||!order_is_domestic_try($p))
-            return ['state'=>'incomplete','rows'=>0,'balance'=>null];
+            return ['state'=>'incomplete','rows'=>0,'balance'=>null,'reason'=>'PACKAGE_SCOPE'];
         $lines=$p['lines']??[];if(is_string($lines))$lines=json_decode($lines,true);
         $ids[$id]=[];
         foreach(is_array($lines)?$lines:[] as $l)if(is_array($l)&&trim((string)($l['barcode']??''))!=='')$ids[$id][(string)$l['barcode']]=true;
@@ -21,25 +21,26 @@ function order_adjustment_evidence(array $packages,array $rows,string $seller): 
         'ProvisionPositive','ProvisionNegative','ManualRefund','ManualRefundCancel','SellerRevenuePositive','SellerRevenueNegative',
         'SellerRevenuePositiveCancel','SellerRevenueNegativeCancel','CommissionPositive','CommissionNegative','CommissionPositiveCancel','CommissionNegativeCancel',
         'DeliveryFee','DeliveryFeeCancel','PayByLink'];
-    $seen=[];$n=0;$balance=0;$bad=0;
+    $seen=[];$n=0;$balance=0;$bad=0;$reasons=[];
     foreach($rows as $row){
         $type=(string)($row['query_type']??'');if($type==='Sale')continue;
         $id=(string)($row['external_id']??'');$pid=(string)($row['shipment_package_id']??'');
         $raw=$row['raw_json']??null;if(is_string($raw))$raw=json_decode($raw,true);
-        if($seller===''||$id===''||isset($seen[$id])||!isset($ids[$pid])||!is_array($raw)||!finance_is_domestic($raw)||
-           (string)($raw['sellerId']??'')!==$seller||(string)($raw['id']??'')!==$id||
-           (string)($row['order_number']??'')!==$orderNo||(string)($raw['orderNumber']??'')!==$orderNo||
-           (string)($raw['shipmentPackageId']??'')!==$pid||!in_array($type,$allowed,true)){$bad++;continue;}
+        if($id===''||isset($seen[$id])){$bad++;$reasons['TRANSACTION_ID']=true;continue;}
+        if(!is_array($raw)||$seller===''||!finance_is_domestic($raw)||(string)($raw['sellerId']??'')!==$seller){$bad++;$reasons['SELLER_SCOPE']=true;continue;}
+        if((string)($raw['id']??'')!==$id||(string)($row['order_number']??'')!==$orderNo||(string)($raw['orderNumber']??'')!==$orderNo){$bad++;$reasons['TRANSACTION_ID']=true;continue;}
+        if(!isset($ids[$pid])||(string)($raw['shipmentPackageId']??'')!==$pid){$bad++;$reasons['PACKAGE_REFERENCE']=true;continue;}
+        if(!in_array($type,$allowed,true)){$bad++;$reasons['MOVEMENT_TYPE']=true;continue;}
         $seen[$id]=true;
         $bc=(string)($raw['barcode']??'');
-        if($bc===''||!isset($ids[$pid][$bc])){$bad++;continue;}
+        if($bc===''||!isset($ids[$pid][$bc])){$bad++;$reasons['BARCODE_REFERENCE']=true;continue;}
         try{
             $credit=finance_units($raw['credit']??null);$debt=finance_units($raw['debt']??null);
             if($credit<0||$debt<0||($credit>0&&$debt>0))throw new InvalidArgumentException('Geçersiz hareket');
             $balance+=$credit-$debt;$n++;
-        }catch(InvalidArgumentException $e){$bad++;}
+        }catch(InvalidArgumentException $e){$bad++;$reasons['AMOUNT']=true;}
     }
-    return ['state'=>$bad?'incomplete':($n?'matched':'not_verified'),'rows'=>$n,'balance'=>!$bad&&$n?$balance/10000.0:null];
+    return ['state'=>$bad?'incomplete':($n?'matched':'not_verified'),'rows'=>$n,'balance'=>!$bad&&$n?$balance/10000.0:null,'reason'=>$bad?array_key_first($reasons):null];
 }
 /**
  * Order-level evidence aggregation. The order number and package ID are separate

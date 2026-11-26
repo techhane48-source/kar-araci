@@ -44,7 +44,7 @@ if($rapor==='order'){
             $pr['ok']?$pr['profit']:null,$pr['ok']?$pr['ratio']:null,$pr['ok']?$pr['margin']:null,
             $pr['ok']?$pr['cargo']:null,$pr['ok']?$pr['cargo_source']:($o['cargo_source']??null),$pr['ok']?$pr['commission']:null,$pr['ok']?$pr['commission_source']:($o['commission_source']??null),$pr['ok']?'Tahmini':($pr['reason']??'Veri eksik')];
     }
-    $summary=['Ciro'=>$money($sale),'Hesaplanan ciro'=>$money($knownSale),'Tahmini kâr'=>$known?$money($profit):'—','Kapsam'=>"$known / $count"];
+    $summary=['Ciro'=>$money($sale),'Hesaplanan ciro'=>$money($knownSale),'Tahmini kâr'=>$known?$money($profit):'—','Kapsam'=>"$known / $count",'Hesaplanamayan paket'=>$count-$known,'Hesaplanamayan ciro'=>$money($sale-$knownSale)];
     $reportNote='Tarihli kullanıcı maliyeti veya ilk gözlem kullanılır. Ekstre yokken komisyon tahmini, eşleşen Sale ekstresi geldiğinde gerçek satış komisyonu kullanılır. İade ve düzeltme kayıtları otomatik olarak kesin kâr sayılmaz. Platform hizmet bedeli halen tahminidir; fatura mağaza düzeyinde ayrıca raporlanır. Güncel maliyet geçmişe uygulanmaz. Gerçek finansal mutabakat değildir.';
 }elseif($rapor==='order_finance'){
     $reportCols=['Sipariş','Paket','Aktif satış tutarı','Tarihli / gözlemlenen maliyet','Tarihli maliyet adedi','İlk gözlem adedi','Satış komisyonu (ekstre)','Satış satıcı geliri (ekstre)','Finans alacak','Finans borç','Gönderi kargo (fatura)','İade kargo (fatura)','Diğer kargo','Bilinen kalemler sonrası fark (net kâr değil)','İade kalemi','Eşleşen finans','Eşleşmeyen / doğrulanmamış finans','Durum','Eksikler','Satış dışı ekstre hareketi','Satış dışı alacak eksi borç (kâr değil)','Hareket kanıtı'];

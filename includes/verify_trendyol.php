@@ -226,14 +226,14 @@ function verify_adjustment_overlap(array $orders,array $movements): array
         $rows[$no][]=['external_id'=>$s['externalId']??null,'order_number'=>$no,'shipment_package_id'=>$s['shipmentPackageId']??null,
             'query_type'=>$s['queryType']??null,'raw_json'=>$s['raw']??null];
     }
-    $matched=0;$unresolved=0;
+    $matched=0;$unresolved=0;$reasons=[];
     foreach($rows as $no=>$group){
         $seller=(string)($group[0]['raw_json']['sellerId']??'');
         $e=order_adjustment_evidence($packages[$no],$group,$seller);
-        if($e['state']==='matched')$matched++;else $unresolved++;
+        if($e['state']==='matched')$matched++;else{$unresolved++;if(is_string($e['reason']??null))$reasons[$e['reason']]=true;}
     }
     // A missing identity is an unresolved coverage condition, not a proven wrong monetary calculation.
-    return ['ok'=>true,'state'=>$unresolved?'incomplete':($matched?'matched':'not_verified'),'matched_orders'=>$matched,'unresolved_orders'=>$unresolved,'final_profit_verified'=>false];
+    return ['ok'=>true,'state'=>$unresolved?'incomplete':($matched?'matched':'not_verified'),'matched_orders'=>$matched,'unresolved_orders'=>$unresolved,'reasons'=>array_keys($reasons),'final_profit_verified'=>false];
 }
 /** An invoice order reference alone cannot assign a parcel charge to a shipment package. */
 function verify_cargo_order_overlap(array $orders,array $invoiceOrders): array

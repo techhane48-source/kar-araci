@@ -102,6 +102,10 @@ jobs:
           adjustment = checks.get("adjustment_overlap", {})
           state = adjustment.get("state") if isinstance(adjustment, dict) else None
           print("Adjustment/order evidence: " + {"matched":"PASS (OBSERVED RECORDS)","incomplete":"NOT VERIFIED (UNRESOLVED)","request_failed":"FAIL (REQUEST)","not_verified":"NOT VERIFIED"}.get(state,"NOT VERIFIED"))
+          reasons = adjustment.get("reasons", []) if isinstance(adjustment, dict) else []
+          for reason in ("PACKAGE_SCOPE","TRANSACTION_ID","SELLER_SCOPE","PACKAGE_REFERENCE","MOVEMENT_TYPE","BARCODE_REFERENCE","AMOUNT"):
+              if isinstance(reasons, list) and reason in reasons:
+                  print("Adjustment diagnostic: " + reason)
           print("Independent financial reconciliation: NOT VERIFIED")
           sys.exit(0 if sys.argv[2] == "0" and report.get("ok") is True else 1)
           PY

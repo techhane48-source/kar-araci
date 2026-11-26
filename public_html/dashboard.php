@@ -44,6 +44,7 @@ $urunMaliyeti = 0.0; $komisyon = 0.0; $kargo = 0.0;
 $hizmet = 0.0; $stopaj = 0.0; $netKdv = 0.0;
 $reklam = 0.0; $ceza = 0.0; $erkenOdeme = 0.0; $diger = 0.0;
 $siparis = 0; $maliyetliSiparis = 0; $urunAdet = 0;
+$profitGaps=[];
 
 foreach ($orders as $o) {
     if (!order_is_active_sale($o)) continue;
@@ -63,6 +64,10 @@ foreach ($orders as $o) {
         $hizmet += $pr['service_fee'];
         $stopaj += $pr['stopaj'];
         $netKdv += $pr['net_kdv'];
+    }else{
+        $reason=(string)($pr['reason']??'Veri eksik');
+        if(!isset($profitGaps[$reason]))$profitGaps[$reason]=['count'=>0,'sale'=>0.0];
+        $profitGaps[$reason]['count']++;$profitGaps[$reason]['sale']+=$sale;
     }
 }
 
@@ -128,7 +133,7 @@ require __DIR__ . '/../includes/header.php';
 
   <div class="kpi-row">
     <div class="kpi"><div class="k-label">Toplam Ciro</div><div class="k-value"><?= tl($ciro) ?></div></div>
-    <div class="kpi"><div class="k-label">Maliyeti Olan Ciro</div><div class="k-value"><?= tl($maliyetliCiro) ?></div></div>
+    <div class="kpi"><div class="k-label">Kârı Hesaplanabilen Ciro</div><div class="k-value"><?= tl($maliyetliCiro) ?></div></div>
     <div class="kpi"><div class="k-label">Kesin mağaza net kârı</div><div class="k-value">—</div></div>
     <div class="kpi"><div class="k-label">Tahmini Sipariş Kârı</div><div class="k-value <?= $netKar < 0 ? 'neg' : 'pos' ?>"><?= $maliyetliSiparis > 0 ? tl($netKar) : '—' ?></div></div>
     <div class="kpi"><div class="k-label">Tahmini Sipariş Kârı / Satış</div><div class="k-value <?= $karSatis < 0 ? 'neg' : '' ?>"><?= $maliyetliSiparis>0?'%'.number_format($karSatis,1,',','.'):'—' ?></div></div>
@@ -138,7 +143,7 @@ require __DIR__ . '/../includes/header.php';
   <?php $excludedCurrency=count(array_filter($orders,static fn($o)=>!order_is_domestic_try($o))); if($excludedCurrency): ?><p class="hint"><?= $excludedCurrency ?> paket ülke/para birimi doğrulanmadığından TL cirosuna dahil edilmedi. Eski kayıtları tekrar senkronize edin.</p><?php endif; ?>
   <p class="hint">Kâr tahmini <?= $maliyetliSiparis ?>/<?= $siparis ?> paket üzerinden; reklam, ceza ve diğer mağaza giderleri henüz kesin net kâra işlenmiyor.</p>
   <?php if($expenseEvidence!==null): ?>
-  <div class="card" style="margin:12px 0">
+  <div class="card table-card" style="margin:12px 0">
     <h2>Dönemde kaydedilen gerçek finans hareketleri</h2>
     <p class="hint">İşlem tarihine göre; aşağıdaki tutarlar sipariş tarihi bazlı tahmini kârdan tekrar düşülmez. Stopaj vergi avansı/nakit kesintisidir. Fatura KDV niteliği ve siparişe dağılımı ayrıca doğrulanmalıdır.</p>
     <table><tr><th>Hareket</th><th>Borç</th><th>Alacak / iptal</th><th>Gözlemlenen net kesinti</th><th>Kapsam</th></tr>
@@ -149,10 +154,17 @@ require __DIR__ . '/../includes/header.php';
     <p><a href="raporlar.php?r=period_finance&amp;days=<?=in_array($days,[7,15,30],true)?$days:7?>">Dönem finans hareketleri</a></p>
   </div>
   <?php endif; ?>
-  <?php if ($maliyetliCiro < $ciro): ?>
-    <p class="hint" style="margin:8px 0">
-      <?= tl($ciro - $maliyetliCiro) ?> ciro <?= $siparis - $maliyetliSiparis ?> siparişte kâr hesaplanamadı — bu ürünlere <a href="urunler.php">maliyet gir</a>.
-    </p>
+  <?php if ($profitGaps): ?>
+    <section class="card table-card" style="margin:12px 0" aria-labelledby="profit-coverage">
+      <h2 id="profit-coverage">Kâr hesabı kapsamı ve eksik kanıtlar</h2>
+      <p class="hint"><?= $maliyetliSiparis ?> / <?= $siparis ?> paket için tahmini hesap yapılabildi. Eksik paketler sıfır kâr veya zarar olarak kabul edilmez.</p>
+      <table><thead><tr><th scope="col">Hesaplanamama nedeni</th><th scope="col">Paket</th><th scope="col">İlgili ciro</th></tr></thead><tbody>
+      <?php foreach($profitGaps as $reason=>$gap): ?>
+        <tr><td><?= h($reason) ?></td><td><?= $gap['count'] ?></td><td><?= tl($gap['sale']) ?></td></tr>
+      <?php endforeach; ?>
+      </tbody></table>
+      <p><a href="urunler.php">Ürün maliyetleri</a> · <a href="raporlar.php?r=order_finance">Finansal eşleştirme</a> · <a href="kargo-kontrol.php">Kargo kontrolü</a></p>
+    </section>
   <?php endif; ?>
 
   <div class="card table-card" style="margin:16px 0">
