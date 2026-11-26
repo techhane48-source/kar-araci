@@ -32,6 +32,7 @@ $r=verify_trendyol_read_only($client,null,null,7,time(),static fn()=>null);
 $t['API only not acceptance']=$r['ok']&&!$r['live_acceptance']&&$r['local_comparison']===null&&!$r['bank_verified'];
 $client->badCatalog=true;
 $r=verify_trendyol_read_only($client,null,null,7,time(),static fn()=>null);
+$t['catalog fixed diagnostic']=($r['checks']['catalog']['reason']??null)==='PRICE_INVALID'&&verify_catalog_error_code('PRIVATE-ERROR')==='UNKNOWN'&&verify_catalog_error_code('Ürün V2 sayfası alınamadı (HTTP 403).')==='HTTP_403';
 $t['API only invalid product rejected']=!$r['ok']&&in_array('catalog',$r['failed_checks'],true)&&$r['checks']['catalog']['unknown_price_or_stock']===1;
 $client->badCatalog=false;
 $client->orders=[['packageNumber'=>'PRIVATE-PACKAGE','totalPrice'=>100,'status'=>'Delivered','lines'=>[]]];

@@ -65,6 +65,10 @@ jobs:
               flags = [checks.get(k, {}).get("ok") if isinstance(checks.get(k), dict) else None for k in keys]
               status = "PASS" if all(v is True for v in flags) else ("FAIL" if any(v is False for v in flags) else "NOT VERIFIED")
               print(label + ": " + status)
+          reason = checks.get("catalog", {}).get("reason")
+          allowed = {"UNKNOWN","TRANSPORT","RESPONSE_SCHEMA","HTTP_400","HTTP_401","HTTP_403","HTTP_404","HTTP_429","HTTP_OTHER","TOTAL_MISSING","TOTAL_CHANGED","DUPLICATE_CONTENT","DUPLICATE_BARCODE","VARIANTS_MISSING","BARCODE_MISSING","TOTAL_MISMATCH","PAGE_TOKEN","PAGE_LIMIT","PRICE_AND_STOCK_INVALID","PRICE_INVALID","STOCK_INVALID"}
+          if isinstance(reason, str) and reason in allowed:
+              print("Catalog diagnostic: " + reason)
           print("Independent financial reconciliation: NOT VERIFIED")
           sys.exit(0 if sys.argv[2] == "0" and report.get("ok") is True else 1)
           PY

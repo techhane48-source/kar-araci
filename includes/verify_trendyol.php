@@ -107,6 +107,26 @@ function verify_cargo_invoices(object $client,?PDO $db,?int $uid,array $document
         'invalid_local_invoices'=>$db?$invalidLocal:null,'nonempty_evidence'=>$rows>0,
         'matched'=>$db?($rows>0&&$ok&&$empty===0):null,'invoice_vat_verified'=>false];
 }
+/** Translate only known internal errors; arbitrary provider text never leaves the runner. */
+function verify_catalog_error_code(mixed $error): string
+{
+    if(!is_string($error))return 'UNKNOWN';
+    if(preg_match('/^Ürün V2 sayfası alınamadı \(HTTP ([0-9]{1,3})\)\.$/Du',$error,$m)){
+        return match((int)$m[1]){0=>'TRANSPORT',200=>'RESPONSE_SCHEMA',400=>'HTTP_400',401=>'HTTP_401',403=>'HTTP_403',404=>'HTTP_404',429=>'HTTP_429',default=>'HTTP_OTHER'};
+    }
+    return match($error){
+        'Ürün V2 toplam kayıt sayısı eksik.'=>'TOTAL_MISSING',
+        'Katalog tarama sırasında değişti; yeniden deneyin.'=>'TOTAL_CHANGED',
+        'Katalogda yinelenen içerik sayfası.'=>'DUPLICATE_CONTENT',
+        'Katalogda yinelenen barkod.'=>'DUPLICATE_BARCODE',
+        'Trendyol V2 ürün varyantları eksik.'=>'VARIANTS_MISSING',
+        'Trendyol V2 barkodu eksik.'=>'BARCODE_MISSING',
+        'Ürün V2 tutarsız kayıt sayısı döndürdü.'=>'TOTAL_MISMATCH',
+        'Ürün V2 sayfalama tokenı eksik veya tekrar ediyor.'=>'PAGE_TOKEN',
+        'Ürün V2 sayfa sınırına ulaşıldı; senkron tamamlanmadı.'=>'PAGE_LIMIT',
+        default=>'UNKNOWN'
+    };
+}
 /** Only counts, booleans and fixed labels leave this function. Never output provider errors or payloads. */
 function verify_trendyol_read_only(object $client,?PDO $db,?int $uid,int $days,int $now,?callable $pace=null): array
 {
@@ -120,20 +140,22 @@ function verify_trendyol_read_only(object $client,?PDO $db,?int $uid,int $days,i
     if($errors)return ['ok'=>false,'checks'=>$checks,'failed_checks'=>$errors,'read_only'=>true,'live_acceptance'=>false,'bank_verified'=>false];
     $barcodes=[];
     $record('catalog',static function()use($client,$db,$uid,&$barcodes){
-        $r=$client->getProducts();if(empty($r['ok'])||!is_array($r['products']??null))return ['ok'=>false];
-        $local=[];$duplicate=0;$missing=0;$price=0;$stock=0;$unknown=0;$seen=[];
+        $r=$client->getProducts();if(empty($r['ok'])||!is_array($r['products']??null))return ['ok'=>false,'reason'=>verify_catalog_error_code($r['error']??null)];
+        $local=[];$duplicate=0;$missing=0;$price=0;$stock=0;$unknown=0;$badPrice=false;$badStock=false;$seen=[];
         if($db){$q=$db->prepare("SELECT barcode,price,quantity FROM products WHERE user_id=? AND marketplace='trendyol' AND barcode<>''");$q->execute([$uid]);while($p=$q->fetch()){if(isset($local[$p['barcode']]))$duplicate++;$local[$p['barcode']]=$p;}}
         foreach($r['products'] as $p){
-            $bc=(string)($p['barcode']??'');if($bc===''||isset($seen[$bc]))return ['ok'=>false];$seen[$bc]=true;
+            $bc=(string)($p['barcode']??'');if($bc===''||isset($seen[$bc]))return ['ok'=>false,'reason'=>$bc===''?'BARCODE_MISSING':'DUPLICATE_BARCODE'];$seen[$bc]=true;
             if(count($barcodes)<10)$barcodes[]=$bc;
-            $valid=is_numeric($p['salePrice']??null)&&is_finite((float)$p['salePrice'])&&(float)$p['salePrice']>0&&is_numeric($p['quantity']??null)&&is_finite((float)$p['quantity'])&&(float)$p['quantity']>=0&&(float)$p['quantity']===(float)(int)$p['quantity'];
+            $priceValid=is_numeric($p['salePrice']??null)&&is_finite((float)$p['salePrice'])&&(float)$p['salePrice']>0;
+            $stockValid=is_numeric($p['quantity']??null)&&is_finite((float)$p['quantity'])&&(float)$p['quantity']>=0&&(float)$p['quantity']===(float)(int)$p['quantity'];
+            $badPrice=$badPrice||!$priceValid;$badStock=$badStock||!$stockValid;$valid=$priceValid&&$stockValid;
             if(!$valid)$unknown++;
             if(!$db)continue;
             if(!isset($local[$bc])){$missing++;continue;}
             if($valid){if(abs((float)$local[$bc]['price']-(float)$p['salePrice'])>0.005)$price++;if((int)$local[$bc]['quantity']!==(int)$p['quantity'])$stock++;}
         }
         $extra=$db?count(array_diff_key($local,$seen)):null;
-        return ['ok'=>true,'provider_rows'=>count($seen),'unknown_price_or_stock'=>$unknown,'missing_local'=>$db?$missing:null,'extra_local'=>$extra,'duplicate_local'=>$db?$duplicate:null,'price_differences'=>$db?$price:null,'stock_differences'=>$db?$stock:null,'matched'=>$db?($missing+$extra+$duplicate+$price+$stock+$unknown===0):null];
+        return ['ok'=>true,'provider_rows'=>count($seen),'unknown_price_or_stock'=>$unknown,'reason'=>$badPrice?($badStock?'PRICE_AND_STOCK_INVALID':'PRICE_INVALID'):($badStock?'STOCK_INVALID':null),'missing_local'=>$db?$missing:null,'extra_local'=>$extra,'duplicate_local'=>$db?$duplicate:null,'price_differences'=>$db?$price:null,'stock_differences'=>$db?$stock:null,'matched'=>$db?($missing+$extra+$duplicate+$price+$stock+$unknown===0):null];
     });
     $from=$now-$days*86400;$start=date('c',$from);$end=date('c',$now);
     $record('orders',static function()use($client,$db,$uid,$start,$end){
