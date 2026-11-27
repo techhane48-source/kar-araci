@@ -190,6 +190,10 @@ require __DIR__ . '/../includes/header.php';
                     <?php if ($pf !== null): ?><b class="<?= $pf < 0 ? 'neg' : 'pos' ?>"><?= tl($pf) ?></b><?php endif; ?></div>
                 <?php endforeach; ?>
                 </div>
+                <?php if (!empty($o['active'])): ?><div class="tag">şu an seçili</div><?php endif; ?>
+                <?php if ($o['worst'] !== null && $row['current_profit'] !== null): $d = $o['worst'] - $row['current_profit']; ?>
+                  <div class="hint">bugüne göre <span class="<?= $d < 0 ? 'neg' : 'pos' ?>"><?= ($d >= 0 ? '+' : '') . tl($d) ?></span><?= $a['type'] === 'plus' || $a['type'] === 'flas' ? ' · satış adedi artışıyla telafi edilmeli' : '' ?></div>
+                <?php endif; ?>
                 <?php if ($o['margin'] !== null): ?><div class="hint">%<?= number_format($o['margin'], 1, ',', '.') ?> marj<?= $o['cargo_note'] !== '' ? ' · kargo: ' . h($o['cargo_note']) : '' ?></div><?php endif; ?>
               <?php endif; ?>
               </td>

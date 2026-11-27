@@ -75,6 +75,7 @@ $a = tariff_analyze($uid, $mp, $fx . 'plus-tarifesi.xlsx');
 ok($a['type'] === 'plus' && count($a['rows']) === 2, 'Plus tanındı');
 $o = $a['rows'][1]['options'][0];
 ok(near($o['price'], 597.35) && $o['rates'] === ['3 gün' => 2.7, '4 gün' => 9.7], 'Plus üst limit ve Plus komisyon teklifleri');
+ok(empty($o['active']), 'Plus seçilmemiş satır aktif değil');
 ok(near((float)$o['write']['V'], 597.35) && $o['write']['W'] === '7 Günlük Fiyat', 'Plus Fiyat Seçimi + Tarife Seçimi yazılacak');
 $a = tariff_analyze($uid, $mp, $fx . 'avantajli-etiket.xlsx');
 $r = $a['rows'][0];

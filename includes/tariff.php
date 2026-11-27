@@ -287,6 +287,17 @@ function tariff_analyze(int $userId, string $marketplace, string $path): array
         if ($rn <= $det['header_row']) continue;
         $row = tariff_row($det['type'], $det['map'], $rowCells);
         if (!$row) continue;
+        // Dosyada zaten bu seçenek girilmişse (ör. daha önce Plus fiyatı seçilmiş) işaretle
+        foreach ($row['options'] as &$o) {
+            $o['active'] = $o['write'] !== [];
+            foreach ($o['write'] as $col => $val) {
+                $cur = $rowCells[$col] ?? '';
+                $same = is_string($val) ? trim((string)$cur) === $val
+                                        : (($n = tariff_num($cur)) !== null && abs($n - (float)$val) < 0.005);
+                if (!$same) { $o['active'] = false; break; }
+            }
+        }
+        unset($o);
         $row['row'] = $rn;
         if ($row['periods'] && !$out['periods']) $out['periods'] = $row['periods'];
         $p = $products[$row['barcode']] ?? null;
