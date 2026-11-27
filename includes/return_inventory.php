@@ -146,9 +146,9 @@ function return_inventory_period(PDO $db,int $uid,int $from,int $through): array
  * Known expenses are gross cash amounts, not tax-adjusted accounting profit.
  * A missing invoice, service fee or refund is not proof of zero expense.
  */
-function closed_package_loss(array $o,array $packages,array $rows,array $cargo,array $claims,array $counts,array $checks,string $seller): array
+function closed_package_loss(array $o,array $packages,array $rows,array $cargo,array $claims,array $counts,array $checks,string $seller,?array $tariffs=null): array
 {
-    $out=['loss'=>null,'cargo'=>null,'inventory'=>null,'settlement_loss'=>null,'state'=>'Finans / iade ayrıntıları bekleniyor','assumed'=>false,'pending'=>true];
+    $out=['outbound'=>null,'return_cargo'=>null,'estimated_cargo'=>false,'loss'=>null,'cargo'=>null,'inventory'=>null,'settlement_loss'=>null,'state'=>'Finans / iade ayrıntıları bekleniyor','assumed'=>false,'pending'=>true];
     $status=strtolower((string)($o['status']??''));
     if(!in_array($status,['cancelled','canceled','unsupplied','returned','undelivered'],true))return $out;
     $cancel=in_array($status,['cancelled','canceled','unsupplied'],true);
@@ -164,7 +164,7 @@ function closed_package_loss(array $o,array $packages,array $rows,array $cargo,a
         if($id===''||$bc===''||isset($lineIds[$id])||!is_numeric($q)||!is_finite((float)$q)||(float)$q!==(float)(int)$q||$q<1)return $out;
         $lineIds[$id]=(int)$q;$want[$bc]=true;$units+=(int)$q;
     }
-    $cargoSum=0;$cargoOk=true;$seen=[];$outbound=false;$return=false;
+    $cargoSum=0;$outSum=0;$returnSum=0;$cargoOk=true;$seen=[];$outbound=false;$return=false;
     foreach($cargo as $r){
         $serial=(string)($r['invoice_serial']??'');$parcel=(string)($r['parcel_id']??'');$type=(string)($r['shipment_type']??'');$key=json_encode([$serial,$parcel,$type]);
         $raw=json_decode((string)($r['invoice_raw']??''),true);
@@ -173,10 +173,37 @@ function closed_package_loss(array $o,array $packages,array $rows,array $cargo,a
         try{$v=finance_units($r['amount']??null);if($v<0)throw new InvalidArgumentException('Kargo');
             if(($r['invoice_basis']??'')==='net')$v=(int)round($v*1.2,0,PHP_ROUND_HALF_UP);
             elseif(($r['invoice_basis']??'')!=='gross')throw new InvalidArgumentException('KDV');
-            $cargoSum+=$v;$outbound=$outbound||$type==='Gönderi Kargo Bedeli';$return=$return||$type==='İade Kargo Bedeli';
+            $cargoSum+=$v;if($type==='Gönderi Kargo Bedeli'){$outSum+=$v;$outbound=true;}else{$returnSum+=$v;$return=true;}
         }catch(InvalidArgumentException $e){$cargoOk=false;break;}
     }
-    if($cargo&&$cargoOk)$out['cargo']=$cargoSum/10000.0;
+    if($cargoOk){$out['outbound']=$outbound?$outSum/10000.0:null;$out['return_cargo']=$return?$returnSum/10000.0:null;}
+    $context=json_decode((string)($o['cargo_quote_context']??''),true);
+    $shipped=!$cancel||$outbound||$return||($context['desi_source']??'')==='shipment_api'||(bool)$claims;
+    // Explicit operating assumption: a cancelled package without shipping or financial
+    // evidence is treated as zero for planning, not a confirmed no-charge cancellation.
+    if($cancel&&!$shipped&&!$rows&&!$cargo&&!$claims){
+        return array_replace($out,['loss'=>0.0,'cargo'=>0.0,'outbound'=>0.0,'return_cargo'=>0.0,'inventory'=>0.0,'assumed'=>true,'state'=>'İptal: 0 TL tahmin (gönderim/kesinti kaydı yok)']);
+    }
+    if($cargoOk&&$shipped){
+        $quote=null;
+        if(is_array($context)&&($context['carrier']??null)===cargo_carrier((string)($o['cargo_provider']??''))&&
+           ($context['day']??null)===date('Y-m-d',(int)($o['order_date']??0))&&
+           is_numeric($context['sale']??null)&&abs((float)$context['sale']-(float)($o['total_price']??0))<0.005&&
+           (int)($context['order_modified_ms']??-1)===(int)($o['last_modified_ms']??0)){
+            $quote=cargo_quote_from_context($context,$tariffs??cargo_tariffs());
+        }
+        $base=$quote['amount']??null;
+        // The original tariff estimate is a fallback, not a current invoice.
+        if($base===null){
+            $meta=json_decode((string)($o['cargo_first_estimate_json']??''),true);$first=$o['cargo_first_estimate']??null;
+            if(is_array($meta)&&is_numeric($first)&&is_finite((float)$first)&&$first>0&&is_numeric($meta['amount']??null)&&abs((float)$meta['amount']-(float)$first)<0.005)$base=(float)$first;
+        }
+        // Return freight is provisionally estimated at the outbound rate;
+        // actual invoice for either leg replaces only that leg.
+        if($out['outbound']===null&&($base!==null||$out['return_cargo']!==null)){$out['outbound']=(float)($base??$out['return_cargo']);$out['estimated_cargo']=true;}
+        if($out['return_cargo']===null&&$out['outbound']!==null){$out['return_cargo']=$out['outbound'];$out['estimated_cargo']=true;}
+        if($out['outbound']!==null&&$out['return_cargo']!==null)$out['cargo']=$out['outbound']+$out['return_cargo'];
+    }
     // For a fully accepted return, count each unit exactly once and default only
     // uninspected accepted items to recoverable. No assumption about physical receipt.
     $loss=0;$claimOk=true;$used=[];$perLine=[];$assumed=false;
@@ -191,6 +218,10 @@ function closed_package_loss(array $o,array $packages,array $rows,array $cargo,a
         $loss+=finance_units($a['inventory_loss']);$assumed=$assumed||$a['assumed'];
     }
     if($claimOk&&count($used)===$units){$out['inventory']=$loss/10000.0;$out['assumed']=$assumed;}
+    elseif(!$claims&&$shipped){$out['inventory']=0.0;$out['assumed']=true;}
+    // If a claim exists but the inspection is absent, use zero impairment only
+    // for identifiable, accepted units. Ambiguous or recorded exceptions stay unknown.
+    elseif($claimOk&&$shipped&&$used){$out['inventory']=$loss/10000.0;$out['assumed']=true;}
     // Record residual seller debit only when the original sales and refund/campaign
     // movements reconcile to zero gross by barcode. No guessed signs or allocations.
     $gross=[];$revenue=0;$sold=[];$refunded=[];$seen=[];$financeOk=true;
@@ -210,14 +241,13 @@ function closed_package_loss(array $o,array $packages,array $rows,array $cargo,a
     }
     if($financeOk&&$rows&&$revenue<=0&&count($sold)===count($want)&&count($refunded)===count($want)&&!array_filter($gross,static fn($v)=>abs($v)>100))
         $out['settlement_loss']=-$revenue/10000.0;
-    $known=array_filter([$out['cargo'],$out['inventory'],$out['settlement_loss']],static fn($v)=>$v!==null);
-    if($known)$out['loss']=array_sum($known);
-    if($cancel&&!$rows&&!$cargo&&!$claims){
-        $out['state']='İptal: kayıtlı kesinti yok; gönderim ve finans kesinleşmedi';
-        return $out;
-    }
-    $out['state']=$cancel?'İptal: bilinen giderler; finans tamamlanmadı':'İade/teslim edilemedi: bilinen giderler; finans tamamlanmadı';
-    if($out['loss']===null)$out['state']=$cancel?'İptal: gider kaydı bekleniyor':'İade: kargo, stok veya ekstre kaydı bekleniyor';
+    // Planning rule requested by the merchant: no sale, commission or VAT on
+    // the reversed sale; gross freight and stock impairment only. Residual
+    // statement debit is displayed separately, not deducted again.
+    if($out['cargo']!==null&&$out['inventory']!==null)$out['loss']=$out['cargo']+$out['inventory'];
+    $out['state']=$cancel?'İptal: tahmini zarar':'İade/teslim edilemedi: tahmini zarar';
+    if($out['estimated_cargo'])$out['state'].=' (eksik kargo ayağı tahmini)';
+    if($out['loss']===null)$out['state']='İptal/iade: kargo veya stok eşleşmesi eksik';
     return $out;
 }
 /** Batch closed orders, including all packages, claim units and invoice rows. */
@@ -225,6 +255,7 @@ function closed_package_loss_overlay(PDO $db,int $uid,array $orders): array
 {
     $by=[];foreach($orders as $i=>$o)if(($o['marketplace']??'')==='trendyol'&&in_array(strtolower((string)($o['status']??'')),['cancelled','canceled','unsupplied','returned','undelivered'],true)&&!empty($o['order_number']))$by[(string)$o['order_number']][]=$i;
     if(!$by)return $orders;
+    $tariffs=cargo_tariffs();
     $q=$db->prepare("SELECT seller_id FROM integration_bindings WHERE user_id=? AND marketplace='trendyol'");$q->execute([$uid]);$seller=(string)($q->fetchColumn()?:'');
     foreach(array_chunk(array_keys($by),200) as $chunk){
         $in=implode(',',array_fill(0,count($chunk),'?'));$args=array_merge([$uid],$chunk);$groups=[];
@@ -239,7 +270,7 @@ function closed_package_loss_overlay(PDO $db,int $uid,array $orders): array
         $basis=cargo_invoice_basis_map($db,$uid,$seller,$serials);$counts=return_accepted_counts($db,$uid,$claims);$checks=return_inventory_checks($db,$uid,$claims);
         foreach($chunk as $no){
             $g=$groups[$no]??[];$cargo=$g['cargo']??[];foreach($cargo as &$r)$r['invoice_basis']=$basis[$r['invoice_serial']]??null;unset($r);
-            foreach($by[$no] as $i)$orders[$i]['closed_loss']=closed_package_loss($orders[$i],$g['packages']??[],$g['rows']??[],$cargo,$g['claims']??[],$counts,$checks,$seller);
+            foreach($by[$no] as $i)$orders[$i]['closed_loss']=closed_package_loss($orders[$i],$g['packages']??[],$g['rows']??[],$cargo,$g['claims']??[],$counts,$checks,$seller,$tariffs);
         }
     }
     return $orders;

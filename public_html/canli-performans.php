@@ -85,18 +85,19 @@ $hourly = array_fill(0,24,$blank);
 $week = []; // dayKey (Y-m-d) => [sale, profit, count]
 
 foreach ($orders as $o) {
-    if (!order_is_active_sale($o)) {
-        if(isset($o['closed_loss'])){$closed['count']++;if($o['closed_loss']['loss']!==null){$closed['known']++;$closed['loss']+=(float)$o['closed_loss']['loss'];}}
-        continue;
-    }
+    if (!order_is_active_sale($o)&&!isset($o['closed_loss'])) continue;
+    $isClosed=isset($o['closed_loss']);
     $o['lines'] = is_array($o['lines'])?$o['lines']:(json_decode($o['lines']??'[]',true)?:[]);
     $day = strtotime(date('Y-m-d', (int)$o['order_date']));
     $dayKey = date('Y-m-d', (int)$o['order_date']);
     if (!isset($week[$dayKey])) $week[$dayKey] = $blank;
 
-    $pr = calc_order_profit($o, $byBarcode);
-    $profit = $pr['ok'] ? (float)$pr['profit'] : 0.0;
-    $sale = (float)$o['total_price'];
+    if($isClosed){
+        $cl=$o['closed_loss'];$closed['count']++;$known=$cl['loss']!==null;
+        if($known){$closed['known']++;$closed['loss']+=(float)$cl['loss'];}
+        $pr=['ok'=>$known,'profit'=>$known?-(float)$cl['loss']:null];$sale=0.0;
+    }else{$pr=calc_order_profit($o,$byBarcode);$sale=(float)$o['total_price'];}
+    $profit=$pr['ok']?(float)$pr['profit']:0.0;
 
     $week[$dayKey]['sale'] += $sale;
     $week[$dayKey]['count']++;
@@ -204,11 +205,11 @@ require __DIR__ . '/../includes/header.php';
 
   <div class="card table-card" style="margin:16px 0" id="period-summary">
     <h2>Son <?=$days?> Gün</h2>
-    <p>Satış: <b><?=tl($period['sale'])?></b> · Hesaplanabilen tahmini kâr: <b id="period-profit"><?=$period['profitCount']?tl($period['profit']):'—'?></b> · Kâr kapsamı: <?=$period['profitCount']?>/<?=$period['count']?> aktif paket.</p>
+    <p>Satış: <b><?=tl($period['sale'])?></b> · Hesaplanabilen tahmini kâr: <b id="period-profit"><?=$period['profitCount']?tl($period['profit']):'—'?></b> · Kâr kapsamı: <?=$period['profitCount']?>/<?=$period['count']?> paket (iptal/iade dahil).</p>
     <p class="hint">Eksik verili paketler kâr toplamına alınmaz. Hesaplanamayan kâr sıfır değildir.</p>
-    <p id="closed-loss-summary">İptal/iade: <?=$closed['count']?> paket · Bilinen brüt gider: <b><?=$closed['known']?tl($closed['loss']):'—'?></b> (<?=$closed['known']?> pakette gider verisi). Bu tutar aktif satış kârından ayrı gösterilir; eksik kargo/hizmet/vergiler ve kısmi iadeler nedeniyle kesin net zarar değildir.</p>
+    <p id="closed-loss-summary">İptal/iade: <?=$closed['count']?> paket · Tahmini zarar: <b><?=$closed['known']?tl($closed['loss']):'—'?></b> (<?=$closed['known']?>/<?=$closed['count']?> paket). Hesaplanabilen zarar dönem kârından bir kez düşülür. Satış ve komisyon sıfır varsayılır; eksik dönüş kargosu gidiş fiyatıyla tahmin edilir, fatura geldiğinde değişir. <a href="iade-kontrol.php">Satılamaz iadeleri işaretle</a>.</p>
     <table>
-      <tr><th>Gün</th><th>Satış</th><th>Tahmini Kâr</th><th>Kâr kapsamı</th><th>Aktif paket</th></tr>
+      <tr><th>Gün</th><th>Satış</th><th>Tahmini Kâr</th><th>Kâr kapsamı</th><th>Paket</th></tr>
       <?php foreach ($week as $day => $d): ?>
         <tr data-day="<?=h($day)?>">
           <td><?= h($day) ?></td>
@@ -273,8 +274,8 @@ require __DIR__ . '/../includes/header.php';
           <td><?= order_is_domestic_try($o) ? tl((float)$o['total_price']) : h((string)($o['currency_code'] ?? 'Belirsiz')) . ' ' . number_format((float)$o['total_price'],2,',','.') ?></td>
           <td>
             <?php if(isset($o['closed_loss'])):$cl=$o['closed_loss'];?>
-              <?php if($cl['loss']!==null):?><span class="neg">Bilinen gider: <?=tl($cl['loss'])?></span><br><small>Kargo: <?=$cl['cargo']!==null?tl($cl['cargo']):'bekleniyor'?> · Stok kaybı: <?=$cl['inventory']!==null?tl($cl['inventory']):'belirsiz'?> · Ekstre kaybı: <?=$cl['settlement_loss']!==null?tl($cl['settlement_loss']):'bekleniyor'?></small><br><?php endif;?>
-              <small><?=h($cl['state'])?><?=$cl['assumed']?' · İade ürünü satışa uygun varsayımı':''?></small>
+              <?php if($cl['loss']!==null):?><span class="neg">Tahmini zarar: <?=tl(-$cl['loss'])?></span><br><small>Gidiş: <?=$cl['outbound']!==null?tl($cl['outbound']):'bekleniyor'?> · Dönüş: <?=$cl['return_cargo']!==null?tl($cl['return_cargo']):'bekleniyor'?> · Stok kaybı: <?=$cl['inventory']!==null?tl($cl['inventory']):'belirsiz'?> · Ekstre kaybı: <?=$cl['settlement_loss']!==null?tl($cl['settlement_loss']):'bekleniyor'?></small><br><?php endif;?>
+              <small><?=h($cl['state'])?><?=$cl['assumed']?' · Operasyonel varsayım':''?></small><br><a href="iade-kontrol.php?q=<?=urlencode((string)$o['order_number'])?>">İade / satılamaz işareti</a>
             <?php elseif ($pr['ok']): ?><span class="<?= $pr['profit'] < 0 ? 'neg' : 'pos' ?>"><?= tl($pr['profit']) ?></span><br><small><?=h((string)$pr['cargo_source'])?> · <?=h((string)$pr['commission_source'])?></small>
             <?php else: ?><span class="hint"><?= h($pr['reason'] ?? 'Veri eksik') ?></span><?php endif; ?>
           </td>

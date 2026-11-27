@@ -40,6 +40,8 @@ $returnOverview=$mp==='trendyol'?return_inventory_period(db(),(int)$u['id'],$fro
 $tariffState=$mp==='trendyol'?cargo_tariff_status(cargo_tariffs(),(new DateTimeImmutable('now',new DateTimeZone('Europe/Istanbul')))->format('Y-m-d')):null;
 $orders = commission_profit_overlay(db(),(int)$u['id'],cargo_profit_overlay(db(),(int)$u['id'],cost_history_overlay(db(),(int)$u['id'],$q->fetchAll())));
 
+$orders=closed_package_loss_overlay(db(),(int)$u['id'],$orders);
+$closedCount=0;$closedKnown=0;$closedLoss=0.0;
 // Aggregasyon
 $ciro = 0.0; $maliyetliCiro = 0.0;
 $urunMaliyeti = 0.0; $komisyon = 0.0; $kargo = 0.0;
@@ -49,6 +51,7 @@ $siparis = 0; $maliyetliSiparis = 0; $urunAdet = 0;
 $profitGaps=[];
 
 foreach ($orders as $o) {
+    if(isset($o['closed_loss'])){$closedCount++;if($o['closed_loss']['loss']!==null){$closedKnown++;$closedLoss+=(float)$o['closed_loss']['loss'];}continue;}
     if (!order_is_active_sale($o)) continue;
     $o['lines'] = is_array($o['lines'])?$o['lines']:(json_decode($o['lines']??'[]',true)?:[]);
     $sale = (float)$o['total_price'];
@@ -84,7 +87,7 @@ foreach ($orders as $o) {
 
 // Brüt & Net kâr (Melontik ayrımı)
 $brutKar = $maliyetliCiro - $urunMaliyeti - $komisyon - $kargo - $hizmet - $stopaj - $netKdv;
-$netKar = $brutKar; // Order estimate only; unmatched store expenses are unknown.
+$netKar = $brutKar-$closedLoss; // Estimated closed-package expense deducted once.
 $karSatis = $maliyetliCiro > 0 ? $netKar / $maliyetliCiro * 100 : 0.0;
 $karMaliyet = $urunMaliyeti > 0 ? $netKar / $urunMaliyeti * 100 : 0.0;
 $ortKomisyon = $maliyetliCiro > 0 ? $komisyon / $maliyetliCiro * 100 : 0.0;
@@ -140,7 +143,7 @@ require __DIR__ . '/../includes/header.php';
       <div><span>Satılamaz işaretli</span><strong><?=$returnOverview['unusable']?></strong></div>
       <div><span>Stok değer kaybı (kapsam içi)</span><strong><?=$returnOverview['loss']===null?'—':tl($returnOverview['loss'])?></strong></div>
     </div>
-    <p class="hint">Son güncelleme tarihine göre. <?=$returnOverview['unknown']?> kalem hesaplanamadı; normal iadeler fiziksel teslim doğrulaması olmadan satışa uygun varsayılır. Bu tutar toplam iade zararı değildir ve sipariş tahmini kârından tekrar düşülmez.</p>
+    <p class="hint">Son güncelleme tarihine göre. <?=$returnOverview['unknown']?> kalem hesaplanamadı; normal iadeler fiziksel teslim doğrulaması olmadan satışa uygun varsayılır. Bu ayrı stok raporu tekrar düşülmez; eşleşen kapalı paketlerin zararında zaten dikkate alınır.</p>
     <a href="iade-kontrol.php">Yalnız satılamaz ürünleri işaretle</a> · <a href="raporlar.php?r=claims">İade raporu</a>
   </section>
   <?php endif; ?>
@@ -159,13 +162,13 @@ require __DIR__ . '/../includes/header.php';
     <div class="kpi"><div class="k-label">Toplam Ciro</div><div class="k-value"><?= tl($ciro) ?></div></div>
     <div class="kpi"><div class="k-label">Kârı Hesaplanabilen Ciro</div><div class="k-value"><?= tl($maliyetliCiro) ?></div></div>
     <div class="kpi"><div class="k-label">Kesin mağaza net kârı</div><div class="k-value">—</div></div>
-    <div class="kpi"><div class="k-label">Tahmini Sipariş Kârı</div><div class="k-value <?= $netKar < 0 ? 'neg' : 'pos' ?>"><?= $maliyetliSiparis > 0 ? tl($netKar) : '—' ?></div></div>
+    <div class="kpi"><div class="k-label">Tahmini Sipariş Kârı</div><div class="k-value <?= $netKar < 0 ? 'neg' : 'pos' ?>"><?= $maliyetliSiparis+$closedKnown > 0 ? tl($netKar) : '—' ?></div></div>
     <div class="kpi"><div class="k-label">Tahmini Sipariş Kârı / Satış</div><div class="k-value <?= $karSatis < 0 ? 'neg' : '' ?>"><?= $maliyetliSiparis>0?'%'.number_format($karSatis,1,',','.'):'—' ?></div></div>
     <div class="kpi"><div class="k-label">Tahmini Sipariş Kârı / Maliyet</div><div class="k-value <?= $karMaliyet < 0 ? 'neg' : '' ?>"><?= $maliyetliSiparis>0?'%'.number_format($karMaliyet,1,',','.'):'—' ?></div></div>
   </div>
 
   <?php $excludedCurrency=count(array_filter($orders,static fn($o)=>!order_is_domestic_try($o))); if($excludedCurrency): ?><p class="hint"><?= $excludedCurrency ?> paket ülke/para birimi doğrulanmadığından TL cirosuna dahil edilmedi. Eski kayıtları tekrar senkronize edin.</p><?php endif; ?>
-  <p class="hint">Kâr tahmini <?= $maliyetliSiparis ?>/<?= $siparis ?> paket üzerinden; reklam, ceza ve diğer mağaza giderleri henüz kesin net kâra işlenmiyor.</p>
+  <p class="hint">Kâr tahmini <?= $maliyetliSiparis ?>/<?= $siparis ?> aktif paket ve <?=$closedKnown?>/<?=$closedCount?> iptal/iade üzerinden. İptal/iade tahmini zarar: <?= $closedKnown?tl($closedLoss):'—' ?> (bir kez düşüldü). Reklam, ceza ve diğer mağaza giderleri henüz kesin net kâra işlenmiyor.</p>
   <?php if($expenseEvidence!==null): ?>
   <div class="card table-card" style="margin:12px 0">
     <h2>Dönemde kaydedilen gerçek finans hareketleri</h2>
