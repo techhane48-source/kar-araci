@@ -93,3 +93,5 @@ One previously fetched, completed payment order is checked per 30-minute target 
 
 ### Hostinger Business hedefi
 hPanel > Websites > Manage site > Cron Jobs alanında Custom komut olarak PHP CLI ve siteye ait mutlak scripts/sync.php auto yolunu kullanın. PHP 8.3 ve gerekli uzantıları gerçek hesapta doğrulayın. Beş dakikalık zamanlama UTC kullanır; göreli beş dakika aralığını değiştirmez. Site kökü, SSH/CLI yolu ve kaynak limitleri hesaba göre kontrol edilmeli. Banka dekontu ekranı isteğe bağlıdır; ilk operasyonel yayını tek başına bloke etmez. Banka doğrulanmadıkça banka mutabakatı tamamlandı veya kesin net kâr doğrulandı denmez. Referans: https://www.hostinger.com/support/1583465-how-to-set-up-a-cron-job-at-hostinger/ .
+
+Bundled standard desi tariff now contains 5 October 2026 PDF reference; no manual installation needed for those rates. New date-covered operator tariff overrides it. The PDF excludes barem shipments; obtain separate official barem terms and rates before claiming exact low-price freight. Last-known reference does not prove later changes did not occur.

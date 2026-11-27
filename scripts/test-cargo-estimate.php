@@ -65,4 +65,18 @@ $tests['return charge no automatic delta']=cargo_effective([$p],[array_replace($
 $tests['expired tariff status']=cargo_tariff_status([$ref],'2026-11-26')['state']==='missing';
 $tests['secondary tariff status not official']=cargo_tariff_status([$ref],'2026-11-25')['state']==='secondary_partial'&&!cargo_tariff_status([$ref],'2026-11-25')['official_verified'];
 $tests['overlapping primary date withheld']=cargo_order_quote($high,['001'=>['expected_desi'=>3]],[$primary,array_replace($primary,['rows'=>[['carrier'=>'ARAS','desi'=>3,'min_sale'=>350,'max_sale'=>null,'gross_tl'=>140]]])])===null;
+$doc=require __DIR__.'/../includes/cargo_document_20261005.php';
+$tests['PDF 3700 exact standard rates']=cargo_tariff_valid($doc)&&count($doc['rows'])===3700;
+$sum=0;foreach($doc['rows'] as $row)$sum+=(int)round($row['base_net_tl']*100);
+$tests['PDF net cents cross-check']=$sum===1486053691;
+$doc=cargo_tariff_index($doc);
+$tests['PDF missing desi now available']=cargo_tariff_quote($doc,'TEX',6,500,'2026-11-27')['amount']===150.72;
+$tests['PDF PTT 31 bracket']=cargo_tariff_quote($doc,'PTT',31,500,'2026-11-27')['amount']===864.34;
+$tests['PDF heavy surcharge included']=cargo_tariff_quote($doc,'ARAS',100,500,'2026-11-27')['amount']===6535.16;
+$tests['PDF unavailable carrier stays unknown']=cargo_tariff_quote($doc,'TEX',101,500,'2026-11-27')===null;
+$tests['PDF excludes barem']=cargo_tariff_quote($doc,'TEX',3,199.90,'2026-11-27')===null;
+$tests['PDF separate historically valid provisional barem']=cargo_order_quote($low,['001'=>['expected_desi'=>3]],[$doc,$ref])['kind']==='barem_scenario';
+$tests['PDF no expired barem quote']=cargo_order_quote(array_replace($low,['orderDate'=>strtotime('2026-11-27')*1000]),['001'=>['expected_desi'=>3]],[$doc,$ref])===null;
+$tests['PDF replacement operator wins']=cargo_order_quote($high,['001'=>['expected_desi'=>3]],[$doc,$ref,$primary])['amount']===150.0;
+$tests['PDF reference not live verified']=cargo_tariff_status([$doc],'2026-11-27')['state']==='document_reference'&&!cargo_tariff_status([$doc],'2026-11-27')['official_verified'];
 foreach($tests as $n=>$ok)echo ($ok?'PASS':'FAIL')." $n\n";exit(in_array(false,$tests,true)?1:0);

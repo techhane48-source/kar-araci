@@ -125,7 +125,7 @@ require __DIR__ . '/../includes/header.php';
   <?php if($tariffState!==null): ?>
   <section class="card" style="margin:12px 0" aria-labelledby="tariff-status">
     <h2 id="tariff-status">Kargo tarifesi durumu</h2>
-    <p class="hint"><?php echo h(['operator_reference'=>'Bugün için yönetici tarafından eklenmiş tarihli tarife mevcut; resmî doğrulama değildir.','secondary_partial'=>'Bugün için yalnız sınırlı ikincil kaynak tahmini var.','conflict'=>'Tarife tarihleri çakışıyor; belirsiz fiyatlar kullanılmaz.','missing'=>'Bugün için geçerli tarife bulunamadı; eksik kargo fiyatı sıfır kabul edilmez.'][$tariffState['state']]); ?></p>
+    <p class="hint"><?php echo h(['operator_reference'=>'Bugün için yönetici tarafından eklenmiş tarihli tarife mevcut; resmî doğrulama değildir.','document_reference'=>'5 Ekim 2026 standart kargo PDF referansı yüklü. Sonraki değişiklikler otomatik doğrulanmadı; barem ayrı tarifedir.','secondary_partial'=>'Bugün için yalnız sınırlı ikincil kaynak tahmini var.','conflict'=>'Tarife tarihleri çakışıyor; belirsiz fiyatlar kullanılmaz.','missing'=>'Bugün için geçerli tarife bulunamadı; eksik kargo fiyatı sıfır kabul edilmez.'][$tariffState['state']]); ?></p>
     <?php if($tariffState['state']==='missing'&&$tariffState['last_expired_through']!==null): ?><p class="hint">Son süresi dolan tarife: <?=h($tariffState['last_expired_through'])?></p><?php endif; ?>
     <a href="raporlar.php?r=cargo_effective">Kargo tahminleri ve faturalar</a>
   </section>

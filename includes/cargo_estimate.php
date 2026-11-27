@@ -26,7 +26,7 @@ function cargo_tariff_quote(array $t,string $carrier,float $desi,float $sale,str
         try{$v=finance_units($row['fast_gross_tl']??null);if($v<=0||$v>$units)return null;$fast=$v/10000.0;}
         catch(InvalidArgumentException $ex){return null;}
     }
-    return ['amount'=>$units/10000.0,'desi'=>$desi,'carrier'=>$carrier,'tariff_from'=>$t['from'],'tariff_through'=>$t['through'],'source'=>$t['source']??'','confidence'=>$t['confidence']??'operator_reference','kind'=>$kind,'fast_scenario'=>$fast];
+    return ['amount'=>$units/10000.0,'desi'=>$desi,'carrier'=>$carrier,'tariff_from'=>$t['from'],'tariff_through'=>$t['through'],'source'=>$t['source']??'','confidence'=>$t['confidence']??'operator_reference','kind'=>$kind,'fast_scenario'=>$fast,'base_net_tl'=>$row['base_net_tl']??null,'heavy_net_tl'=>$row['heavy_net_tl']??null];
 }
 /** Reject malformed or overlapping rate bands before activation. */
 function cargo_tariff_valid(array $t): bool
@@ -68,7 +68,9 @@ function cargo_tariffs(): array
         if(!is_array($t)||!cargo_tariff_valid($t))continue;
         $out[]=cargo_tariff_index($t);
     }
-    // Secondary-source fallback is bounded to the last researched date; never claim official/current indefinitely.
+    $document=require __DIR__.'/cargo_document_20261005.php';
+    if(cargo_tariff_valid($document))$out[]=cargo_tariff_index($document);
+    // Secondary barem scenarios remain bounded to their separately researched date.
     $fallback=require __DIR__.'/cargo_reference_20261005.php';
     if(cargo_tariff_valid($fallback))$out[]=cargo_tariff_index($fallback);
     return $out;
@@ -76,15 +78,15 @@ function cargo_tariffs(): array
 /** Date coverage only; a table's presence does not prove official provenance or every desi. */
 function cargo_tariff_status(array $tariffs,string $day): array
 {
-    $primary=0;$secondary=0;$latest=null;
+    $primary=0;$document=0;$secondary=0;$latest=null;
     foreach($tariffs as $t){
         if(!is_array($t)||!isset($t['from'],$t['through']))continue;
         if($t['from']<=$day&&$t['through']>=$day){
-            if(($t['confidence']??'')==='secondary_partial')$secondary++;else $primary++;
+            if(($t['confidence']??'')==='secondary_partial')$secondary++;elseif(($t['confidence']??'')==='document_reference')$document++;else $primary++;
         }
         if($t['through']<$day&&($latest===null||$t['through']>$latest))$latest=$t['through'];
     }
-    return ['state'=>$primary>1?'conflict':($primary===1?'operator_reference':($secondary===1?'secondary_partial':($secondary>1?'conflict':'missing'))),
+    return ['state'=>$primary>1?'conflict':($primary===1?'operator_reference':($document===1?'document_reference':($document>1?'conflict':($secondary===1?'secondary_partial':($secondary>1?'conflict':'missing'))))),
         'last_expired_through'=>$latest,'official_verified'=>false];
 }
 function cargo_has_shipped(array $order): bool
@@ -127,10 +129,20 @@ function cargo_quote_from_context(array $context,array $tariffs): ?array
        !is_string($day)||!preg_match('/^\d{4}-\d{2}-\d{2}$/D',$day)||!is_numeric($sale)||!is_finite((float)$sale)||(float)$sale<=0||
        !in_array($context['desi_source']??null,['shipment_api','declared_product','pre_shipment_api'],true))return null;
     // Operator table wins only for its own effective dates; never fill a missing official row from secondary data.
-    $primary=array_values(array_filter($tariffs,static fn($t)=>($t['confidence']??'')!=='secondary_partial'&&$day>=($t['from']??'9999')&&$day<=($t['through']??'0000')));
+    $primary=array_values(array_filter($tariffs,static fn($t)=>!in_array($t['confidence']??'',['secondary_partial','document_reference'],true)&&$day>=($t['from']??'9999')&&$day<=($t['through']??'0000')));
     if(count($primary)>1)return null; // Ambiguous date coverage is not resolved by a coincidental matching row.
-    $candidates=$primary?:$tariffs;$quotes=[];
+    $documents=array_values(array_filter($tariffs,static fn($t)=>($t['confidence']??'')==='document_reference'&&$day>=($t['from']??'9999')&&$day<=($t['through']??'0000')));
+    if(!$primary&&count($documents)>1)return null;
+    $candidates=$primary?:($documents?:$tariffs);$quotes=[];
     foreach($candidates as $t){$q=cargo_tariff_quote($t,$carrier,$desi,(float)$sale,$day);if($q)$quotes[]=$q;}
+    // The PDF explicitly excludes barem shipments. Only the separately dated,
+    // provisional barem scenario may fill that gap; never a secondary standard row.
+    if(!$primary&&$documents&&!$quotes){
+        foreach($tariffs as $t)if(($t['confidence']??'')==='secondary_partial'){
+            $b=cargo_tariff_quote($t,$carrier,$desi,(float)$sale,$day);
+            if($b&&$b['kind']==='barem_scenario')$quotes[]=$b;
+        }
+    }
     if(count($quotes)!==1)return null;
     $q=$quotes[0];
     // Package total is not necessarily order total; split/transfer/cancel or unknown origin cannot establish barem eligibility.
@@ -242,7 +254,7 @@ function cargo_profit_overlay(PDO $db,int $uid,array $orders): array
             $pq=$a['package_quotes'][(string)($o['package_number']??'')]??null;
             $amount=$pq['amount']??null;
             if(is_numeric($amount)&&(float)$amount>0){
-            $o['cargo_override']=(float)$amount;$meta=json_decode((string)($pq['meta']??''),true);$o['cargo_source']=($meta['desi_source']??'')==='shipment_api'?'Güncel API desisi / tarife tahmini':'İlk desi / tarife tahmini';if(($meta['kind']??'')==='barem_scenario')$o['cargo_source'].=' (standart barem varsayımı)';if(($meta['confidence']??'')==='secondary_partial')$o['cargo_source'].=' (ikincil kaynak)';
+            $o['cargo_override']=(float)$amount;$meta=json_decode((string)($pq['meta']??''),true);$o['cargo_source']=($meta['desi_source']??'')==='shipment_api'?'Güncel API desisi / tarife tahmini':'İlk desi / tarife tahmini';if(($meta['kind']??'')==='barem_scenario')$o['cargo_source'].=' (standart barem varsayımı)';if(($meta['confidence']??'')==='secondary_partial')$o['cargo_source'].=' (ikincil kaynak)';if(($meta['confidence']??'')==='document_reference')$o['cargo_source'].=' (5 Ekim son bilinen liste)';if(($meta['heavy_net_tl']??0)>0)$o['cargo_source'].=' (ağır taşıma dahil)';
             if(empty($pq['context_known']))$o['cargo_source'].=' (eski kayıt; yeniden senkron gerekli)';
             }elseif(cargo_has_shipped($o)||!empty($pq['context_known'])||(int)($o['last_modified_ms']??0)>0){$o['cargo_override']=null;$o['cargo_source']='Gönderi desisi veya geçerli tarife eksik';}
             // Only genuinely legacy pre-shipment records (no API modification marker) may use a catalog estimate.
