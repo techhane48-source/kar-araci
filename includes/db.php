@@ -30,7 +30,7 @@ function migrate(): void
 {
     $pdo = db();
     // Versioned, serialized and atomic; normal reads avoid schema writes.
-    $version=12;
+    $version=13;
     if((int)$pdo->query('PRAGMA user_version')->fetchColumn()>=$version)return;
     $pdo->exec('BEGIN IMMEDIATE');
     try{
@@ -431,6 +431,8 @@ function migrate(): void
     foreach ($defaults as $k => $v) {
         $ins->execute([$k, $v]);
     }
+    // Additive migration: tariff bands and extension token storage.
+    migrate_tariffs($pdo);
     $pdo->exec('PRAGMA user_version = '.$version);
     $pdo->exec('COMMIT');
     }catch(Throwable $e){$pdo->exec('ROLLBACK');throw $e;}
@@ -453,3 +455,25 @@ function set_setting(string $key, string $value): void
 
 // Her istekte kurulumun hazır olduğundan emin ol
 migrate();
+
+/** Additive schema for commission tariff bands and extension access tokens. */
+function migrate_tariffs(PDO $pdo): void
+{
+    $pdo->exec("CREATE TABLE IF NOT EXISTS tariff_bands (
+        user_id INTEGER NOT NULL,
+        marketplace TEXT NOT NULL,
+        barcode TEXT NOT NULL,
+        bands TEXT NOT NULL,          -- JSON: [{min, max, rates: {dönem: oran}}]
+        updated_at INTEGER NOT NULL,
+        PRIMARY KEY (user_id, marketplace, barcode)
+    )");
+    // Chrome eklentisi erişim anahtarları (yalnız SHA-256 özeti saklanır)
+    $pdo->exec("CREATE TABLE IF NOT EXISTS api_tokens (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER NOT NULL,
+        token_hash TEXT NOT NULL UNIQUE,
+        label TEXT NOT NULL DEFAULT '',
+        created_at INTEGER NOT NULL,
+        last_used_at INTEGER
+    )");
+}
