@@ -185,7 +185,7 @@ require __DIR__ . '/../includes/header.php';
   <div class="card table-card" style="margin:16px 0">
     <h2>Son 7 Gün</h2>
     <table>
-      <tr><th>Gün</th><th>Satış</th><th>Net Kâr</th><th>Sipariş</th></tr>
+      <tr><th>Gün</th><th>Satış</th><th>Tahmini Kâr</th><th>Sipariş</th></tr>
       <?php foreach ($week as $day => $d): ?>
         <tr>
           <td><?= h($day) ?></td>
@@ -241,7 +241,7 @@ require __DIR__ . '/../includes/header.php';
   <div class="card table-card" style="margin:16px 0">
     <h2>Son Siparişler</h2>
     <table>
-      <tr><th>Sipariş No</th><th>Tarih</th><th>Satış</th><th>Net Kâr</th><th>Durum</th></tr>
+      <tr><th>Sipariş No</th><th>Tarih</th><th>İndirimli sipariş tutarı</th><th>Tahmini Kâr</th><th>Durum</th></tr>
       <?php foreach (array_slice($orders, 0, 25) as $o): $o['lines'] = is_array($o['lines'])?$o['lines']:(json_decode($o['lines']??'[]',true)?:[]); $pr = calc_order_profit($o, $byBarcode); ?>
         <tr>
           <td style="font-size:12px"><?= h($o['order_number'] ?: $o['package_number'] ?: '—') ?></td>

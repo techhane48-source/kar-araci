@@ -27,4 +27,17 @@ $t['batched override']=commission_profit_overlay($db,1,[$o])[0]['commission_over
 $t['tenant isolation']=!array_key_exists('commission_override',commission_profit_overlay($db,2,[$o])[0]);
 $q->execute([1,'trendyol','R','O','other','Return','{}']);
 $t['other package adjustment blocks order']=commission_profit_overlay($db,1,[$o])[0]['commission_override']===null;
+$discounted=$o;$discounted['total_price']=450;$discounted['lines'][0]['price']=250;$discounted['lines'][0]['gross_unit_price']=300;$discounted['lines'][0]['seller_discount']=50;
+$discounted['lines'][1]['gross_unit_price']=200;$discounted['lines'][1]['seller_discount']=0;
+$d=array_replace($a,['external_id'=>'D1','query_type'=>'Discount','raw_json'=>json_encode(array_replace($raw,['id'=>'D1','credit'=>0,'debt'=>50,'commissionAmount'=>7.5,'sellerRevenue'=>42.5]))]);
+$v=order_commission_evidence($discounted,[$a,$b,$d],'123');
+$t['discount matched net and commission reversal']=$v['amount']===67.5;
+$after=calc_order_profit(array_replace($discounted,['commission_override'=>$v['amount']]),$products);
+$t['discount applied once']=$after['ok']&&$after['sale']===450.0&&$after['commission']===67.5;
+$t['already net sale plus discount never double counted']=order_commission_evidence($o,[$a,$b,$d],'123')['amount']===null;
+$t['discount missing package eligible estimate only']=order_discount_estimate_allowed($discounted,[$a,$b,$d],'123',['P'=>true]);
+$t['split package not estimated']=!order_discount_estimate_allowed($discounted,[$a,$b,$d],'123',['P'=>true,'P2'=>true]);
+$t['return never estimated']=!order_discount_estimate_allowed($discounted,[$a,$b,$d,array_replace($d,['query_type'=>'Return'])],'123',['P'=>true]);
+$t['no discount evidence not estimated']=!order_discount_estimate_allowed($o,[$a,$b,$d],'123',['P'=>true]);
+$t['wrong seller not estimated']=!order_discount_estimate_allowed($discounted,[$a,$b,$d],'999',['P'=>true]);
 foreach($t as $n=>$ok)echo ($ok?'PASS':'FAIL')." $n\n";exit(in_array(false,$t,true)?1:0);
