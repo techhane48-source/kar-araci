@@ -113,6 +113,43 @@ $z = new ZipArchive(); $z->open($dest); $sameOut = $z->getFromName('xl/styles.xm
 ok($same === $sameOut && str_contains($xmlOut, '<dataValidations') && str_contains($xmlOut, 'SEARCH("7 Günlük"'), 'stiller, açılır listeler ve formüller korundu');
 @unlink($dest);
 
+echo "Kampanyalar (Excel ile Toplu İşlem)\n";
+$t = campaign_terms("Ev Ürünlerinde Çok Avantajlı Fiyat'tan %10 İndirim - %40 Trendyol Karşılamalı - 395526");
+ok($t['pct'] === 10.0 && $t['cover'] === 40.0 && $t['id'] === '395526', 'kampanya adından %10 indirim, %40 karşılama, ID');
+$t = campaign_terms("Ev Ürünlerinde 500 TL Üzerine 50 TL İndirim! - %25 Trendyol Karşılamalı - 394367");
+ok($t['min'] === 500.0 && $t['tl'] === 50.0 && $t['pct'] === null && $t['cover'] === 25.0, '500 TL üzerine 50 TL, %25 karşılama');
+$u = campaign_unit($t, 841.1);
+ok(near($u['customer'], 791.1) && near($u['seller_discount'], 37.5) && near($u['net'], 803.6), 'müşteri 791,10 öder, satıcı 37,50 karşılar, satıcıya 803,60 kalır');
+$a = tariff_analyze($uid, $mp, $fx . 'kampanya-coklu.xlsx');
+ok($a['type'] === 'kampanya' && $a['multi'] && count($a['campaigns']) === 3, 'kampanya dosyası: 3 kampanya, çoklu seçim');
+$byB = array_column($a['rows'], null, 'barcode');
+$o8 = $byB['bamboyastik8li']['options'];
+ok(near($o8[0]['price'], 687.18) && $o8[0]['write'] === ['L' => 687.18], 'katılım fiyatı maksimum fiyat, giriş kolonuna yazılır');
+ok(near($o8[2]['sale'], 803.6), 'TL indirimli kampanyada satıcıya kalan tutar');
+ok(near($o8[0]['rate_used'], 15.8), 'indirimli fiyat 3. komisyon aralığına düşüyor: kayıtlı tarifeden %15,8 (kötü dönem)');
+ok(near($o8[2]['rate_used'], 21.0), '803,60 TL 1. aralıkta: %21');
+ok(!empty($byB['10adetbamboyastik']['options'][2]['ineligible']) && $byB['10adetbamboyastik']['options'][2]['write'] === [], '"Uygun değil" kampanya seçilemez');
+ok(str_contains($byB['yastikalezi50x70']['options'][2]['note'], 'sepet şartı'), '500 TL altı üründe TL indirimi tek üründe uygulanmıyor notu');
+$dest = sys_get_temp_dir() . '/kamp-' . getmypid() . '.xlsx';
+tariff_export($fx . 'kampanya-coklu.xlsx', $a['sheet'], [$byB['bamboyastik8li']['row'] => $o8[0]['write'] + $o8[1]['write']], $dest);
+$back = xlsx_cells($dest)['rows'];
+ok(near(tariff_num($back[4]['L']), 687.18) && near(tariff_num($back[4]['N']), 723.35) && ($back[4]['P'] ?? '') === '', 'iki kampanyaya birden katılım tek satıra yazıldı');
+ok(($back[1]['K'] ?? '') === "Ev Ürünlerinde Çok Avantajlı Fiyat'tan %5 İndirim - %25 Trendyol Karşılamalı - 394414", 'kampanya başlık satırı korundu');
+@unlink($dest);
+
+echo "İndirim simülasyonu\n";
+$sim = array_column(discount_simulate($uid, $mp, ['type' => 'yuzde', 'pct' => 10]), null, 'barcode');
+$s8 = $sim['bamboyastik8li'];
+ok(near($s8['unit'], 719.15) && near($s8['new_rate'], 15.8), '%10 sepet indirimi: 719,15 TL, komisyon aralığı değişiyor (%15,8)');
+ok($s8['new'] < $s8['now'] && $s8['max_pct'] > 10 && $s8['max_pct'] < 95, 'kâr düşüyor, zararsız en yüksek indirim hesaplandı (%' . $s8['max_pct'] . ')');
+$z = scenario_profit($uid, user_settings($uid), products_by_barcode($uid, $mp)['bamboyastik8li'], 799.05 * (1 - $s8['max_pct'] / 100), null)['profit'];
+ok(abs($z) < 3, 'zararsız indirim sınırında kâr ≈ 0 (' . round($z, 2) . ')');
+$sim = array_column(discount_simulate($uid, $mp, ['type' => 'xaly', 'x' => 3, 'y' => 2]), null, 'barcode');
+ok($sim['yastikalezi50x70']['qty'] === 3 && near($sim['yastikalezi50x70']['unit'], 199.93), '3 al 2 öde: 3 adetlik sipariş, birim 199,93');
+$sim = array_column(discount_simulate($uid, $mp, ['type' => 'tl', 'min' => 500, 'tl' => 50]), null, 'barcode');
+ok($sim['yastikalezi50x70']['qty'] === 2 && near($sim['yastikalezi50x70']['unit'], 274.9), '500 TL\'ye 50 TL: 299,90\'lık üründe 2 adet, birim 274,90');
+ok($sim['kanepecan']['new'] === null && $sim['kanepecan']['note'] === 'maliyet girilmemiş', 'maliyetsiz ürün atlanıyor');
+
 echo "Hatalı dosya\n";
 $bad = sys_get_temp_dir() . '/bad-' . getmypid() . '.xlsx';
 $z = new ZipArchive(); $z->open($bad, ZipArchive::CREATE); $z->addFromString('xl/worksheets/sheet1.xml', '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData><row r="1"><c r="A1" t="inlineStr"><is><t>Merhaba</t></is></c></row></sheetData></worksheet>'); $z->close();

@@ -27,7 +27,11 @@ const TARIFF_TYPES = [
     'plus'     => 'Plus Komisyon Tarifesi',
     'etiket'   => 'Avantajlı Ürün Etiketi',
     'flas'     => 'Flaş Ürünler',
+    'kampanya' => 'Kampanyalar',
 ];
+
+/** Komisyon aralıkları bu kadar gün sonra eskimiş sayılır (Trendyol tarifeleri haftalık). */
+const TARIFF_BAND_MAX_AGE_DAYS = 10;
 
 /** "A" → 1, "AE" → 31 */
 function xl_col_index(string $letters): int
@@ -131,9 +135,55 @@ function tariff_detect(array $rows): ?array
         elseif ($has('Plus Fiyat Üst Limiti')) $type = 'plus';
         elseif ($has('1 YILDIZ ÜST FİYAT')) $type = 'etiket';
         elseif ($has('24 Saat Fiyat')) $type = 'flas';
-        if ($type) return ['type' => $type, 'header_row' => $rn, 'map' => $map];
+        elseif ($has('İndirim Uygulanmadan Önceki Fiyat')) $type = 'kampanya';
+        if (!$type) continue;
+        $det = ['type' => $type, 'header_row' => $rn, 'map' => $map, 'campaigns' => []];
+        if ($type === 'kampanya') {
+            // Bir üst satırda kampanya adı (iki kolona yayılır), başlıkta Maksimum Fiyat + giriş kolonu
+            $names = $rows[$rn - 1] ?? [];
+            foreach ($map[tariff_norm('İndirim Uygulanmadan Önceki Fiyat')] as $col) {
+                $maxCol = xl_col_letter(xl_col_index($col) - 1);
+                $name = trim((string)($names[$col] ?? $names[$maxCol] ?? ''));
+                $det['campaigns'][] = ['col' => $col, 'max_col' => $maxCol, 'name' => $name] + campaign_terms($name);
+            }
+        }
+        return $det;
     }
     return null;
+}
+
+/**
+ * Kampanya adından indirim kuralını çıkarır. Trendyol adları: "…Çok Avantajlı Fiyat'tan %10 İndirim - %40 Trendyol
+ * Karşılamalı - 395526", "…500 TL Üzerine 50 TL İndirim! - %25 Trendyol Karşılamalı - 394367".
+ */
+function campaign_terms(string $name): array
+{
+    $t = ['pct' => null, 'min' => null, 'tl' => null, 'cover' => 0.0, 'id' => null, 'title' => $name];
+    if (preg_match('/%\s*(\d+(?:[.,]\d+)?)\s*Trendyol\s*Karşılamalı/iu', $name, $m)) $t['cover'] = (float)str_replace(',', '.', $m[1]);
+    if (preg_match('/(\d[\d.]*)\s*TL\s*(?:Üzerine|\'ye|\'a|ve üzeri)\s*(\d[\d.]*)\s*TL\s*İndirim/iu', $name, $m)) {
+        $t['min'] = (float)str_replace('.', '', $m[1]); $t['tl'] = (float)str_replace('.', '', $m[2]);
+    } elseif (preg_match('/%\s*(\d+(?:[.,]\d+)?)\s*(?:Ek\s*)?İndirim/iu', $name, $m)) {
+        $t['pct'] = (float)str_replace(',', '.', $m[1]);
+    }
+    if (preg_match('/-\s*(\d{3,})\s*$/', $name, $m)) { $t['id'] = $m[1]; $t['title'] = trim(preg_replace('/\s*-\s*\d{3,}\s*$/', '', $name)); }
+    return $t;
+}
+
+/**
+ * Kampanya kuralına göre tek üründe: müşterinin ödediği, satıcının karşıladığı indirim ve satıcıya kalan tutar.
+ * Trendyol karşılamalı kısmı satıcıya geri ödenir. Varsayım: komisyon satıcıya kalan tutar üzerinden.
+ */
+function campaign_unit(array $c, float $price): array
+{
+    $disc = 0.0; $note = '';
+    if ($c['pct'] !== null) $disc = $price * $c['pct'] / 100;
+    elseif ($c['tl'] !== null) {
+        if ($price >= $c['min']) $disc = $c['tl'];
+        else $note = 'tek üründe ' . rtrim(rtrim(number_format($c['min'], 2, ',', ''), '0'), ',') . ' TL sepet şartı sağlanmıyor';
+    }
+    $seller = $disc * (1 - $c['cover'] / 100);
+    return ['customer' => round($price - $disc, 2), 'discount' => round($disc, 2), 'seller_discount' => round($seller, 2),
+            'net' => round($price - $seller, 2), 'note' => $note];
 }
 
 /** Başlığın n'inci (0'dan) geçtiği kolon. */
@@ -148,7 +198,7 @@ function tariff_col(array $map, string $header, int $nth = 0): ?string
  *  write [kolon => değer] (Excel'e geri yazılacaklar), note.
  * Ayrıca satırın mevcut durumu: barcode, name, current_price, current_rate, tsf_ratio (TSF / müşteri fiyatı).
  */
-function tariff_row(string $type, array $map, array $cells): ?array
+function tariff_row(string $type, array $map, array $cells, array $det = []): ?array
 {
     $g = fn(string $h, int $n = 0) => ($c = tariff_col($map, $h, $n)) !== null ? ($cells[$c] ?? '') : '';
     $num = fn(string $h, int $n = 0) => tariff_num($g($h, $n));
@@ -236,6 +286,32 @@ function tariff_row(string $type, array $map, array $cells): ?array
         return $row;
     }
 
+    if ($type === 'kampanya') {
+        $row['current_price'] = $num('Mevcut Satış Fiyatı');
+        $row['name'] = $row['name'] ?: trim((string)$g('Ürün Adı'));
+        foreach ($det['campaigns'] ?? [] as $i => $c) {
+            $max = tariff_num($cells[$c['max_col']] ?? null);
+            $flag = trim((string)($cells[$c['col']] ?? ''));
+            if ($max === null || tariff_norm($flag) === tariff_norm('Uygun değil')) {
+                $row['options'][] = ['key' => 'k' . $i, 'label' => $c['title'], 'price' => 0.0, 'rates' => [], 'write' => [],
+                                     'note' => 'uygun değil', 'ineligible' => true];
+                continue;
+            }
+            // Katılmak için en yüksek fiyat: maksimum fiyat; mevcut fiyat daha düşükse mevcut fiyat
+            $price = ($row['current_price'] !== null && $row['current_price'] < $max) ? $row['current_price'] : $max;
+            $u = campaign_unit($c, $price);
+            $parts = [];
+            if ($c['pct'] !== null) $parts[] = '%' . rtrim(rtrim(number_format($c['pct'], 1, ',', ''), '0'), ',') . ' indirim';
+            if ($c['tl'] !== null) $parts[] = number_format($c['min'], 0, ',', '.') . ' TL\'ye ' . number_format($c['tl'], 0, ',', '.') . ' TL';
+            if ($c['cover'] > 0) $parts[] = '%' . rtrim(rtrim(number_format($c['cover'], 1, ',', ''), '0'), ',') . ' Trendyol karşılar';
+            $row['options'][] = ['key' => 'k' . $i, 'label' => $c['title'], 'price' => $price, 'sale' => $u['net'],
+                                 'customer' => $u['customer'], 'rates' => ['' => null], 'write' => [$c['col'] => round($price, 2)],
+                                 'note' => implode(' · ', $parts) . ($u['note'] ? ' · ' . $u['note'] : ''),
+                                 'seller_discount' => $u['seller_discount']];
+        }
+        return $row;
+    }
+
     if ($type === 'flas') {
         $row['current_price'] = $num('Müşterinin Gördüğü Fiyat');
         $row['current_rate'] = $num('Mevcut Komisyon');
@@ -258,15 +334,63 @@ function tariff_row(string $type, array $map, array $cells): ?array
  * Tek ürün, tek adet, verilen müşteri fiyatı ve komisyon oranıyla net kâr (sipariş motoruyla aynı model).
  * $rate null ise ürünün kendi oranı kullanılır.
  */
-function scenario_profit(int $userId, array $settings, array $product, float $price, ?float $rate): array
+function scenario_profit(int $userId, array $settings, array $product, float $price, ?float $rate, int $qty = 1): array
 {
     $p = $product;
+    if ($rate === null) $rate = band_rate($userId, (string)($p['marketplace'] ?? 'trendyol'), (string)$p['barcode'], $price);
     if ($rate !== null) $p['rate'] = $rate;
     $order = ['status' => 'Created', 'lines' => [[
-        'barcode' => (string)$p['barcode'], 'quantity' => 1, 'price' => $price,
+        'barcode' => (string)$p['barcode'], 'quantity' => max(1, $qty), 'price' => $price,
         'vatRate' => isset($p['kdv']) && $p['kdv'] !== null && $p['kdv'] !== '' ? (float)$p['kdv'] : null,
     ]]];
-    return compute_order_profit($userId, $settings, $order, [(string)$p['barcode'] => $p]);
+    $r = compute_order_profit($userId, $settings, $order, [(string)$p['barcode'] => $p]);
+    $r['rate'] = (float)$p['rate'];
+    return $r;
+}
+
+/** Son komisyon tarifesindeki aralıklar (güncelse). */
+function tariff_bands(int $userId, string $marketplace, string $barcode): ?array
+{
+    static $cache = [];
+    $k = "$userId|$marketplace|$barcode";
+    if (!array_key_exists($k, $cache)) {
+        $st = db()->prepare("SELECT bands, updated_at FROM tariff_bands WHERE user_id = ? AND marketplace = ? AND barcode = ?");
+        $st->execute([$userId, $marketplace, $barcode]);
+        $r = $st->fetch();
+        $cache[$k] = ($r && (int)$r['updated_at'] >= time() - TARIFF_BAND_MAX_AGE_DAYS * 86400) ? json_decode((string)$r['bands'], true) : null;
+    }
+    return $cache[$k];
+}
+
+/**
+ * Bu fiyata düşen aralığın komisyonu (dönemlerin kötüsü). Aralık bilgisi yoksa null: ürünün kendi oranı kullanılır.
+ * Satıcı indirimi komisyona esas fiyatı düşürdüğü için indirimle daha düşük komisyon aralığına geçilebilir ("etkili indirim").
+ */
+function band_rate(int $userId, string $marketplace, string $barcode, float $price): ?float
+{
+    $bands = tariff_bands($userId, $marketplace, $barcode);
+    if (!$bands) return null;
+    foreach ($bands as $b) {
+        if (($b['min'] === null || $price >= $b['min'] - 0.001) && ($b['max'] === null || $price <= $b['max'] + 0.001)) {
+            return $b['rates'] ? max(array_map('floatval', $b['rates'])) : null;
+        }
+    }
+    return null;
+}
+
+function save_tariff_bands(int $userId, string $marketplace, array $rows): int
+{
+    $st = db()->prepare("INSERT INTO tariff_bands (user_id, marketplace, barcode, bands, updated_at) VALUES (?,?,?,?,?)
+                         ON CONFLICT(user_id, marketplace, barcode) DO UPDATE SET bands = excluded.bands, updated_at = excluded.updated_at");
+    $n = 0;
+    foreach ($rows as $row) {
+        $bands = [];
+        foreach ($row['options'] as $o) if (array_key_exists('bmin', $o)) $bands[] = ['min' => $o['bmin'], 'max' => $o['bmax'], 'rates' => $o['rates']];
+        if (!$bands) continue;
+        $st->execute([$userId, $marketplace, $row['barcode'], json_encode($bands), time()]);
+        $n++;
+    }
+    return $n;
 }
 
 /**
@@ -281,11 +405,12 @@ function tariff_analyze(int $userId, string $marketplace, string $path): array
     $settings = user_settings($userId);
     $products = products_by_barcode($userId, $marketplace);
     $out = ['type' => $det['type'], 'title' => TARIFF_TYPES[$det['type']], 'header_row' => $det['header_row'],
-            'sheet' => $cells['sheet'], 'rows' => [], 'unmatched' => 0, 'no_cost' => 0, 'periods' => []];
+            'sheet' => $cells['sheet'], 'rows' => [], 'unmatched' => 0, 'no_cost' => 0, 'periods' => [],
+            'multi' => $det['type'] === 'kampanya', 'campaigns' => $det['campaigns'], 'bands_saved' => 0];
 
     foreach ($cells['rows'] as $rn => $rowCells) {
         if ($rn <= $det['header_row']) continue;
-        $row = tariff_row($det['type'], $det['map'], $rowCells);
+        $row = tariff_row($det['type'], $det['map'], $rowCells, $det);
         if (!$row) continue;
         // Dosyada zaten bu seçenek girilmişse (ör. daha önce Plus fiyatı seçilmiş) işaretle
         foreach ($row['options'] as &$o) {
@@ -325,10 +450,11 @@ function tariff_analyze(int $userId, string $marketplace, string $path): array
             }
         }
         foreach ($row['options'] as &$o) {
-            $o['profits'] = []; $o['worst'] = null; $o['margin'] = null; $o['cargo_note'] = '';
+            $o['profits'] = []; $o['worst'] = null; $o['margin'] = null; $o['cargo_note'] = ''; $o['rate_used'] = null;
             if (!$row['has_cost'] || $o['price'] <= 0) continue;
             foreach ($o['rates'] as $period => $rate) {
-                $r = scenario_profit($userId, $settings, $p, (float)$o['price'], $rate);
+                $r = scenario_profit($userId, $settings, $p, (float)($o['sale'] ?? $o['price']), $rate);
+                $o['rate_used'] = $r['rate'];
                 $o['profits'][$period] = $r['profit'];
                 $o['cargo_note'] = $r['cargo_note'];
                 if ($o['worst'] === null || $r['profit'] < $o['worst']) { $o['worst'] = $r['profit']; $o['margin'] = $r['margin']; }
@@ -351,8 +477,16 @@ function tariff_analyze(int $userId, string $marketplace, string $path): array
                             || $det['type'] === 'flas' || $det['type'] === 'etiket' || $det['type'] === 'plus';
             if ($b['worst'] > 0 && ($b['margin'] ?? 0) >= $minMargin && $beatsCurrent) $row['suggest'] = $b['key'];
         }
+        // Kampanyalar birbirinden bağımsız seçilir: marj eşiğini geçen her kampanya önerilir.
+        $row['suggest_multi'] = [];
+        if ($out['multi']) {
+            foreach ($row['options'] as $o) {
+                if ($o['worst'] !== null && $o['worst'] > 0 && ($o['margin'] ?? 0) >= (float)$settings['min_margin']) $row['suggest_multi'][] = $o['key'];
+            }
+        }
         $out['rows'][] = $row;
     }
+    if ($det['type'] === 'komisyon') $out['bands_saved'] = save_tariff_bands($userId, $marketplace, $out['rows']);
     return $out;
 }
 
@@ -414,4 +548,64 @@ function tariff_export(string $srcPath, string $sheetPath, array $writes, string
     $zip->addFromString($sheetPath, $dom->saveXML());
     if ($zip->locateName('xl/calcChain.xml') !== false) $zip->deleteName('xl/calcChain.xml');
     $zip->close();
+}
+
+/**
+ * İndirim simülasyonu (Trendyol İndirimler sayfasındaki türler; bu sayfanın Excel'i yok).
+ * $d: type = yuzde | tl | xaly | adet; pct, min, tl, x, y, n
+ * Her ürün için en küçük uygun siparişi kurar (ör. 3 al 2 öde → 3 adet) ve sipariş kârını bugünküyle karşılaştırır.
+ * Satıcı indirimi komisyona esas fiyatı düşürür: komisyon tarifesi yüklendiyse indirimli fiyatın aralığı kullanılır.
+ */
+function discount_simulate(int $userId, string $marketplace, array $d, ?array $barcodes = null): array
+{
+    $settings = user_settings($userId);
+    $out = [];
+    foreach (products_by_barcode($userId, $marketplace) as $bc => $p) {
+        if ($barcodes !== null && !in_array($bc, $barcodes, true)) continue;
+        $price = (float)$p['price'];
+        $row = ['barcode' => $bc, 'name' => (string)$p['name'], 'price' => $price, 'has_cost' => (float)$p['cost'] > 0,
+                'qty' => 1, 'unit' => $price, 'note' => '', 'now' => null, 'now_rate' => null, 'new' => null, 'new_rate' => null,
+                'now_order' => null, 'new_order' => null, 'margin' => null, 'max_pct' => null];
+        if ($price <= 0) { $row['note'] = 'fiyat yok'; $out[] = $row; continue; }
+        switch ($d['type']) {
+            case 'yuzde':
+                $row['unit'] = $price * (1 - (float)$d['pct'] / 100); break;
+            case 'tl':
+                $min = max(0.01, (float)$d['min']);
+                $row['qty'] = max(1, (int)ceil($min / $price - 1e-9));
+                $row['unit'] = $price - min((float)$d['tl'], $price * $row['qty']) / $row['qty'];
+                if ($row['qty'] > 1) $row['note'] = $row['qty'] . ' adetle sepet şartı sağlanır';
+                break;
+            case 'xaly':
+                $x = max(1, (int)$d['x']); $y = max(1, min($x, (int)$d['y']));
+                $row['qty'] = $x; $row['unit'] = $price * $y / $x; break;
+            case 'adet':
+                $row['qty'] = max(1, (int)$d['n']); $row['unit'] = $price * (1 - (float)$d['pct'] / 100); break;
+            default:
+                throw new InvalidArgumentException('bilinmeyen indirim türü');
+        }
+        $row['unit'] = round($row['unit'], 2);
+        if (!$row['has_cost']) { $row['note'] = 'maliyet girilmemiş'; $out[] = $row; continue; }
+        // Bugün: aynı adet indirimsiz (karşılaştırma aynı sepet büyüklüğüyle)
+        $now = scenario_profit($userId, $settings, $p, $price, null, $row['qty']);
+        $new = scenario_profit($userId, $settings, $p, $row['unit'], null, $row['qty']);
+        $row['now_order'] = $now['profit']; $row['new_order'] = $new['profit'];
+        $row['now'] = $now['profit'] / $row['qty']; $row['new'] = $new['profit'] / $row['qty'];
+        $row['now_rate'] = $now['rate']; $row['new_rate'] = $new['rate']; $row['margin'] = $new['margin'];
+        $row['cargo_note'] = $new['cargo_note'];
+        // Zarar etmeden verilebilecek en yüksek tek ürün yüzde indirimi
+        $lo = 0.0; $hi = 95.0;
+        if (scenario_profit($userId, $settings, $p, $price, null)['profit'] <= 0) $row['max_pct'] = 0.0;
+        else {
+            for ($i = 0; $i < 18; $i++) {
+                $mid = ($lo + $hi) / 2;
+                $pr = scenario_profit($userId, $settings, $p, $price * (1 - $mid / 100), null)['profit'];
+                if ($pr > 0) $lo = $mid; else $hi = $mid;
+            }
+            $row['max_pct'] = round($lo, 1);
+        }
+        $out[] = $row;
+    }
+    usort($out, fn($a, $b) => [(int)!$a['has_cost'], $a['new'] ?? 0] <=> [(int)!$b['has_cost'], $b['new'] ?? 0]);
+    return $out;
 }

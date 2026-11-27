@@ -28,3 +28,19 @@ mk('flas-urunler',H,[
  ["x","4lübambuyastik","4 Adet Bambu Yastık Alezi","Yastık Alezi","Navessa","19000.0","499.9","417.25","-","Flaş Fiyatı: 417.25₺","21.0","","417.25","","","28/11/2026 00:00","28/11/2026 23:59","","","Yok","-","id1"],
  ["x","kanepecan","Şönil Koltuk Örtüsü","Koltuk Örtüsü","Navessa","18962.0","3350.0","670.0","636.5","","21.0","","416.93","","","28/11/2026 00:00","28/11/2026 23:59","","","Var","Kampanyalı Ürün","id2"],
 ])
+
+# Kampanyalar → Excel ile Toplu İşlem (3 kampanya seçili). 1. satır kampanya adları, 2. satır başlıklar.
+wb=openpyxl.Workbook(); ws=wb.active; ws.title='KampanyaUrunleri'
+k1="Ev Ürünlerinde Çok Avantajlı Fiyat'tan %5 İndirim - %25 Trendyol Karşılamalı - 394414"
+k2="Ev Ürünlerinde Çok Avantajlı Fiyat'tan %10 İndirim - %40 Trendyol Karşılamalı - 395526"
+k3="Ev Ürünlerinde 500 TL Üzerine 50 TL İndirim! - %25 Trendyol Karşılamalı - 394367"
+ws.append(['']*10+[k1,k1,k2,k2,k3,k3,''])
+ws.append(["Barkod","Ürün Adı","Ürün Kodu","Kategori","Marka","Renk","Beden","Stok Kodu","Mevcut Stok","Mevcut Satış Fiyatı",
+           "İndirim Uygulanmadan Önceki Maksimum Fiyat","İndirim Uygulanmadan Önceki Fiyat"]*1 + ["İndirim Uygulanmadan Önceki Maksimum Fiyat","İndirim Uygulanmadan Önceki Fiyat"]*2 + ["ListingId"])
+for r in [
+ ["10adetbamboyastik","10 Adet Bambu Yastık Alezi","bambooyastik10","Yastık Alezi","Navessa","Beyaz","","","19000.0","999.9","808.96","","851.54","","999.9","Uygun değil","23cd"],
+ ["bamboyastik8li","8 Adet Bambu Yastık Alezi","bambooyastik8li","Yastık Alezi","Navessa","Beyaz","","","18998.0","849.9","687.18","","723.35","","841.1","","743e"],
+ ["yastikalezi50x70","2 Adet Bambu Yastık Alezi","bambooyastik","Yastık Alezi","Navessa","Beyaz","","","18995.0","299.9","242.71","","255.48","","297.06","","aa11"],
+ ["fyanicercevesi","Çerçeve","fyanıcercevesi","Çerçeve","fy design","","","","100","2420.0","404.31","","2420.0","Uygun değil","2420.0","Uygun değil","bb22"],
+]: ws.append(r)
+wb.save(f'{out}/kampanya-coklu.xlsx')

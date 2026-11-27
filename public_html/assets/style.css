@@ -389,3 +389,11 @@ details.row-detail[open] > .breakdown{position:absolute;right:0;top:100%;z-index
 .tariff-opt .rates div{display:flex;justify-content:space-between;gap:8px}
 .tariff-opt.is-suggest{background:rgba(22,163,74,.07)}
 .tariff-opt:has(input:checked){box-shadow:inset 0 0 0 2px var(--accent, #2563eb)}
+.tariff-tabs{display:flex;gap:4px;margin:8px 0 16px;border-bottom:1px solid var(--line, #e5e7eb)}
+.tariff-tabs a{padding:10px 14px;text-decoration:none;color:var(--muted);font-weight:600;border-bottom:2px solid transparent;margin-bottom:-1px}
+.tariff-tabs a.on{color:var(--text, #111827);border-bottom-color:var(--accent)}
+.sim-form{display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end}
+.sim-form label{display:grid;gap:4px;font-size:13px;color:var(--muted)}
+.sim-form input,.sim-form select{width:auto;min-width:110px}
+.tariff-opt input:disabled+.price{opacity:.4}
+.tariff-table .neg,.tariff-table .pos{white-space:nowrap}

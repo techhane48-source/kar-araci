@@ -236,6 +236,7 @@ function migrate(): void
     }
 
     migrate_profit_engine($pdo);
+    migrate_tariffs($pdo);
 
     // Yönetici hesabı (yoksa oluştur; ilk girişte şifre değiştirmeye zorla)
     $stmt = $pdo->prepare("SELECT id FROM users WHERE email = ?");
@@ -398,3 +399,17 @@ function set_setting(string $key, string $value): void
 
 // Her istekte kurulumun hazır olduğundan emin ol
 migrate();
+
+
+/** Trendyol komisyon tarifesi aralıkları (son yüklenen Ürün Komisyon Tarifesi Excel'inden). */
+function migrate_tariffs(PDO $pdo): void
+{
+    $pdo->exec("CREATE TABLE IF NOT EXISTS tariff_bands (
+        user_id INTEGER NOT NULL,
+        marketplace TEXT NOT NULL,
+        barcode TEXT NOT NULL,
+        bands TEXT NOT NULL,          -- JSON: [{min, max, rates: {dönem: oran}}]
+        updated_at INTEGER NOT NULL,
+        PRIMARY KEY (user_id, marketplace, barcode)
+    )");
+}
