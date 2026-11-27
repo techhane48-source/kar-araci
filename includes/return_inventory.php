@@ -7,7 +7,7 @@ require_once __DIR__.'/cost_history.php';
 /** Accepted claim units are reconciled to the original order line, never to the return package. */
 function return_inventory_evidence(array $claim,?array $order,int $acceptedCount,?array $inspection): array
 {
-    $out=['cost'=>null,'recovery'=>null,'inventory_loss'=>null,'condition'=>null,'state'=>'İnceleme gerekli','ready'=>false];
+    $out=['cost'=>null,'recovery'=>null,'inventory_loss'=>null,'condition'=>null,'state'=>'İnceleme gerekli','ready'=>false,'assumed'=>false];
     if(($claim['status']??'')!=='Accepted')return array_replace($out,['state'=>'Kabul edilmiş iade değil']);
     $match=claim_order_match($claim,$order);
     if($match['cost']===null||$match['scope']!=='domestic')return array_replace($out,['state'=>'Tarihli / gözlemlenen maliyet veya sipariş eşleşmesi eksik']);
@@ -20,13 +20,22 @@ function return_inventory_evidence(array $claim,?array $order,int $acceptedCount
     try{$cost=finance_units($match['cost']);if($cost<=0)throw new InvalidArgumentException('Maliyet');}
     catch(InvalidArgumentException $e){return array_replace($out,['state'=>'Maliyet geçersiz']);}
     $out['cost']=$cost/10000.0;
-    if(!$inspection)return array_replace($out,['state'=>'Depo kontrolü girilmedi']);
+    // Accepted is a financial/workflow status, not proof of physical receipt or condition.
+    // Operational default: no recorded exception => assumed fully recoverable, no manual action.
+    if(!$inspection)return array_replace($out,['state'=>'Otomatik: satışa uygun varsayımı','condition'=>'resellable',
+        'recovery'=>$cost/10000.0,'inventory_loss'=>0.0,'ready'=>true,'assumed'=>true]);
     if(!array_key_exists('group_line_id',$inspection)||$inspection['group_line_id']===null||(string)$inspection['group_line_id']!==(string)($claim['group_line_id']??''))return array_replace($out,['state'=>'İade grup kimliği doğrulanmadı; yeniden depo kontrolü gerekli']);
     foreach(['claim_id','item_id','order_number','outbound_package','line_id','barcode'] as $key)
         if((string)($inspection[$key]??'')!==(string)($claim[$key]??''))return array_replace($out,['state'=>'İade kimliği değişti; yeniden kontrol gerekli']);
+    $condition=(string)($inspection['condition']??'');$recovery=(int)($inspection['recovery_units']??-1);
+    // An explicit unsellable exception survives routine refresh and a revised unit cost
+    // if the full item identity is unchanged. It must never silently become recoverable.
+    if($condition==='unusable'&&$recovery===0&&(int)($inspection['cost_units']??0)>0&&
+        (int)($inspection['claim_modified_ms']??0)>0&&(int)$claim['modified_ms']>=(int)$inspection['claim_modified_ms'])
+        return array_replace($out,['condition'=>'unusable','recovery'=>0.0,'inventory_loss'=>$cost/10000.0,
+            'state'=>'Satılamaz olarak işaretlendi; stok değer kaybı','ready'=>true]);
     if((int)($inspection['claim_modified_ms']??0)!==(int)$claim['modified_ms']||(int)($inspection['cost_units']??0)!==$cost)
         return array_replace($out,['state'=>'İade veya maliyet değişti; yeniden kontrol gerekli']);
-    $condition=(string)($inspection['condition']??'');$recovery=(int)($inspection['recovery_units']??-1);
     if(!in_array($condition,['resellable','partial','unusable'],true)||$recovery<0||$recovery>$cost||
        ($condition==='resellable'&&$recovery!==$cost)||($condition==='unusable'&&$recovery!==0)||
        ($condition==='partial'&&($recovery<=0||$recovery>=$cost)))return array_replace($out,['state'=>'Depo değeri çelişkili']);
@@ -84,6 +93,12 @@ function return_inventory_checks(PDO $db,int $uid,array $claims): array
         while($r=$q->fetch())$out[(string)$r['item_id']]=$r;
     }
     return $out;
+}
+/** Undo only an explicit exception for this user's claim. Default remains read-time, not a physical inspection. */
+function return_inventory_clear(PDO $db,int $uid,string $itemId): void
+{
+    $db->prepare("DELETE FROM return_inventory_checks WHERE user_id=? AND item_id=? AND EXISTS (SELECT 1 FROM trendyol_claim_items c WHERE c.user_id=return_inventory_checks.user_id AND c.item_id=return_inventory_checks.item_id AND c.status='Accepted')")
+        ->execute([$uid,$itemId]);
 }
 function return_inventory_save(PDO $db,int $uid,string $itemId,string $condition,string $raw): void
 {

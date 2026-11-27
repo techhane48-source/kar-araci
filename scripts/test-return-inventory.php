@@ -7,7 +7,11 @@ $db=db();$now=time();$p=['marketplace'=>'trendyol','order_number'=>'O1','package
 $c=['claim_id'=>'C1','item_id'=>'I1','order_number'=>'O1','outbound_package'=>'P1','return_package'=>'R1','line_id'=>'L1','barcode'=>'001','product_name'=>'Perde','status'=>'Accepted','reason'=>'','platform_reason'=>'','auto_accepted'=>null,'seller_accepted'=>null,'created_ms'=>$now*1000-1000,'modified_ms'=>$now*1000];
 $db->prepare("INSERT INTO orders(user_id,marketplace,order_number,package_number,status,total_price,order_date,lines,currency_code,country_code) VALUES(?,?,?,?,?,?,?,?,?,?)")->execute([1,'trendyol','O1','P1','Delivered',200,$p['order_date'],json_encode($p['lines']),'TRY','TR']);
 persist_claims($db,1,[$c]);$t=[];
-$t['no depot inspection unknown']=return_inventory_evidence($c,$p,1,null)['inventory_loss']===null;
+$auto=return_inventory_evidence($c,$p,1,null);
+$t['default accepted return no manual inspection']=$auto['inventory_loss']===0.0&&$auto['recovery']===50.0&&$auto['assumed']&&$auto['ready'];
+$t['unaccepted not assumed']=return_inventory_evidence(array_replace($c,['status'=>'WaitingInAction']),$p,1,null)['inventory_loss']===null;
+$t['missing cost not assumed']=return_inventory_evidence($c,null,1,null)['inventory_loss']===null;
+$t['automatic default no persisted inspection']=(int)$db->query('SELECT COUNT(*) FROM return_inventory_checks')->fetchColumn()===0;
 return_inventory_save($db,1,'I1','resellable','');$saved=$db->query("SELECT * FROM return_inventory_checks")->fetch();
 $t['resellable zero inventory impairment']=return_inventory_evidence($c,$p,1,$saved)['inventory_loss']===0.0;
 return_inventory_save($db,1,'I1','partial','20,00');$saved=$db->query("SELECT * FROM return_inventory_checks")->fetch();
@@ -26,6 +30,13 @@ $t['changed claim blocks loss']=return_inventory_evidence(array_replace($c,['mod
 $changed=$p;$changed['lines'][0]['cost_snapshot']=51;$t['changed cost blocks loss']=return_inventory_evidence($c,$changed,1,$saved)['inventory_loss']===null;
 try{return_inventory_save($db,2,'I1','unusable','');$t['tenant isolation']=false;}catch(InvalidArgumentException $e){$t['tenant isolation']=true;}
 try{return_inventory_save($db,1,'I1','partial','55');$t['invalid recovery rejected']=false;}catch(InvalidArgumentException $e){$t['invalid recovery rejected']=true;}
+return_inventory_save($db,1,'I1','unusable','');$exception=return_inventory_checks($db,1,[$c])['I1'];
+$t['unsellable exception full cost']=return_inventory_evidence($c,$p,1,$exception)['inventory_loss']===50.0&&!return_inventory_evidence($c,$p,1,$exception)['assumed'];
+$t['unsellable exception survives ordinary refresh']=return_inventory_evidence(array_replace($c,['modified_ms'=>$c['modified_ms']+1]),$changed,1,$exception)['inventory_loss']===51.0;
+return_inventory_clear($db,2,'I1');
+$t['other tenant cannot clear exception']=isset(return_inventory_checks($db,1,[$c])['I1']);
+return_inventory_clear($db,1,'I1');
+$t['clear restores automatic default']=return_inventory_checks($db,1,[$c])===[]&&return_inventory_evidence($c,$p,1,null)['assumed'];
 persist_claims($db,1,[array_replace($c,['item_id'=>'I2']),array_replace($c,['item_id'=>'I3'])]);
 try{return_inventory_save($db,1,'I1','unusable','');$t['all accepted units checked']=false;}catch(InvalidArgumentException $e){$t['all accepted units checked']=true;}
 $group=$c;$group['group_line_id']='L1';$group['line_id']='UNIT1';$group['item_id']='I4';

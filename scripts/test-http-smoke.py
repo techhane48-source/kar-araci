@@ -125,6 +125,9 @@ with tempfile.TemporaryDirectory(prefix="karfiyat-http-") as tmp:
             print("PASS explicit current catalog update preserves selling price")
             print("PASS explicit dated group cost confirmation and idempotent save")
             print("PASS private scenario preview, selection, unknown VAT and unchanged persisted cost")
+            status, page = request("iade-kontrol.php")
+            assert status == 200 and "normal iadeler için işlem gerekmez" in page
+            print("PASS exception-only return interface")
             print("PASS populated dashboard, order finance and cargo views")
             print("PASS registration, CSRF rejection, saved VAT and withholding settings")
         finally:
