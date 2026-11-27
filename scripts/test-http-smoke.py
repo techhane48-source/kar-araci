@@ -143,6 +143,25 @@ with tempfile.TemporaryDirectory(prefix="karfiyat-http-") as tmp:
             with sqlite3.connect(db) as con:
                 assert con.execute("SELECT cost,cost_vat,price FROM products WHERE id=?",(direct_id,)).fetchone()==(80.0,10.0,200.0)
                 assert con.execute("SELECT source FROM product_cost_history WHERE user_id=? AND barcode='CI002'",(uid,)).fetchone()==("first_sale",)
+            # The same priced package must contribute to the daily and period profit.
+            status, page=request("canli-performans.php?days=7")
+            assert status==200 and 'data-profit-count="1"' in page, "Daily profit aggregation missing"
+            total=re.search(r'id="period-profit">([^<]+)',page).group(1)
+            assert total not in ("—","₺0,00"), total
+            with sqlite3.connect(db) as con:
+                for i in range(52):
+                    con.execute("INSERT INTO orders(user_id,marketplace,order_number,package_number,status,total_price,order_date,lines,currency_code,country_code,last_modified_ms) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+                                (uid,"trendyol",f"CI-OLD-{i:02}",f"CI-POLD-{i:02}","Cancelled",100,now-20*86400,lines,"TRY","TR",now*1000))
+                con.execute("INSERT INTO orders(user_id,marketplace,order_number,package_number,status,total_price,order_date,lines,currency_code,country_code,last_modified_ms) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+                            (uid,"trendyol","CI-OLDER-UNKNOWN","CI-PUNKNOWN","Created",100,now-21*86400,lines,"TRY","TR",now*1000))
+            status, page=request("canli-performans.php?days=7")
+            assert status==200 and "CI-OLD-" not in page
+            status, page=request("canli-performans.php?days=30")
+            assert status==200 and "54 kayıtlı paket" in page and "Sonraki sayfa" in page and 'data-profit-count="0"' in page
+            assert re.search(r'data-profit-count="0"[^>]*>—</td>',page)
+            status, page=request("canli-performans.php?days=30&page=2")
+            assert status==200 and "CI-OLDER-UNKNOWN" in page and "Önceki sayfa" in page and "Son 30 Gün" in page
+            print("PASS performance daily profit, unknown coverage and 30-day pagination")
             print("PASS direct cost entry without file and explicit history scope")
             print("PASS explicit current catalog update preserves selling price")
             print("PASS explicit dated group cost confirmation and idempotent save")

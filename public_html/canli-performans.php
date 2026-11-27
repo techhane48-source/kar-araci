@@ -17,6 +17,10 @@ if (!$mps) $mps = ['trendyol'];
 
 $mp = $_POST['mp'] ?? $_GET['mp'] ?? $mps[0];
 if (!in_array($mp, $mps, true)) $mp = $mps[0];
+$days=(int)($_POST['sync_days']??$_POST['days']??$_GET['days']??7);
+if(!in_array($days,[7,30,89],true))$days=7;
+$page=max(1,(int)($_GET['page']??1));
+$rangeUrl=static fn(int $p=1):string=>'canli-performans.php?mp='.urlencode($mp).'&days='.$days.'&page='.$p;
 
 // --- Maliyet kaydet (inline; Bugün Sipariş Alan Ürünler) ---
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'save_cost') {
@@ -31,7 +35,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'save_
             flash_set('success', 'Maliyet güncellendi.');
         }
     }
-    e_redirect('canli-performans.php?mp=' . urlencode($mp));
+    e_redirect($rangeUrl());
 }
 
 // --- Senkronize et ---
@@ -39,16 +43,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'sync'
     if (!csrf_verify($_POST['csrf'] ?? '')) {
         flash_set('error', 'Oturum süresi doldu.');
     } else {
-        $days=(int)($_POST['sync_days']??7);
-        if(!in_array($days,[7,30,89],true))$days=7;
         $r = sync_orders($u['id'], $mp, $days);
         if ($r['ok']) {
-            flash_set('success', ($r['count'] ?? 0) . ' sipariş senkronize edildi.');
+            flash_set('success', ($r['count'] ?? 0) . ' paket sorgudan işlendi. Son '.$days.' günün kayıtlı siparişleri gösteriliyor.');
         } else {
             flash_set('error', $r['error'] ?? 'Senkron başarısız.');
         }
     }
-    e_redirect('canli-performans.php?mp=' . $mp);
+    e_redirect($rangeUrl());
 }
 
 // Network jobs run via explicit POST or CLI, never on GET. Show actual freshness.
@@ -63,19 +65,22 @@ foreach ($ps->fetchAll() as $p) {
     if ($p['barcode'] !== '') $byBarcode[$p['barcode']] = $p;
 }
 
-// Son 7 gün siparişler
-$weekStart = strtotime('today') - 6 * 86400;
-$q = db()->prepare("SELECT * FROM orders WHERE user_id = ? AND marketplace = ? AND order_date >= ? ORDER BY order_date DESC");
-$q->execute([$u['id'], $mp, $weekStart]);
+// Calendar-day display window; provider sync uses modified time separately.
+$weekStart = strtotime('-'.($days-1).' days',strtotime('today'));
+$rangeEnd=strtotime('tomorrow');
+$q = db()->prepare("SELECT * FROM orders WHERE user_id = ? AND marketplace = ? AND order_date >= ? AND order_date < ? ORDER BY order_date DESC,id DESC");
+$q->execute([$u['id'], $mp, $weekStart,$rangeEnd]);
 $orders = commission_profit_overlay(db(),(int)$u['id'],cargo_profit_overlay(db(),(int)$u['id'],cost_history_overlay(db(),(int)$u['id'],$q->fetchAll())));
 
 $todayStart = strtotime('today');
 $yesterdayStart = $todayStart - 86400;
 $now = time();
+$perPage=50;$orderTotal=count($orders);$pages=max(1,(int)ceil($orderTotal/$perPage));$page=min($page,$pages);
+$blank=['sale'=>0.0,'profit'=>0.0,'count'=>0,'profitCount'=>0,'profitSale'=>0.0];$period=$blank;
 
 $today = ['sale' => 0.0, 'profit' => 0.0, 'count' => 0, 'profitCount' => 0, 'profitSale'=>0.0];
 $yesterday = ['sale' => 0.0, 'profit' => 0.0, 'count' => 0];
-$hourly = array_fill(0, 24, ['sale' => 0.0, 'profit' => 0.0, 'count' => 0]);
+$hourly = array_fill(0,24,$blank);
 $week = []; // dayKey (Y-m-d) => [sale, profit, count]
 
 foreach ($orders as $o) {
@@ -83,7 +88,7 @@ foreach ($orders as $o) {
     $o['lines'] = is_array($o['lines'])?$o['lines']:(json_decode($o['lines']??'[]',true)?:[]);
     $day = strtotime(date('Y-m-d', (int)$o['order_date']));
     $dayKey = date('Y-m-d', (int)$o['order_date']);
-    if (!isset($week[$dayKey])) $week[$dayKey] = ['sale' => 0.0, 'profit' => 0.0, 'count' => 0];
+    if (!isset($week[$dayKey])) $week[$dayKey] = $blank;
 
     $pr = calc_order_profit($o, $byBarcode);
     $profit = $pr['ok'] ? (float)$pr['profit'] : 0.0;
@@ -91,6 +96,11 @@ foreach ($orders as $o) {
 
     $week[$dayKey]['sale'] += $sale;
     $week[$dayKey]['count']++;
+    $period['sale']+=$sale;$period['count']++;
+    if($pr['ok']){
+        $week[$dayKey]['profit']+=$profit;$week[$dayKey]['profitCount']++;$week[$dayKey]['profitSale']+=$sale;
+        $period['profit']+=$profit;$period['profitCount']++;$period['profitSale']+=$sale;
+    }
 
     if ($day >= $todayStart) {
         $today['sale'] += $sale;
@@ -103,6 +113,7 @@ foreach ($orders as $o) {
             $today['profitCount']++;
             $today['profitSale'] += $sale;
             $hourly[$hour]['profit'] += $profit;
+            $hourly[$hour]['profitCount']++;
         }
     } elseif ($day >= $yesterdayStart) {
         $yesterday['sale'] += $sale;
@@ -124,16 +135,21 @@ require __DIR__ . '/../includes/header.php';
     <form method="post" style="display:flex;gap:8px;align-items:center">
       <input type="hidden" name="csrf" value="<?= h(csrf_token()) ?>">
       <input type="hidden" name="action" value="sync">
-      <select name="mp" style="width:auto" onchange="this.form.submit()">
+      <select name="mp" style="width:auto">
         <?php foreach ($mps as $c): ?>
           <option value="<?= $c ?>" <?= $mp === $c ? 'selected' : '' ?>><?= h(marketplace_label($c)) ?></option>
         <?php endforeach; ?>
       </select>
-      <select name="sync_days" aria-label="Güncelleme geçmişi"><option value="7">Son 7 gün</option><option value="30">Son 30 gün</option><option value="89">Son 89 gün</option></select>
+      <select name="sync_days" aria-label="Güncelleme geçmişi"><?php foreach([7,30,89] as $n):?><option value="<?=$n?>" <?=$days===$n?'selected':''?>>Son <?=$n?> gün</option><?php endforeach;?></select>
       <button type="submit" class="btn-primary">Siparişleri Senkronize Et</button>
     </form>
   </div>
 
+  <form method="get" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+    <input type="hidden" name="mp" value="<?=h($mp)?>">
+    <label>Görüntüleme aralığı <select name="days"><?php foreach([7,30,89] as $n):?><option value="<?=$n?>" <?=$days===$n?'selected':''?>>Son <?=$n?> gün</option><?php endforeach;?></select></label>
+    <button class="btn-ghost">Göster</button>
+  </form>
   <?php $flash = flash_get(); if ($flash): ?><div class="alert alert-<?= $flash['type'] ?>"><?= h($flash['msg']) ?></div><?php endif; ?>
 
   <p class="hint">Son başarılı sipariş senkronu: <?= $lastOrdersSync > 0 ? date("d.m.Y H:i", $lastOrdersSync) : "Henüz yok" ?><?= $lastOrdersSync > 0 && $lastOrdersSync < time()-900 ? " — veriler eski olabilir" : "" ?>.</p>
@@ -174,7 +190,7 @@ require __DIR__ . '/../includes/header.php';
         <tr>
           <td><?= str_pad((string)$h, 2, '0', STR_PAD_LEFT) ?>:00</td>
           <td><?= tl($d['sale']) ?></td>
-          <td class="<?= $d['profit'] < 0 ? 'neg' : 'pos' ?>"><?= tl($d['profit']) ?></td>
+          <td class="<?= $d['profit'] < 0 ? 'neg' : ($d['profitCount']?'pos':'hint') ?>"><?= $d['profitCount']?tl($d['profit']):'—' ?></td>
           <td><?= $d['count'] ?></td>
         </tr>
       <?php endforeach; ?>
@@ -182,19 +198,22 @@ require __DIR__ . '/../includes/header.php';
     </table>
   </div>
 
-  <div class="card table-card" style="margin:16px 0">
-    <h2>Son 7 Gün</h2>
+  <div class="card table-card" style="margin:16px 0" id="period-summary">
+    <h2>Son <?=$days?> Gün</h2>
+    <p>Satış: <b><?=tl($period['sale'])?></b> · Hesaplanabilen tahmini kâr: <b id="period-profit"><?=$period['profitCount']?tl($period['profit']):'—'?></b> · Kâr kapsamı: <?=$period['profitCount']?>/<?=$period['count']?> aktif paket.</p>
+    <p class="hint">Eksik verili paketler kâr toplamına alınmaz. Hesaplanamayan kâr sıfır değildir. İptal/iade paketleri aşağıdaki sipariş listesinde ayrıca görünür.</p>
     <table>
-      <tr><th>Gün</th><th>Satış</th><th>Tahmini Kâr</th><th>Sipariş</th></tr>
+      <tr><th>Gün</th><th>Satış</th><th>Tahmini Kâr</th><th>Kâr kapsamı</th><th>Aktif paket</th></tr>
       <?php foreach ($week as $day => $d): ?>
-        <tr>
+        <tr data-day="<?=h($day)?>">
           <td><?= h($day) ?></td>
           <td><?= tl($d['sale']) ?></td>
-          <td class="<?= $d['profit'] < 0 ? 'neg' : 'pos' ?>"><?= tl($d['profit']) ?></td>
+          <td data-profit-count="<?=$d['profitCount']?>" class="<?= $d['profit'] < 0 ? 'neg' : ($d['profitCount']?'pos':'hint') ?>"><?= $d['profitCount']?tl($d['profit']):'—' ?></td>
+          <td><?=$d['profitCount']?>/<?=$d['count']?></td>
           <td><?= $d['count'] ?></td>
         </tr>
       <?php endforeach; ?>
-      <?php if (!$week): ?><tr><td colspan="4" class="hint">Sipariş verisi yok. Önce senkronize edin.</td></tr><?php endif; ?>
+      <?php if (!$week): ?><tr><td colspan="5" class="hint">Aktif sipariş verisi yok. Önce senkronize edin.</td></tr><?php endif; ?>
     </table>
   </div>
 
@@ -227,7 +246,7 @@ require __DIR__ . '/../includes/header.php';
         <td>
           <form method="post" style="display:flex;gap:6px;align-items:center">
             <input type="hidden" name="csrf" value="<?= csrf_token() ?>">
-            <input type="hidden" name="action" value="save_cost">
+            <input type="hidden" name="action" value="save_cost"><input type="hidden" name="days" value="<?=$days?>"><input type="hidden" name="mp" value="<?=h($mp)?>">
             <input type="hidden" name="pid" value="<?= (int)$p['id'] ?>">
             <input type="number" step="0.01" name="cost" value="<?= (float)$p['cost'] > 0 ? $p['cost'] : '' ?>" style="width:110px" required>
         </td>
@@ -239,10 +258,10 @@ require __DIR__ . '/../includes/header.php';
   </div>
 
   <div class="card table-card" style="margin:16px 0">
-    <h2>Son Siparişler</h2>
+    <h2>Son <?=$days?> Günün Siparişleri</h2><p class="hint"><?=$orderTotal?> kayıtlı paket · Sayfa <?=$page?> / <?=$pages?> · Sayfa başına <?=$perPage?> paket</p>
     <table>
       <tr><th>Sipariş No</th><th>Tarih</th><th>İndirimli sipariş tutarı</th><th>Tahmini Kâr</th><th>Durum</th></tr>
-      <?php foreach (array_slice($orders, 0, 25) as $o): $o['lines'] = is_array($o['lines'])?$o['lines']:(json_decode($o['lines']??'[]',true)?:[]); $pr = calc_order_profit($o, $byBarcode); ?>
+      <?php foreach (array_slice($orders,($page-1)*$perPage,$perPage) as $o): $o['lines'] = is_array($o['lines'])?$o['lines']:(json_decode($o['lines']??'[]',true)?:[]); $pr = calc_order_profit($o, $byBarcode); ?>
         <tr>
           <td style="font-size:12px"><?= h($o['order_number'] ?: $o['package_number'] ?: '—') ?></td>
           <td style="font-size:12px"><?= date('d.m H:i', (int)$o['order_date']) ?></td>
@@ -256,6 +275,10 @@ require __DIR__ . '/../includes/header.php';
       <?php endforeach; ?>
       <?php if (!$orders): ?><tr><td colspan="5" class="hint">Sipariş yok.</td></tr><?php endif; ?>
     </table>
+    <nav aria-label="Sipariş sayfaları" style="display:flex;gap:12px;margin-top:12px">
+      <?php if($page>1):?><a class="btn-ghost" href="<?=h($rangeUrl($page-1))?>">Önceki sayfa</a><?php endif;?>
+      <?php if($page<$pages):?><a class="btn-ghost" href="<?=h($rangeUrl($page+1))?>">Sonraki sayfa</a><?php endif;?>
+    </nav>
   </div>
 </div>
 <?php require __DIR__ . '/../includes/footer.php'; ?>
