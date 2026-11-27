@@ -44,6 +44,7 @@ $flash = flash_get();
         <a href="uyarilar.php" class="nav-link">Uyarılar</a>
         <a href="pazar-zekasi.php" class="nav-link">Pazar Zekası</a>
         <a href="magaza.php" class="nav-link">Mağaza Bağla</a>
+        <a href="ayarlar.php" class="nav-link">Ayarlar</a>
         <?php if ($u['is_admin']): ?><a href="admin.php" class="nav-link">Panel</a><?php endif; ?>
         <div class="user-menu">
           <a href="hesabim.php" class="user-name"><?= h($u['name'] ?: $u['email']) ?><?= $pro ? ' <span class="pro-badge">PRO</span>' : '' ?></a>

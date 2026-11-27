@@ -347,3 +347,22 @@ tbody tr:hover{background:var(--bg-softer)}
 .tar{text-align:right}
 .btn-group{display:inline-flex;gap:4px;align-items:center;flex-wrap:wrap}
 .btn-active{background:var(--accent);color:#fff;border-color:var(--accent)}
+
+/* Kâr motoru: kesin / tahmini göstergeleri */
+.src-badge{display:inline-block;font-size:11px;font-weight:600;line-height:1;padding:3px 6px;border-radius:999px;vertical-align:middle;white-space:nowrap}
+.badge-final{background:#e7f6ec;color:#17663a}
+.badge-est{background:#fff4e0;color:#8a5300}
+.badge-missing{background:#f1f1f3;color:#5c5c66}
+.k-sub{font-size:12px;color:var(--muted);margin-top:4px}
+.final-bar{display:flex;align-items:center;gap:12px;margin:10px 0 4px;font-size:13px;color:var(--muted)}
+.final-bar-track{flex:0 0 180px;height:8px;border-radius:999px;background:var(--border);overflow:hidden}
+.final-bar-fill{height:100%;background:#1f9d55}
+.breakdown{width:100%;font-size:13px}
+.breakdown td{padding:4px 0}
+.breakdown td:last-child{text-align:right;font-variant-numeric:tabular-nums}
+.breakdown tr.total td{border-top:1px solid var(--border);font-weight:700;padding-top:8px}
+details.row-detail summary{cursor:pointer;list-style:none}
+details.row-detail summary::-webkit-details-marker{display:none}
+.pager{display:flex;gap:8px;align-items:center;justify-content:center;margin-top:14px}
+details.row-detail{position:relative}
+details.row-detail[open] > .breakdown{position:absolute;right:0;top:100%;z-index:20;background:var(--card,#fff);border:1px solid var(--border);border-radius:10px;padding:10px 12px;box-shadow:0 10px 30px rgba(0,0,0,.12)}

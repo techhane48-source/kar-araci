@@ -162,8 +162,7 @@ function xlsx_write_maliyet(array $products, string $path): void {
     // data rows
     $r = 5;
     foreach ($products as $p) {
-        $desi = (float)($p['kesilen_desi'] ?? 0);
-        if ($desi <= 0) $desi = desi_from_dims((float)($p['en'] ?? 0), (float)($p['boy'] ?? 0), (float)($p['yukseklik'] ?? 0));
+        $desi = function_exists('product_desi') ? product_desi($p) : (float)($p['kesilen_desi'] ?? 0);
         $cargoType = (!empty($p['cargo_type']) && $p['cargo_type'] !== 'seller') ? $p['cargo_type'] : 'standart';
         $vals = [
             (string)($p['barcode'] ?? ''),
@@ -174,7 +173,7 @@ function xlsx_write_maliyet(array $products, string $path): void {
             (float)($p['price'] ?? 0),
             (int)($p['quantity'] ?? 0),
             (float)($p['cost'] ?? 0) > 0 ? (float)$p['cost'] : null,
-            (float)($p['kdv'] ?? 0) > 0 ? (float)$p['kdv'] : 20,
+            ($p['cost_kdv'] ?? null) !== null ? (float)$p['cost_kdv'] : ((float)($p['kdv'] ?? 0) > 0 ? (float)$p['kdv'] : 20),
             'TRY',
             $desi > 0 ? (float)round($desi, 2) : null,
             $cargoType,

@@ -30,23 +30,29 @@ unset($o);
 // ---- Rapor verileri ----
 $reportRows = [];
 $reportCols = [];
+$orderFilter = '';
 $toplam = ['ciro' => 0.0, 'kar' => 0.0, 'maliyet' => 0.0];
 
 if ($rapor === 'order') {
-    $reportCols = ['Sipariş No', 'Tarih', 'Tutar', 'Kâr', 'Kâr Oranı', 'Kâr Marjı'];
-    foreach ($orders as $o) {
-        $sale = (float)$o['total_price'];
-        $pr = calc_order_profit($o, $byBarcode);
-        $reportRows[] = [
-            $o['order_number'],
-            date('d.m.Y', $o['order_date']),
-            $sale,
-            $pr['ok'] ? $pr['profit'] : null,
-            $pr['ok'] ? $pr['ratio'] : null,
-            $pr['ok'] ? $pr['margin'] : null,
-        ];
-        $toplam['ciro'] += $sale;
-        if ($pr['ok']) { $toplam['kar'] += $pr['profit']; $toplam['maliyet'] += $pr['cost']; }
+    // Sipariş kârlılığı: kâr motorunun kayıtlarından (tahmini → kesin), sayfalı.
+    ensure_order_profits((int)$u['id'], $mp, $fromTs);
+    $orderFilter = in_array($_GET['f'] ?? '', ['zarar', 'maliyetsiz', 'tahmini', 'kesin'], true) ? $_GET['f'] : '';
+    $tt = order_profit_totals((int)$u['id'], $mp, $fromTs, time() + 86400);
+    $toplam = ['ciro' => $tt['sale'], 'kar' => $tt['profit'], 'maliyet' => $tt['cost']];
+    $reportCols = ['Sipariş No', 'Tarih', 'Durum', 'Satış', 'Ürün Maliyeti', 'Komisyon', 'Komisyon Kaynağı', 'Kargo', 'Kargo Kaynağı',
+                   'Hizmet Bedeli', 'Stopaj', 'Net KDV', 'Sabit Gider', 'İade Kaybı', 'Net Kâr', 'Kâr Marjı (%)'];
+    $rowOf = fn(array $o) => [
+        $o['order_number'], date('d.m.Y H:i', (int)$o['order_date']), $o['status'], (float)$o['sale'], (float)$o['cost'],
+        (float)$o['commission'], $o['commission_src'], (float)$o['cargo'], $o['cargo_src'], (float)$o['service_fee'],
+        (float)$o['stopaj'], (float)$o['net_vat'], (float)$o['fixed_cost'], (float)$o['return_loss'],
+        $o['profit'] !== null ? (float)$o['profit'] : null, $o['margin'] !== null ? (float)$o['margin'] : null,
+    ];
+    if (isset($_GET['export'])) {
+        $all = order_profit_page((int)$u['id'], $mp, $fromTs, time() + 86400, 1, 100000, $orderFilter);
+        foreach ($all['rows'] as $o) $reportRows[] = $rowOf($o);
+    } else {
+        $opPage = max(1, (int)($_GET['page'] ?? 1));
+        $op = order_profit_page((int)$u['id'], $mp, $fromTs, time() + 86400, $opPage, 50, $orderFilter);
     }
 } elseif ($rapor === 'product') {
     $reportCols = ['Barkod', 'Ürün', 'Adet', 'Ciro', 'Maliyet', 'Kâr', 'Kâr Marjı'];
@@ -255,9 +261,10 @@ $pageRows = array_slice($reportRows, ($page - 1) * $per, $per);
 $pageTitle = 'Raporlar — ' . APP_NAME;
 require __DIR__ . '/../includes/header.php';
 ?>
+<div class="wrap">
 <div class="page-head">
   <h1>Raporlar</h1>
-  <p class="muted">Kârlılık analizleri · <a href="raporlar.php?r=<?= h($rapor) ?>&mp=<?= urlencode($mp) ?>&days=<?= $days ?>&export=1">⬇ Raporu İndir (CSV)</a></p>
+  <p class="muted">Kârlılık analizleri · <a href="raporlar.php?r=<?= h($rapor) ?>&mp=<?= urlencode($mp) ?>&days=<?= $days ?><?= $rapor === 'order' && $orderFilter ? '&f=' . $orderFilter : '' ?>&export=1">⬇ Raporu İndir (CSV)</a></p>
 </div>
 
 <div class="card">
@@ -291,6 +298,57 @@ require __DIR__ . '/../includes/header.php';
     <?php endif; ?>
   </div>
 
+    <?php if ($rapor === 'order'): ?>
+    <div class="final-bar">
+      <div class="final-bar-track"><div class="final-bar-fill" style="width:<?= $tt['costed'] > 0 ? number_format($tt['final_orders'] / $tt['costed'] * 100, 1, '.', '') : 0 ?>%"></div></div>
+      <span><b><?= (int)$tt['final_orders'] ?></b> / <?= (int)$tt['costed'] ?> sipariş kesinleşti · kesin kâr <b><?= tl($tt['final_profit']) ?></b></span>
+    </div>
+    <div class="btn-group" style="margin:10px 0">
+      <?php foreach (['' => 'Tümü', 'zarar' => 'Zarar edenler', 'maliyetsiz' => 'Maliyeti eksik', 'tahmini' => 'Tahmini', 'kesin' => 'Kesinleşmiş'] as $fk => $fl): ?>
+        <a class="btn-ghost <?= $orderFilter === $fk ? 'btn-active' : '' ?>" style="text-decoration:none" href="raporlar.php?r=order&mp=<?= urlencode($mp) ?>&days=<?= $days ?>&f=<?= $fk ?>"><?= $fl ?></a>
+      <?php endforeach; ?>
+    </div>
+    <table>
+      <tr><th>Sipariş</th><th>Tarih</th><th class="tar">Satış</th><th class="tar">Komisyon</th><th class="tar">Kargo</th><th class="tar">Net Kâr</th><th class="tar">Marj</th><th></th></tr>
+      <?php if (!$op['rows']): ?><tr><td colspan="8" class="muted">Bu aralıkta sipariş yok.</td></tr><?php endif; ?>
+      <?php foreach ($op['rows'] as $o): $cancel = (int)$o['is_cancelled'] === 1; ?>
+      <tr<?= $cancel ? ' style="opacity:.5"' : '' ?>>
+        <td style="font-family:monospace;font-size:12px"><?= h($o['order_number']) ?><?= $cancel ? ' <span class="src-badge badge-missing">iptal</span>' : '' ?></td>
+        <td><?= date('d.m.Y H:i', (int)$o['order_date']) ?></td>
+        <td class="tar"><?= tl((float)$o['sale']) ?></td>
+        <td class="tar"><?= tl((float)$o['commission']) ?> <?= src_badge($o['commission_src']) ?></td>
+        <td class="tar"><?= tl((float)$o['cargo']) ?> <?= src_badge($o['cargo_src'], $o['cargo_note']) ?></td>
+        <td class="tar" style="font-weight:700;color:<?= $o['profit'] === null ? 'inherit' : ((float)$o['profit'] < 0 ? '#e11d48' : '#16a34a') ?>"><?= $o['profit'] === null ? '<a href="urunler.php" title="Bu siparişteki bir ürünün maliyeti girilmemiş">maliyet gir</a>' : tl((float)$o['profit']) ?></td>
+        <td class="tar"><?= $o['margin'] === null ? '—' : '%' . number_format((float)$o['margin'], 1, ',', '.') ?></td>
+        <td>
+          <?php if ($o['profit'] !== null && !$cancel): ?>
+          <details class="row-detail"><summary class="btn-ghost" style="padding:2px 8px">Hesap</summary>
+            <table class="breakdown" style="min-width:300px;margin-top:6px">
+              <tr><td>Satış (KDV dahil)</td><td><?= tl((float)$o['sale']) ?></td></tr>
+              <tr><td>− Ürün maliyeti</td><td><?= tl((float)$o['cost']) ?></td></tr>
+              <tr><td>− Komisyon <?= src_badge($o['commission_src']) ?></td><td><?= tl((float)$o['commission']) ?></td></tr>
+              <tr><td>− Kargo <?= src_badge($o['cargo_src']) ?><br><span class="hint"><?= h($o['cargo_note']) ?></span></td><td><?= tl((float)$o['cargo']) ?></td></tr>
+              <tr><td>− Hizmet bedeli</td><td><?= tl((float)$o['service_fee']) ?></td></tr>
+              <tr><td>− Stopaj</td><td><?= tl((float)$o['stopaj']) ?></td></tr>
+              <?php if ((float)$o['fixed_cost'] > 0): ?><tr><td>− Sabit gider</td><td><?= tl((float)$o['fixed_cost']) ?></td></tr><?php endif; ?>
+              <?php if ((float)$o['return_loss'] > 0): ?><tr><td>− İade kaybı</td><td><?= tl((float)$o['return_loss']) ?></td></tr><?php endif; ?>
+              <tr><td>− Net KDV<br><span class="hint">satış <?= tl((float)$o['sale_vat']) ?> − alış <?= tl((float)$o['cost_vat']) ?> − kesinti <?= tl((float)$o['fee_vat']) ?></span></td><td><?= tl((float)$o['net_vat']) ?></td></tr>
+              <tr class="total"><td>= Net kâr</td><td><?= tl((float)$o['profit']) ?></td></tr>
+            </table>
+          </details>
+          <?php endif; ?>
+        </td>
+      </tr>
+      <?php endforeach; ?>
+    </table>
+    <?php if ($op['pages'] > 1): ?>
+      <div class="pager">
+        <?php if ($opPage > 1): ?><a class="btn-ghost" href="raporlar.php?r=order&mp=<?= urlencode($mp) ?>&days=<?= $days ?>&f=<?= $orderFilter ?>&page=<?= $opPage - 1 ?>">← Önceki</a><?php endif; ?>
+        <span class="muted" style="font-size:13px"><?= $op['total'] ?> sipariş · sayfa <?= $opPage ?>/<?= $op['pages'] ?></span>
+        <?php if ($opPage < $op['pages']): ?><a class="btn-ghost" href="raporlar.php?r=order&mp=<?= urlencode($mp) ?>&days=<?= $days ?>&f=<?= $orderFilter ?>&page=<?= $opPage + 1 ?>">Sonraki →</a><?php endif; ?>
+      </div>
+    <?php endif; ?>
+    <?php else: ?>
     <table>
       <tr><?php foreach ($reportCols as $c): ?><th><?= h($c) ?></th><?php endforeach; ?></tr>
       <?php if (!$reportRows): ?><tr><td colspan="<?= count($reportCols) ?>" class="muted">Kayıt yok.</td></tr><?php endif; ?>
@@ -317,5 +375,7 @@ require __DIR__ . '/../includes/header.php';
         <?php endfor; ?>
       </div>
     <?php endif; ?>
+    <?php endif; ?>
+</div>
 </div>
 <?php require __DIR__ . '/../includes/footer.php'; ?>

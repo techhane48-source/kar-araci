@@ -24,13 +24,12 @@ if (($_GET['export'] ?? '') === 'maliyet') {
         fwrite($out, "\xEF\xBB\xBF");
         fputcsv($out, ['Barkod','Model Kodu','Stok kodu','Kategori İsmi','Ürün Adı','Trendyol  Satış Fiyatı','Stok','Ürün Maliyeti ( KDV Dahil)','Maliyet KDV Oranı','Para Birimi','Ürün Desisi','Teslimat Tipi','Ekstra Maliyet (%)','Ekstra Maliyet (TL)']);
         foreach ($rows as $r) {
-            $desi = (float)($r['kesilen_desi'] ?? 0);
-            if ($desi <= 0) $desi = desi_from_dims((float)($r['en'] ?? 0), (float)($r['boy'] ?? 0), (float)($r['yukseklik'] ?? 0));
+            $desi = product_desi($r);
             fputcsv($out, [
                 $r['barcode'] ?? '', $r['model_kodu'] ?? '', '', $r['category'] ?? '', $r['name'] ?? '',
                 (float)($r['price'] ?? 0), (int)($r['quantity'] ?? 0),
                 (float)($r['cost'] ?? 0) > 0 ? (float)$r['cost'] : '',
-                (float)($r['kdv'] ?? 0) > 0 ? (float)$r['kdv'] : 20,
+                ($r['cost_kdv'] ?? null) !== null ? (float)$r['cost_kdv'] : ((float)($r['kdv'] ?? 0) > 0 ? (float)$r['kdv'] : 20),
                 'TRY', $desi > 0 ? round($desi, 2) : '',
                 (!empty($r['cargo_type']) && $r['cargo_type'] !== 'seller') ? $r['cargo_type'] : 'standart',
                 0, (float)($r['extra_fee'] ?? 0),
@@ -142,8 +141,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'impor
                     $sets[] = "$col = ?";
                     $params[] = $val;
                 };
-                if (($v = $num($kIdx !== null ? ($row[$kIdx] ?? null) : null)) !== null) $add('kdv', $v);
-                if (($v = $num($dIdx !== null ? ($row[$dIdx] ?? null) : null)) !== null) $add('kesilen_desi', $v);
+                // "Maliyet KDV Oranı" alış faturasının KDV'sidir; satış KDV'si Trendyol'dan gelir.
+                if (($v = $num($kIdx !== null ? ($row[$kIdx] ?? null) : null)) !== null) $add('cost_kdv', $v);
+                // Excel'deki desi satıcının girdiği ürün desisidir; Trendyol'un kestiği desi faturadan ayrıca öğrenilir.
+                if (($v = $num($dIdx !== null ? ($row[$dIdx] ?? null) : null)) !== null) $add('desi', $v);
                 if (($v = $sIdx !== null ? trim((string)($row[$sIdx] ?? '')) : '') !== '' && is_numeric(str_replace(['.', ','], '', $v))) $add('quantity', (int)str_replace(['.', ','], '', $v));
                 if (($v = $num($iIdx !== null ? ($row[$iIdx] ?? null) : null)) !== null) $add('return_rate', $v);
                 if (($v = $eIdx !== null ? trim((string)($row[$eIdx] ?? '')) : '') !== '' && ($v = $num($v)) !== null) $add('extra_fee', $v);
@@ -161,8 +162,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'impor
             }
         }
     }
+    $recalc = 0;
+    if ($updated > 0) {
+        foreach (array_column(db()->query("SELECT DISTINCT marketplace FROM products WHERE user_id = " . (int)$u['id'])->fetchAll(), 'marketplace') as $mpx) {
+            $recalc += recompute_order_profits((int)$u['id'], (string)$mpx, time() - 120 * 86400)['count'];
+        }
+    }
     flash_set($updated > 0 ? 'success' : 'error',
-        $updated > 0 ? "$updated ürünün maliyeti güncellendi" . ($notFound ? ", $notFound barkod eşleşmedi" : '') . '.' : 'Hiçbir ürün güncellenemedi. Barkodları kontrol edin.');
+        $updated > 0 ? "$updated ürünün maliyeti güncellendi" . ($notFound ? ", $notFound barkod eşleşmedi" : '') . ($recalc ? ". Son 120 günün $recalc siparişinin kârı yeniden hesaplandı" : '') . '.' : 'Hiçbir ürün güncellenemedi. Barkodları kontrol edin.');
     e_redirect('urunler.php');
 }
 

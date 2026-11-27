@@ -18,66 +18,48 @@ if (!in_array($days, [1, 7, 15, 30], true)) $days = 30;
 $fromTs = strtotime('today') - ($days - 1) * 86400;
 $aralikLabel = $days === 1 ? 'Bugün' : ('Son ' . $days . ' gün');
 
-// Ürünler (barkod -> ürün) — maliyet girdisi kârlılığın temeli
-$ps = db()->prepare("SELECT * FROM products WHERE user_id = ? AND marketplace = ?");
+// Ürün kapsaması — maliyet girdisi kârlılığın temeli
+$ps = db()->prepare("SELECT COUNT(*) n, SUM(CASE WHEN cost > 0 THEN 1 ELSE 0 END) c FROM products WHERE user_id = ? AND marketplace = ?");
 $ps->execute([$u['id'], $mp]);
-$byBarcode = [];
-$toplamUrun = 0;
-$maliyetGirilen = 0;
-foreach ($ps->fetchAll() as $p) {
-    $toplamUrun++;
-    if ($p['barcode'] !== '') $byBarcode[$p['barcode']] = $p;
-    if ((float)$p['cost'] > 0) $maliyetGirilen++;
-}
+$pc = $ps->fetch();
+$toplamUrun = (int)$pc['n'];
+$maliyetGirilen = (int)$pc['c'];
 
-// Siparişler
-$q = db()->prepare("SELECT * FROM orders WHERE user_id = ? AND marketplace = ? AND order_date >= ? ORDER BY order_date DESC");
-$q->execute([$u['id'], $mp, $fromTs]);
-$orders = $q->fetchAll();
+// Kâr kayıtları (motor): eksikse tamamla, sonra tek sorguda topla
+ensure_order_profits((int)$u['id'], $mp, $fromTs);
+$t = order_profit_totals((int)$u['id'], $mp, $fromTs, time() + 86400);
+$orders = $t['orders'] > 0;
 
-// Aggregasyon
-$ciro = 0.0; $maliyetliCiro = 0.0;
-$urunMaliyeti = 0.0; $komisyon = 0.0; $kargo = 0.0;
-$hizmet = 0.0; $stopaj = 0.0; $netKdv = 0.0;
+$ciro = $t['sale']; $maliyetliCiro = $t['costed_sale'];
+$urunMaliyeti = $t['cost']; $komisyon = $t['commission']; $kargo = $t['cargo'];
+$hizmet = $t['service_fee']; $stopaj = $t['stopaj']; $netKdv = $t['net_vat'];
+$sabitGider = $t['fixed_cost']; $iadeKaybi = $t['return_loss'];
 $reklam = 0.0; $ceza = 0.0; $erkenOdeme = 0.0; $diger = 0.0;
-$siparis = 0; $maliyetliSiparis = 0; $urunAdet = 0;
+$siparis = (int)$t['orders']; $maliyetliSiparis = (int)$t['costed'];
+$kesinSiparis = (int)$t['final_orders'];
+$kesinKar = $t['final_profit'];
 
-foreach ($orders as $o) {
-    $o['lines'] = json_decode($o['lines'] ?? '[]', true) ?: [];
-    $sale = (float)$o['total_price'];
-    $ciro += $sale;
-    $siparis++;
-    foreach ($o['lines'] as $l) $urunAdet += max(1, (int)($l['quantity'] ?? 1));
-
-    $pr = calc_order_profit($o, $byBarcode);
-    if ($pr['ok']) {
-        $maliyetliCiro += $sale;
-        $maliyetliSiparis++;
-        $urunMaliyeti += $pr['cost'];
-        $komisyon += $pr['commission'];
-        $kargo += $pr['cargo'];
-        $hizmet += $pr['service_fee'];
-        $stopaj += $pr['stopaj'];
-        $netKdv += $pr['net_kdv'];
-    }
-}
+$st = db()->prepare("SELECT SUM(item_count) FROM order_profits WHERE user_id = ? AND marketplace = ? AND is_cancelled = 0 AND order_date >= ?");
+$st->execute([$u['id'], $mp, $fromTs]);
+$urunAdet = (int)$st->fetchColumn();
 
 // Bugün saatlik (dashboard mini grafik)
 $todayHourly = array_fill(0, 24, 0.0);
-foreach ($orders as $o) {
-    if ((int)$o['order_date'] >= strtotime('today')) {
-        $todayHourly[(int)date('G', (int)$o['order_date'])] += (float)$o['total_price'];
-    }
+$hq = db()->prepare("SELECT order_date, sale FROM order_profits WHERE user_id = ? AND marketplace = ? AND is_cancelled = 0 AND order_date >= ?");
+$hq->execute([$u['id'], $mp, strtotime('today')]);
+foreach ($hq->fetchAll() as $o) {
+    $todayHourly[(int)date('G', (int)$o['order_date'])] += (float)$o['sale'];
 }
 
-// Brüt & Net kâr (Melontik ayrımı)
-$brutKar = $maliyetliCiro - $urunMaliyeti - $komisyon - $kargo - $hizmet - $stopaj - $netKdv;
+// Brüt & Net kâr
+$brutKar = $t['profit'];
 $netKar = $brutKar - $reklam - $ceza - $erkenOdeme - $diger;
 $karSatis = $maliyetliCiro > 0 ? $netKar / $maliyetliCiro * 100 : 0.0;
 $karMaliyet = $urunMaliyeti > 0 ? $netKar / $urunMaliyeti * 100 : 0.0;
 $ortKomisyon = $maliyetliCiro > 0 ? $komisyon / $maliyetliCiro * 100 : 0.0;
+$kesinPay = $maliyetliSiparis > 0 ? $kesinSiparis / $maliyetliSiparis * 100 : 0.0;
 
-// Funnel (Kâr Performansı) — maliyetli ciro üzerinden (dengeli)
+// Funnel (Kâr Performansı) — maliyetli ciro üzerinden
 $funnel = [
     'ciro'          => $maliyetliCiro,
     'kargoSonrasi'  => $maliyetliCiro - $kargo,
@@ -121,9 +103,15 @@ require __DIR__ . '/../includes/header.php';
     <div class="kpi"><div class="k-label">Toplam Ciro</div><div class="k-value"><?= tl($ciro) ?></div></div>
     <div class="kpi"><div class="k-label">Maliyeti Olan Ciro</div><div class="k-value"><?= tl($maliyetliCiro) ?></div></div>
     <div class="kpi"><div class="k-label">Brüt Kâr</div><div class="k-value <?= $brutKar < 0 ? 'neg' : '' ?>"><?= tl($brutKar) ?></div></div>
-    <div class="kpi"><div class="k-label">Net Kâr</div><div class="k-value <?= $netKar < 0 ? 'neg' : 'pos' ?>"><?= tl($netKar) ?></div></div>
+    <div class="kpi"><div class="k-label">Net Kâr</div><div class="k-value <?= $netKar < 0 ? 'neg' : 'pos' ?>"><?= tl($netKar) ?></div>
+      <div class="k-sub"><?= tl($kesinKar) ?> kesin · <?= tl($netKar - $kesinKar) ?> tahmini</div></div>
     <div class="kpi"><div class="k-label">Net Kâr / Satış</div><div class="k-value <?= $karSatis < 0 ? 'neg' : '' ?>">%<?= number_format($karSatis, 1, ',', '.') ?></div></div>
     <div class="kpi"><div class="k-label">Net Kâr / Maliyet</div><div class="k-value <?= $karMaliyet < 0 ? 'neg' : '' ?>">%<?= number_format($karMaliyet, 1, ',', '.') ?></div></div>
+  </div>
+
+  <div class="final-bar" title="Komisyonu ekstreden, kargosu faturadan gelmiş siparişler kesinleşir">
+    <div class="final-bar-track"><div class="final-bar-fill" style="width:<?= number_format($kesinPay, 1, '.', '') ?>%"></div></div>
+    <span><b><?= $kesinSiparis ?></b> / <?= $maliyetliSiparis ?> sipariş kesinleşti (%<?= number_format($kesinPay, 0, ',', '.') ?>). Kalanlar faturalar gelince otomatik güncellenir.</span>
   </div>
 
   <?php if ($maliyetliCiro < $ciro): ?>
@@ -163,7 +151,7 @@ require __DIR__ . '/../includes/header.php';
     <?php $maxH = max(1.0, max($todayHourly)); ?>
     <div style="display:flex;gap:4px;align-items:flex-end;height:90px;margin:8px 0 4px;padding:0 2px">
       <?php for ($h = 0; $h < 24; $h++): $sh = $todayHourly[$h] / $maxH * 100; ?>
-        <div style="flex:1;display:flex;flex-direction:column;justify-content:flex-end;align-items:center" title="<?= str_pad((string)$h,2,'0',STR_PAD_LEFT) ?>:00 — <?= tl($todayHourly[$h]) ?>">
+        <div style="flex:1;height:100%;display:flex;flex-direction:column;justify-content:flex-end;align-items:center" title="<?= str_pad((string)$h,2,'0',STR_PAD_LEFT) ?>:00 — <?= tl($todayHourly[$h]) ?>">
           <div style="width:100%;background:var(--accent);border-radius:2px 2px 0 0;height:<?= max(1, $sh) ?>%;opacity:<?= $todayHourly[$h] > 0 ? 1 : 0.15 ?>"></div>
         </div>
       <?php endfor; ?>
@@ -180,6 +168,8 @@ require __DIR__ . '/../includes/header.php';
       <tr><td>Hizmet Bedeli</td><td class="tar"><?= tl($hizmet) ?></td></tr>
       <tr><td>Stopaj Kesintisi</td><td class="tar"><?= tl($stopaj) ?></td></tr>
       <tr><td>Net KDV</td><td class="tar"><?= tl($netKdv) ?></td></tr>
+      <tr><td>Sipariş başı sabit gider</td><td class="tar"><?= tl($sabitGider) ?></td></tr>
+      <tr><td>İade kaybı</td><td class="tar"><?= tl($iadeKaybi) ?></td></tr>
       <tr><td>Reklam Harcaması</td><td class="tar"><?= tl($reklam) ?> <span class="hint">(cari hesap ekstresi çekilince dolar)</span></td></tr>
       <tr><td>Ceza</td><td class="tar"><?= tl($ceza) ?></td></tr>
       <tr><td>Erken Ödeme Kesintisi</td><td class="tar"><?= tl($erkenOdeme) ?></td></tr>
@@ -193,6 +183,7 @@ require __DIR__ . '/../includes/header.php';
       <tr><th></th><th class="tar">Değer</th></tr>
       <tr><td>Sipariş sayısı</td><td class="tar"><?= $siparis ?></td></tr>
       <tr><td>Maliyet girilen sipariş</td><td class="tar"><?= $maliyetliSiparis ?></td></tr>
+      <tr><td>Kârı kesinleşen sipariş</td><td class="tar"><?= $kesinSiparis ?></td></tr>
       <tr><td>Satılan ürün adedi</td><td class="tar"><?= $urunAdet ?></td></tr>
       <tr><td>Sipariş başına ortalama satış</td><td class="tar"><?= $siparis > 0 ? tl($ciro / $siparis) : tl(0) ?></td></tr>
       <tr><td>Ortalama komisyon oranı</td><td class="tar">%<?= number_format($ortKomisyon, 1, ',', '.') ?></td></tr>

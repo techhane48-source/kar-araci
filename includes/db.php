@@ -235,6 +235,8 @@ function migrate(): void
         $pdo->exec("ALTER TABLE integrations ADD COLUMN last_orders_sync TEXT DEFAULT NULL");
     }
 
+    migrate_profit_engine($pdo);
+
     // Yönetici hesabı (yoksa oluştur; ilk girişte şifre değiştirmeye zorla)
     $stmt = $pdo->prepare("SELECT id FROM users WHERE email = ?");
     $stmt->execute([ADMIN_EMAIL]);
@@ -257,6 +259,126 @@ function migrate(): void
     foreach ($defaults as $k => $v) {
         $ins->execute([$k, $v]);
     }
+}
+
+/**
+ * Kâr motoru şeması: kullanıcı ayarları, kargo tarifesi ve barem, sipariş bazlı kâr kaydı
+ * (tahmini → kesin), kargo faturası kalemleri ve ekstre tekilleştirme.
+ */
+function migrate_profit_engine(PDO $pdo): void
+{
+    $pdo->exec("CREATE TABLE IF NOT EXISTS user_settings (
+        user_id INTEGER PRIMARY KEY,
+        zero_negative_vat INTEGER NOT NULL DEFAULT 1,   -- negatif net KDV 0 alınsın
+        apply_stopaj INTEGER NOT NULL DEFAULT 1,        -- %1 stopaj düşülsün
+        stopaj_rate REAL NOT NULL DEFAULT 1,
+        fixed_cost_per_order REAL NOT NULL DEFAULT 0,   -- paketleme vb. sipariş başı sabit gider (₺, KDV dahil)
+        apply_return_rate INTEGER NOT NULL DEFAULT 0,   -- tahminde varsayılan iade oranı kullanılsın
+        default_return_rate REAL NOT NULL DEFAULT 0,    -- %
+        default_carrier TEXT NOT NULL DEFAULT 'TEX',
+        barem_enabled INTEGER NOT NULL DEFAULT 1,
+        min_margin REAL NOT NULL DEFAULT 10,            -- uyarı eşiği (%)
+        updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    )");
+
+    // Desi aralığına göre kargo fiyatı (KDV hariç). user_id = 0 sistem varsayılanı.
+    $pdo->exec("CREATE TABLE IF NOT EXISTS cargo_tariffs (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER NOT NULL DEFAULT 0,
+        carrier TEXT NOT NULL DEFAULT 'TEX',
+        desi_from REAL NOT NULL,
+        desi_to REAL NOT NULL,
+        price_ex_vat REAL NOT NULL
+    )");
+    $pdo->exec("CREATE INDEX IF NOT EXISTS idx_cargo_tariffs ON cargo_tariffs(user_id, carrier, desi_from)");
+
+    // Barem: sepet tutarı aralığına göre sabit kargo (KDV hariç). Desi sınırı aşılırsa tarife geçerli.
+    $pdo->exec("CREATE TABLE IF NOT EXISTS cargo_barem (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER NOT NULL DEFAULT 0,
+        carrier TEXT NOT NULL DEFAULT 'TEX',
+        min_price REAL NOT NULL,
+        max_price REAL NOT NULL,
+        max_desi REAL NOT NULL DEFAULT 10,
+        price_ex_vat REAL NOT NULL
+    )");
+
+    // Kargo faturası kalemleri (Trendyol cargo-invoice items): gerçek kargo bedeli.
+    $pdo->exec("CREATE TABLE IF NOT EXISTS cargo_invoice_items (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER NOT NULL,
+        marketplace TEXT NOT NULL DEFAULT 'trendyol',
+        invoice_serial TEXT NOT NULL DEFAULT '',
+        order_number TEXT NOT NULL DEFAULT '',
+        parcel_id TEXT NOT NULL DEFAULT '',
+        item_type TEXT NOT NULL DEFAULT '',            -- 'Gönderi Kargo Bedeli' | 'İade Kargo Bedeli' ...
+        is_return INTEGER NOT NULL DEFAULT 0,
+        amount REAL NOT NULL DEFAULT 0,                -- faturadaki tutar (KDV hariç)
+        desi REAL NOT NULL DEFAULT 0,
+        invoice_date INTEGER NOT NULL DEFAULT 0,
+        UNIQUE(user_id, marketplace, invoice_serial, parcel_id, item_type)
+    )");
+    $pdo->exec("CREATE INDEX IF NOT EXISTS idx_cargo_items_order ON cargo_invoice_items(user_id, marketplace, order_number)");
+    $pdo->exec("CREATE TABLE IF NOT EXISTS cargo_invoices_seen (
+        user_id INTEGER NOT NULL,
+        marketplace TEXT NOT NULL,
+        invoice_serial TEXT NOT NULL,
+        fetched_at TEXT NOT NULL DEFAULT (datetime('now')),
+        PRIMARY KEY(user_id, marketplace, invoice_serial)
+    )");
+
+    // Sipariş (paket) bazlı kâr kaydı. Her kalemin kaynağı: tahmini | kesin.
+    $pdo->exec("CREATE TABLE IF NOT EXISTS order_profits (
+        user_id INTEGER NOT NULL,
+        marketplace TEXT NOT NULL,
+        package_number TEXT NOT NULL,
+        order_number TEXT NOT NULL DEFAULT '',
+        order_date INTEGER NOT NULL DEFAULT 0,
+        status TEXT NOT NULL DEFAULT '',
+        item_count INTEGER NOT NULL DEFAULT 0,
+        sale REAL NOT NULL DEFAULT 0,
+        cost REAL NOT NULL DEFAULT 0,
+        commission REAL NOT NULL DEFAULT 0,
+        commission_src TEXT NOT NULL DEFAULT 'tahmini',
+        cargo REAL NOT NULL DEFAULT 0,
+        cargo_src TEXT NOT NULL DEFAULT 'tahmini',     -- tahmini | kesin | yok
+        cargo_note TEXT NOT NULL DEFAULT '',           -- 'desi 4 · TEX tarifesi', 'barem', 'fatura' ...
+        service_fee REAL NOT NULL DEFAULT 0,
+        stopaj REAL NOT NULL DEFAULT 0,
+        fixed_cost REAL NOT NULL DEFAULT 0,
+        return_loss REAL NOT NULL DEFAULT 0,
+        return_src TEXT NOT NULL DEFAULT 'tahmini',
+        sale_vat REAL NOT NULL DEFAULT 0,
+        cost_vat REAL NOT NULL DEFAULT 0,
+        fee_vat REAL NOT NULL DEFAULT 0,
+        net_vat REAL NOT NULL DEFAULT 0,
+        profit REAL DEFAULT NULL,                      -- NULL: maliyet eksik, hesaplanamadı
+        margin REAL DEFAULT NULL,
+        missing_cost INTEGER NOT NULL DEFAULT 0,
+        is_final INTEGER NOT NULL DEFAULT 0,           -- komisyon ve kargo kesinleşti
+        is_cancelled INTEGER NOT NULL DEFAULT 0,
+        computed_at INTEGER NOT NULL DEFAULT 0,
+        PRIMARY KEY(user_id, marketplace, package_number)
+    )");
+    $pdo->exec("CREATE INDEX IF NOT EXISTS idx_order_profits_date ON order_profits(user_id, marketplace, order_date)");
+
+    // Ekstre tekilleştirme: Trendyol kayıt id'si
+    $scols = array_column($pdo->query("PRAGMA table_info(settlements)")->fetchAll(PDO::FETCH_ASSOC), 'name');
+    if (!in_array('ext_id', $scols, true)) {
+        $pdo->exec("ALTER TABLE settlements ADD COLUMN ext_id TEXT DEFAULT NULL");
+    }
+    $pdo->exec("CREATE UNIQUE INDEX IF NOT EXISTS ux_settlements_ext ON settlements(user_id, marketplace, ext_id)");
+    $pdo->exec("CREATE INDEX IF NOT EXISTS idx_settlements_pkg ON settlements(user_id, marketplace, shipment_package_id)");
+
+    $pcols = array_column($pdo->query("PRAGMA table_info(products)")->fetchAll(PDO::FETCH_ASSOC), 'name');
+    foreach ([
+        'desi' => "ALTER TABLE products ADD COLUMN desi REAL NOT NULL DEFAULT 0",          // elle girilen / Excel'den
+        'cost_kdv' => "ALTER TABLE products ADD COLUMN cost_kdv REAL DEFAULT NULL",         // alış KDV oranı (boş: satışla aynı)
+        'cargo_override' => "ALTER TABLE products ADD COLUMN cargo_override INTEGER NOT NULL DEFAULT 0", // 1: kargo alanı tarifenin yerine geçer
+    ] as $col => $sql) {
+        if (!in_array($col, $pcols, true)) $pdo->exec($sql);
+    }
+    $pdo->exec("CREATE INDEX IF NOT EXISTS idx_products_barcode ON products(user_id, marketplace, barcode)");
 }
 
 function setting(string $key): string

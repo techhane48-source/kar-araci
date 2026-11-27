@@ -9,8 +9,8 @@ if (!$pro) {
     e_redirect('odeme.php');
 }
 
-$tab = $_GET['tab'] ?? ($_POST['tab'] ?? 'desi');
-if (!in_array($tab, ['desi', 'hakedis'], true)) $tab = 'desi';
+$tab = $_GET['tab'] ?? ($_POST['tab'] ?? 'otomatik');
+if (!in_array($tab, ['otomatik', 'desi', 'hakedis'], true)) $tab = 'otomatik';
 
 // Kullanıcının bağladığı pazaryerleri
 $ints = db()->prepare("SELECT marketplace FROM integrations WHERE user_id = ?");
@@ -96,6 +96,10 @@ $ps = db()->prepare("SELECT * FROM products WHERE $dwhere ORDER BY name LIMIT $d
 $ps->execute($dargs);
 $products = $ps->fetchAll();
 
+$checks = $tab === 'otomatik' ? hakedis_checks((int)$u['id'], $mp) : null;
+$hasFinance = (int)db()->query("SELECT COUNT(*) FROM cargo_invoice_items WHERE user_id = " . (int)$u['id'])->fetchColumn()
+            + (int)db()->query("SELECT COUNT(*) FROM settlements WHERE user_id = " . (int)$u['id'])->fetchColumn() > 0;
+
 $pageTitle = 'Hakediş & Desi Kontrolü — ' . APP_NAME;
 require __DIR__ . '/../includes/header.php';
 ?>
@@ -113,13 +117,61 @@ require __DIR__ . '/../includes/header.php';
   </div>
 
   <div class="tabbar" style="margin:12px 0">
-    <a href="hakedis-desi.php?tab=desi&mp=<?= h($mp) ?>" class="tab <?= $tab === 'desi' ? 'active' : '' ?>">Desi Kontrolü</a>
+    <a href="hakedis-desi.php?tab=otomatik&mp=<?= h($mp) ?>" class="tab <?= $tab === 'otomatik' ? 'active' : '' ?>">Otomatik Kontrol</a>
+    <a href="hakedis-desi.php?tab=desi&mp=<?= h($mp) ?>" class="tab <?= $tab === 'desi' ? 'active' : '' ?>">Ürün Ölçüleri</a>
     <a href="hakedis-desi.php?tab=hakedis&mp=<?= h($mp) ?>" class="tab <?= $tab === 'hakedis' ? 'active' : '' ?>">Hakediş Kontrolü</a>
   </div>
 
   <?php $flash = flash_get(); if ($flash): ?><div class="alert alert-<?= $flash['type'] ?>"><?= h($flash['msg']) ?></div><?php endif; ?>
 
-  <?php if ($tab === 'desi'): ?>
+  <?php if ($tab === 'otomatik'): ?>
+  <div class="card table-card" style="margin:16px 0">
+    <h2>Otomatik hakediş kontrolü (son 60 gün)</h2>
+    <?php if (!$hasFinance): ?>
+      <div class="alert alert-info">Kontrol için cari hesap ekstresi ve kargo faturaları gerekiyor. <a href="magaza.php">Mağaza Bağla</a> sayfasından <b>finans verisini çek</b>; sonra her gece otomatik güncellenir.</div>
+    <?php else: $n = count($checks['fazla_desi']) + count($checks['fazla_kargo']) + count($checks['eksik_hakedis']); ?>
+      <?php if ($n === 0): ?>
+        <div class="alert alert-success">Fazla desi, fazla kargo veya hakedişe yansımamış satış bulunmadı.</div>
+      <?php else: ?>
+        <p class="hint">Aşağıdaki kalemler için Trendyol satıcı destekten itiraz açabilirsin. Desi kontrolü, ürün ölçüsü ya da desisi girilmiş ürünlerde yapılır.</p>
+      <?php endif; ?>
+
+      <?php if ($checks['fazla_desi']): $sum = array_sum(array_map(fn($r) => (float)($r['diff'] ?? 0), $checks['fazla_desi'])); ?>
+      <h3 style="margin-top:16px">Fazla desi kesilen gönderiler (<?= count($checks['fazla_desi']) ?>) <?= $sum > 0 ? '· tahmini fazla ödeme ' . tl($sum * 1.2) . ' KDV dahil' : '' ?></h3>
+      <table>
+        <tr><th>Sipariş</th><th>Tarih</th><th>Ürün</th><th class="tar">Olması gereken desi</th><th class="tar">Kesilen desi</th><th class="tar">Faturadaki kargo</th><th class="tar">Fark (KDV hariç)</th></tr>
+        <?php foreach ($checks['fazla_desi'] as $r): ?>
+        <tr><td style="font-family:monospace;font-size:12px"><?= h($r['order_number']) ?></td><td><?= date('d.m.Y', $r['date']) ?></td><td><?= h($r['product']) ?></td>
+            <td class="tar"><?= number_format($r['expected_desi'], 2, ',', '.') ?></td><td class="tar neg"><?= number_format($r['charged_desi'], 2, ',', '.') ?></td>
+            <td class="tar"><?= tl($r['charged']) ?></td><td class="tar"><?= $r['diff'] !== null ? tl($r['diff']) : '<span class="hint">tarife yok</span>' ?></td></tr>
+        <?php endforeach; ?>
+      </table>
+      <?php endif; ?>
+
+      <?php if ($checks['fazla_kargo']): ?>
+      <h3 style="margin-top:16px">Tarifeden pahalı faturalanan kargolar (<?= count($checks['fazla_kargo']) ?>)</h3>
+      <table>
+        <tr><th>Sipariş</th><th>Tarih</th><th class="tar">Desi</th><th class="tar">Faturadaki</th><th class="tar">Tarifeye göre</th><th class="tar">Fark</th></tr>
+        <?php foreach ($checks['fazla_kargo'] as $r): ?>
+        <tr><td style="font-family:monospace;font-size:12px"><?= h($r['order_number']) ?></td><td><?= date('d.m.Y', $r['date']) ?></td><td class="tar"><?= number_format($r['desi'], 2, ',', '.') ?></td>
+            <td class="tar"><?= tl($r['charged']) ?></td><td class="tar"><?= tl($r['expected']) ?></td><td class="tar neg"><?= tl($r['diff']) ?></td></tr>
+        <?php endforeach; ?>
+      </table>
+      <?php endif; ?>
+
+      <?php if ($checks['eksik_hakedis']): ?>
+      <h3 style="margin-top:16px">Teslim edildiği halde hakedişe yansımayan siparişler (<?= count($checks['eksik_hakedis']) ?>)</h3>
+      <table>
+        <tr><th>Sipariş</th><th>Sipariş tarihi</th><th class="tar">Satış</th></tr>
+        <?php foreach ($checks['eksik_hakedis'] as $r): ?>
+        <tr><td style="font-family:monospace;font-size:12px"><?= h($r['order_number']) ?></td><td><?= date('d.m.Y', $r['date']) ?></td><td class="tar"><?= tl($r['sale']) ?></td></tr>
+        <?php endforeach; ?>
+      </table>
+      <?php endif; ?>
+    <?php endif; ?>
+  </div>
+
+  <?php elseif ($tab === 'desi'): ?>
   <div class="card table-card" style="margin:16px 0">
     <h2>Desi Kontrolü</h2>
     <p class="hint" style="max-width:760px">Ürünün <b>en × boy × yükseklik (cm)</b> ölçülerini gir. "Olması gereken desi" otomatik hesaplanır (÷3000). Kargo firmasının kestiği <b>desi</b>'yi de gir — kesilen desi olması gerekenden büyükse <b>fazla kargo</b> kesilmiş olabilir.</p>

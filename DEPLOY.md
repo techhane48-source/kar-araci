@@ -59,10 +59,29 @@ kaybolursa kullanıcıların bağlantıları çözülemez).
 - Trendyol, ürün filtreleme V1'i 15 Ekim 2026'da kullanım dışı bırakıyor; V2'ye
   geçiş gerekirse `getProducts()` içindeki endpoint güncellenir.
 
+## Kâr motoru: tahmini → kesin
+
+Her sipariş (paket) için kâr bir kez hesaplanıp `order_profits` tablosuna yazılır. Kalemler önce
+tahminidir, Trendyol'dan gerçek kayıt gelince kesinleşir:
+
+| Kalem | Tahmin | Kesin |
+|---|---|---|
+| Komisyon | ürünün komisyon oranı | cari hesap ekstresi (Satış) |
+| Kargo | desi × kargo tarifesi, düşük sepette barem (Ayarlar) | kargo faturası kalemi (Gönderi Kargo Bedeli) |
+| İade | isteğe bağlı varsayılan iade oranı | ekstredeki İade + İade Kargo Bedeli |
+
+Net KDV, stopaj ve hizmet bedeli her seferinde yeniden hesaplanır. Ürün maliyeti, ayarlar ya da kargo
+tarifesi değişince son 120 gün otomatik yeniden hesaplanır. Testler: `php scripts/test-hesap.php`,
+`php scripts/test-motor.php`.
+
+**Kargo tarifesi:** Kullanıcı Ayarlar sayfasından kendi anlaşmalı desi fiyat listesini yükler. Tarife
+yoksa ürün kartındaki kargo tutarı kullanılır.
+
 ## Otomatik senkron (cron)
 
-`scripts/sync.php` tüm kullanıcıların bağlı mağazalarını senkronize eder. Hostinger'da
-**Cron Jobs**'tan saatlik şunu ekleyin:
+`scripts/sync.php` tüm kullanıcıların bağlı mağazalarını senkronize eder: her çalışmada ürünler ve son
+3 günün siparişleri; gece 01:00–05:59 arasındaki çalışmalarda ayrıca son 30 günün cari hesap ekstresi
+ve kargo faturaları. Hostinger'da **Cron Jobs**'tan saatlik şunu ekleyin:
 
 ```
 php /home/KULLANICI_ADI/scripts/sync.php

@@ -126,6 +126,7 @@ final class TrendyolClient
                         'listPrice' => (float)($it['listPrice'] ?? 0),
                         'salePrice' => (float)($it['salePrice'] ?? 0),
                         'quantity' => (int)($it['quantity'] ?? 0),
+                        'vatRate' => isset($it['vatRate']) ? (float)$it['vatRate'] : null,
                         'status' => $it['status'] ?? '',
                         'approved' => ($it['approved'] ?? false),
                         'productUrl' => $it['productUrl'] ?? '',
@@ -257,28 +258,40 @@ final class TrendyolClient
      * @param string $startDate      Y-m-d (işlem tarihi; paymentDate yoksa zorunlu, aralık ≤15 gün)
      * @param string $endDate        Y-m-d
      */
-    public function getSettlements(string $transactionType, string $startDate = '', string $endDate = '', int $maxPage = 10): array
+    /**
+     * Cari hesap ekstresi: Sale, Return (ve destekleniyorsa Discount, Coupon) kayıtları.
+     * Tarihler unix saniye; aralık en fazla 15 gün olmalı (Trendyol kuralı).
+     */
+    public function getSettlements(string $transactionType, int $startTs, int $endTs, int $maxPage = 200): array
+    {
+        return $this->financePaged('settlements', $transactionType, $startTs, $endTs, $maxPage);
+    }
+
+    /** Diğer finansal kayıtlar: PaymentOrder, DeductionInvoices (kargo ve hizmet faturaları), CreditNote, CommissionInvoice. */
+    public function getOtherFinancials(string $transactionType, int $startTs, int $endTs, int $maxPage = 50): array
+    {
+        return $this->financePaged('otherfinancials', $transactionType, $startTs, $endTs, $maxPage);
+    }
+
+    private function financePaged(string $endpoint, string $transactionType, int $startTs, int $endTs, int $maxPage): array
     {
         $all = [];
         $page = 0;
-        $size = 500;
-
         while (true) {
-            $params = ['page' => (string)$page, 'size' => (string)$size, 'transactionType' => $transactionType];
-            if ($startDate !== '') $params['startDate'] = strtotime($startDate) * 1000;
-            if ($endDate !== '') $params['endDate'] = strtotime($endDate) * 1000;
-
-            $res = $this->request('GET', "/integration/finance/che/sellers/{$this->sellerId}/settlements", $params);
-
-            if (isset($res['http']) && $res['http'] !== 200) {
-                return ['ok' => false, 'error' => ($res['error'] ?? 'Cari hesap ekstresi çekilemedi') . " (HTTP {$res['http']})"];
+            $params = ['page' => (string)$page, 'size' => '1000', 'transactionType' => $transactionType,
+                       'startDate' => (string)($startTs * 1000), 'endDate' => (string)($endTs * 1000)];
+            $res = $this->request('GET', "/integration/finance/che/sellers/{$this->sellerId}/{$endpoint}", $params);
+            if (($res['http'] ?? 0) === 429) { sleep(2); $res = $this->request('GET', "/integration/finance/che/sellers/{$this->sellerId}/{$endpoint}", $params); }
+            if (($res['http'] ?? 0) !== 200) {
+                return ['ok' => false, 'http' => $res['http'] ?? 0, 'error' => ($res['error'] ?? 'Finans kaydı çekilemedi') . " ({$endpoint}/{$transactionType}, HTTP " . ($res['http'] ?? 0) . ")"];
             }
-
-            $items = $res['body']['content'] ?? [];
-            foreach ($items as $it) {
+            foreach (($res['body']['content'] ?? []) as $it) {
                 $all[] = [
+                    'id' => (string)($it['id'] ?? ''),
                     'barcode' => (string)($it['barcode'] ?? ''),
                     'transactionType' => (string)($it['transactionType'] ?? ''),
+                    'description' => (string)($it['description'] ?? ''),
+                    'receiptId' => (string)($it['receiptId'] ?? ''),
                     'commissionRate' => (float)($it['commissionRate'] ?? 0),
                     'commissionAmount' => (float)($it['commissionAmount'] ?? 0),
                     'sellerRevenue' => (float)($it['sellerRevenue'] ?? 0),
@@ -291,15 +304,41 @@ final class TrendyolClient
                     'orderDate' => $it['orderDate'] ?? null,
                 ];
             }
-
             $totalPages = (int)($res['body']['totalPages'] ?? 0);
             $page++;
-            if ($page >= $totalPages || $page >= $maxPage || count($items) === 0) {
-                break;
-            }
+            if ($page >= $totalPages || $page >= $maxPage) break;
         }
-
         return ['ok' => true, 'settlements' => $all, 'count' => count($all)];
+    }
+
+    /**
+     * Kargo faturası kalemleri: her gönderi/iade için tutar (KDV hariç) ve desi.
+     * Fatura seri numarası otherfinancials/DeductionInvoices kayıtlarından gelir.
+     */
+    public function getCargoInvoiceItems(string $invoiceSerial, int $maxPage = 50): array
+    {
+        $all = [];
+        $page = 0;
+        while (true) {
+            $res = $this->request('GET', "/integration/finance/che/sellers/{$this->sellerId}/cargo-invoice/" . rawurlencode($invoiceSerial) . "/items",
+                                  ['page' => (string)$page, 'size' => '500']);
+            if (($res['http'] ?? 0) !== 200) {
+                return ['ok' => false, 'http' => $res['http'] ?? 0, 'error' => ($res['error'] ?? 'Kargo faturası çekilemedi') . " (HTTP " . ($res['http'] ?? 0) . ")"];
+            }
+            foreach (($res['body']['content'] ?? []) as $it) {
+                $all[] = [
+                    'type' => (string)($it['shipmentPackageType'] ?? ''),
+                    'parcelId' => (string)($it['parcelUniqueId'] ?? ''),
+                    'orderNumber' => (string)($it['orderNumber'] ?? ''),
+                    'amount' => (float)($it['amount'] ?? 0),
+                    'desi' => (float)($it['desi'] ?? 0),
+                ];
+            }
+            $totalPages = (int)($res['body']['totalPages'] ?? 0);
+            $page++;
+            if ($page >= $totalPages || $page >= $maxPage) break;
+        }
+        return ['ok' => true, 'items' => $all];
     }
 
     /**

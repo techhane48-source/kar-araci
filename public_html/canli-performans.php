@@ -57,17 +57,11 @@ if (!$lastOrdersSync || (int)$lastOrdersSync < time() - 600) {
     sync_orders($u['id'], $mp, 7); // hata olsa bile sayfa mevcut (eski) veriyle açılır
 }
 
-// Ürünler (barkod -> ürün)
-$ps = db()->prepare("SELECT * FROM products WHERE user_id = ? AND marketplace = ?");
-$ps->execute([$u['id'], $mp]);
-$byBarcode = [];
-foreach ($ps->fetchAll() as $p) {
-    if ($p['barcode'] !== '') $byBarcode[$p['barcode']] = $p;
-}
-
-// Son 7 gün siparişler
+// Son 7 gün siparişlerin kâr kayıtları (motor; iptaller hariç)
 $weekStart = strtotime('today') - 6 * 86400;
-$q = db()->prepare("SELECT * FROM orders WHERE user_id = ? AND marketplace = ? AND order_date >= ? ORDER BY order_date DESC");
+ensure_order_profits((int)$u['id'], $mp, $weekStart);
+$q = db()->prepare("SELECT order_number, package_number, status, order_date, sale, profit, missing_cost, is_final, cargo_src, cargo_note FROM order_profits
+                    WHERE user_id = ? AND marketplace = ? AND order_date >= ? AND is_cancelled = 0 ORDER BY order_date DESC");
 $q->execute([$u['id'], $mp, $weekStart]);
 $orders = $q->fetchAll();
 
@@ -81,33 +75,33 @@ $hourly = array_fill(0, 24, ['sale' => 0.0, 'profit' => 0.0, 'count' => 0]);
 $week = []; // dayKey (Y-m-d) => [sale, profit, count]
 
 foreach ($orders as $o) {
-    $o['lines'] = json_decode($o['lines'] ?? '[]', true) ?: [];
-    $day = (int) floor((int)$o['order_date'] / 86400) * 86400;
-    $dayKey = date('Y-m-d', (int)$o['order_date']);
+    $ts = (int)$o['order_date'];
+    $dayKey = date('Y-m-d', $ts);
     if (!isset($week[$dayKey])) $week[$dayKey] = ['sale' => 0.0, 'profit' => 0.0, 'count' => 0];
-
-    $pr = calc_order_profit($o, $byBarcode);
-    $profit = $pr['ok'] ? (float)$pr['profit'] : 0.0;
-    $sale = (float)$o['total_price'];
+    $ok = (int)$o['missing_cost'] === 0 && $o['profit'] !== null;
+    $profit = $ok ? (float)$o['profit'] : 0.0;
+    $sale = (float)$o['sale'];
 
     $week[$dayKey]['sale'] += $sale;
+    $week[$dayKey]['profit'] += $profit;
     $week[$dayKey]['count']++;
 
-    if ($day >= $todayStart) {
+    if ($ts >= $todayStart) {
         $today['sale'] += $sale;
         $today['count']++;
-        $hour = (int) date('G', (int)$o['order_date']);
+        $hour = (int) date('G', $ts);
         $hourly[$hour]['sale'] += $sale;
         $hourly[$hour]['count']++;
-        if ($pr['ok']) {
+        if ($ok) {
             $today['profit'] += $profit;
             $today['profitCount']++;
             $hourly[$hour]['profit'] += $profit;
         }
-    } elseif ($day >= $yesterdayStart) {
+    } elseif ($ts >= $yesterdayStart && $ts <= $now - 86400) {
+        // "Dün bu saatte": dünün aynı saatine kadar olan kısım
         $yesterday['sale'] += $sale;
         $yesterday['count']++;
-        if ($pr['ok']) $yesterday['profit'] += $profit;
+        if ($ok) $yesterday['profit'] += $profit;
     }
 }
 
@@ -142,7 +136,7 @@ require __DIR__ . '/../includes/header.php';
   </div>
 
   <?php if ($deltaSale !== null): ?>
-    <p class="hint" style="margin:8px 0">Dünün aynı dönemine göre satış <b class="<?= $deltaSale >= 0 ? 'pos' : 'neg' ?>">%<?= number_format($deltaSale, 1, ',', '.') ?></b> (dün <?= tl($yesterday['sale']) ?>).</p>
+    <p class="hint" style="margin:8px 0">Dün bu saate göre satış <b class="<?= $deltaSale >= 0 ? 'pos' : 'neg' ?>">%<?= number_format($deltaSale, 1, ',', '.') ?></b> (dün <?= tl($yesterday['sale']) ?>).</p>
   <?php endif; ?>
 
   <div class="card table-card" style="margin:16px 0">
@@ -198,9 +192,11 @@ require __DIR__ . '/../includes/header.php';
     <p class="hint" style="margin-bottom:10px">Bugünkü siparişlerde yer alan ürünlerin alış maliyetini buradan hızlıca gir/güncelle.</p>
     <?php
     $todayProducts = [];
-    foreach ($orders as $o) {
-        if ((int)$o['order_date'] < $todayStart) continue;
-        foreach ($o['lines'] as $l) {
+    $byBarcode = products_by_barcode((int)$u['id'], $mp);
+    $tq = db()->prepare("SELECT lines FROM orders WHERE user_id = ? AND marketplace = ? AND order_date >= ?");
+    $tq->execute([$u['id'], $mp, $todayStart]);
+    foreach ($tq->fetchAll() as $o) {
+        foreach ((json_decode((string)$o['lines'], true) ?: []) as $l) {
             $bc = $l['barcode'] ?? '';
             if ($bc === '' || isset($todayProducts[$bc])) continue;
             $p = $byBarcode[$bc] ?? null;
@@ -236,13 +232,13 @@ require __DIR__ . '/../includes/header.php';
     <h2>Son Siparişler</h2>
     <table>
       <tr><th>Sipariş No</th><th>Tarih</th><th>Satış</th><th>Net Kâr</th><th>Durum</th></tr>
-      <?php foreach (array_slice($orders, 0, 25) as $o): $o['lines'] = json_decode($o['lines'] ?? '[]', true) ?: []; $pr = calc_order_profit($o, $byBarcode); ?>
+      <?php foreach (array_slice($orders, 0, 25) as $o): $pr = ['ok' => (int)$o['missing_cost'] === 0 && $o['profit'] !== null, 'profit' => (float)$o['profit']]; ?>
         <tr>
           <td style="font-size:12px"><?= h($o['order_number'] ?: $o['package_number'] ?: '—') ?></td>
           <td style="font-size:12px"><?= date('d.m H:i', (int)$o['order_date']) ?></td>
-          <td><?= tl((float)$o['total_price']) ?></td>
+          <td><?= tl((float)$o['sale']) ?></td>
           <td>
-            <?php if ($pr['ok']): ?><span class="<?= $pr['profit'] < 0 ? 'neg' : 'pos' ?>"><?= tl($pr['profit']) ?></span>
+            <?php if ($pr['ok']): ?><span class="<?= $pr['profit'] < 0 ? 'neg' : 'pos' ?>"><?= tl($pr['profit']) ?></span> <?= src_badge((int)$o['is_final'] ? 'kesin' : 'tahmini', 'Kargo: ' . $o['cargo_note']) ?>
             <?php else: ?><span class="hint">maliyet eksik</span><?php endif; ?>
           </td>
           <td style="font-size:12px"><?= h($o['status'] ?: '—') ?></td>

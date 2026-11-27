@@ -53,12 +53,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $supported) {
                 $error = 'Senkronizasyon hatası: ' . ($res['error'] ?? 'Bilinmeyen hata');
             }
         } elseif ($action === 'settlements') {
-            $res = sync_settlements((int)$u['id'], $mp);
+            $res = sync_finance((int)$u['id'], $mp, 30);
+            $st = $res['settlements']; $cg = $res['cargo']; $rc = $res['recompute'];
             if ($res['ok']) {
-                $ok = "Cari hesap ekstresi (resmi komisyon/kargo/hakediş) çekildi: {$res['records']} kayıt, {$res['rates_updated']} ürünün komisyon oranı resmi değerle güncellendi.";
-                if (!empty($res['errors'])) $ok .= ' (' . count($res['errors']) . ' tip/dilim atlandı.)';
+                $ok = "Finans verisi çekildi: ekstrede {$st['records']} yeni kayıt, " . ($cg['invoices'] ?? 0) . " kargo faturası (" . ($cg['items'] ?? 0) . " kalem). "
+                    . "{$rc['count']} siparişin kârı yeniden hesaplandı; {$rc['final']} tanesi kesinleşti.";
+                $warn = array_filter([$st['error'] ?? null, $cg['error'] ?? null]);
+                if ($warn) $ok .= ' Uyarı: ' . implode(' · ', $warn);
             } else {
-                $error = 'Cari hesap ekstresi hatası: ' . ($res['error'] ?? 'Bilinmeyen hata');
+                $error = 'Finans senkronu hatası: ' . implode(' · ', array_filter([$st['error'] ?? null, $cg['error'] ?? null])) ?: 'Bilinmeyen hata';
             }
         } elseif ($action === 'disconnect') {
             delete_integration((int)$u['id'], $mp);

@@ -7,7 +7,8 @@ define('APP_NAME', 'Kâr&Fiyat');
 define('APP_TAGLINE', 'Pazaryeri net kâr hesabı ve fiyat optimizasyonu');
 
 // Veritabanı web kökü DIŞINDA tutulur (public_html'in bir üstünde data/)
-define('DB_PATH', dirname(__DIR__) . DIRECTORY_SEPARATOR . 'data' . DIRECTORY_SEPARATOR . 'app.sqlite');
+// KARFIYAT_DB ortam değişkeni testlerde ve tarayıcı servisinde farklı bir veritabanı kullanmayı sağlar.
+define('DB_PATH', getenv('KARFIYAT_DB') ?: dirname(__DIR__) . DIRECTORY_SEPARATOR . 'data' . DIRECTORY_SEPARATOR . 'app.sqlite');
 
 // Abonelik
 define('PRO_PRICE', 149);          // aylık Pro ücreti (TL)

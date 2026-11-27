@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/auth.php';
 require_once __DIR__ . '/crypto.php';
+require_once __DIR__ . '/engine.php';
 
 // ---- İş mantığı: komisyon oranları + kâr hesabı ----
 
@@ -99,11 +100,11 @@ function vat_in(float $grossAmount, float $kdvRate): float
  * Negatif çıkarsa 0 alınır (devreden KDV'nin bu siparişte nakde dönmediği varsayımı).
  */
 function profit_core(float $sale, float $saleVat, float $cost, float $costVat, float $commission, float $cargo,
-                     float $extraFee, float $serviceFee, float $stopaj, float $returnLoss): array
+                     float $extraFee, float $serviceFee, float $stopaj, float $returnLoss, bool $zeroNegativeVat = true): array
 {
     $feeVat = vat_in($commission + $cargo + $extraFee + $serviceFee, FEE_KDV_RATE);
     $netKdv = $saleVat - $costVat - $feeVat;
-    if ($netKdv < 0) $netKdv = 0.0;
+    if ($zeroNegativeVat && $netKdv < 0) $netKdv = 0.0;
     $profit = $sale - $cost - $commission - $cargo - $extraFee - $serviceFee - $stopaj - $netKdv - $returnLoss;
     return [
         'profit' => $profit,
@@ -335,10 +336,10 @@ function sync_products(int $userId, string $marketplace): array
         $existing['n:' . $r['name']] = true;
     }
 
-    $ins = $db->prepare("INSERT INTO products (user_id, name, barcode, marketplace, category, rate, cost, price, quantity, cargo, service_fee, stopaj, return_rate)
-                          VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?, 0, 0, 0, 0)");
+    $ins = $db->prepare("INSERT INTO products (user_id, name, barcode, marketplace, category, rate, cost, price, quantity, cargo, service_fee, stopaj, return_rate, kdv)
+                          VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?, 0, 0, 0, 0, ?)");
 
-    $upd = $db->prepare("UPDATE products SET name = ?, price = ?, quantity = ? WHERE user_id = ? AND marketplace = ? AND barcode = ?");
+    $upd = $db->prepare("UPDATE products SET name = ?, price = ?, quantity = ?, kdv = COALESCE(?, kdv) WHERE user_id = ? AND marketplace = ? AND barcode = ?");
     $updByName = $db->prepare("UPDATE products SET price = ?, quantity = ? WHERE user_id = ? AND marketplace = ? AND name = ? AND barcode = ''");
 
     $db->beginTransaction();
@@ -355,14 +356,14 @@ function sync_products(int $userId, string $marketplace): array
             if (isset($existing[$key])) {
                 // Var olan ürün: pazaryerindeki güncel fiyat, stok ve ad işlenir.
                 // Kullanıcının girdiği maliyet, kargo, KDV ve komisyon oranına dokunulmaz.
-                if ($barcode !== '') $upd->execute([$name, $price, (int)($p['quantity'] ?? 0), $userId, $marketplace, $barcode]);
+                if ($barcode !== '') $upd->execute([$name, $price, (int)($p['quantity'] ?? 0), $p['vatRate'] ?? null, $userId, $marketplace, $barcode]);
                 else $updByName->execute([$price, (int)($p['quantity'] ?? 0), $userId, $marketplace, $name]);
                 $updated++;
                 continue;
             }
             $existing[$key] = true;
 
-            $ins->execute([$userId, $name, $barcode, $marketplace, $cat, $rate, $price, (int)($p['quantity'] ?? 0)]);
+            $ins->execute([$userId, $name, $barcode, $marketplace, $cat, $rate, $price, (int)($p['quantity'] ?? 0), $p['vatRate'] ?? 20]);
             $inserted++;
         }
         $db->commit();
@@ -425,6 +426,7 @@ function sync_orders(int $userId, string $marketplace, int $days = 7): array
     }
     db()->prepare("UPDATE integrations SET last_orders_sync = ? WHERE user_id = ? AND marketplace = ?")
         ->execute([time(), $userId, $marketplace]);
+    recompute_order_profits($userId, $marketplace, strtotime($start) ?: 0);
     $out = ['ok' => true, 'count' => $count];
     if (!empty($res['truncated'])) {
         $out['warning'] = 'Sipariş sayısı tek seferde çekilebilecek sınırı aştı; en eski siparişlerin bir kısmı alınamamış olabilir. Daha kısa bir tarih aralığıyla tekrar deneyin.';
@@ -493,11 +495,21 @@ function calc_order_profit(array $order, array $byBarcode): array
     ];
 }
 
+/** [başlangıç, bitiş] çiftleri: Trendyol finans uçları en fazla 15 günlük aralık kabul eder. */
+function finance_windows(int $days, int $span = 14): array
+{
+    $out = [];
+    $end = time();
+    $start = $end - max(1, $days) * 86400;
+    for ($s = $start; $s < $end; $s += $span * 86400) {
+        $out[] = [$s, min($s + $span * 86400, $end)];
+    }
+    return $out;
+}
+
 /**
- * Cari Hesap Ekstresi'ni (settlements) çekip settlements tablosuna yazar.
- * Ayrıca Sale kayıtlarındaki GERÇEK komisyon oranını barkod eşleşmesiyle products.rate'e işler
- * (hardcoded category_rate tahminini resmi değerle düzeltir).
- * API tarih aralığı ≤15 gün olduğundan dilimlere bölünür.
+ * Cari hesap ekstresini (Satış, İade, varsa İndirim/Kupon) çekip settlements tablosuna yazar (tekrarsız).
+ * Satış kayıtlarındaki GERÇEK komisyon oranı barkod eşleşmesiyle products.rate'e işlenir.
  */
 function sync_settlements(int $userId, string $marketplace, int $days = 30): array
 {
@@ -508,42 +520,27 @@ function sync_settlements(int $userId, string $marketplace, int $days = 30): arr
         return ['ok' => false, 'error' => marketplace_label($marketplace) . ' için cari hesap ekstresi desteklenmiyor.'];
     }
 
-    $chunks = [];
-    $end = time();
-    $start = $end - max(1, $days) * 86400;
-    for ($s = $start; $s < $end; $s += 15 * 86400) {
-        $chunks[] = [date('Y-m-d', $s), date('Y-m-d', min($s + 15 * 86400, $end))];
-    }
-
-    $ins = db()->prepare("INSERT INTO settlements (user_id, marketplace, barcode, transaction_type, commission_rate, commission_amount, seller_revenue, debt, credit, order_number, shipment_package_id, payment_period, transaction_date, order_date)
-                          VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)");
+    $ins = db()->prepare("INSERT OR IGNORE INTO settlements (user_id, marketplace, ext_id, barcode, transaction_type, commission_rate, commission_amount,
+                          seller_revenue, debt, credit, order_number, shipment_package_id, payment_period, transaction_date, order_date)
+                          VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)");
     $updRate = db()->prepare("UPDATE products SET rate = ? WHERE user_id = ? AND marketplace = ? AND barcode = ? AND barcode != ''");
 
-    $total = 0;
-    $ratesUpdated = 0;
-    $errors = [];
-
-    foreach (['Sale', 'DeliveryFee', 'Return', 'Discount', 'Coupon'] as $type) {
-        foreach ($chunks as [$s, $e]) {
+    $new = 0; $ratesUpdated = 0; $errors = [];
+    // Sale ve Return Trendyol'un belgelediği türler; Discount/Coupon bazı hesaplarda dönüyor, dönmezse sessizce geçilir.
+    foreach (['Sale' => true, 'Return' => true, 'Discount' => false, 'Coupon' => false] as $type => $required) {
+        foreach (finance_windows($days) as [$s, $e]) {
             $res = $client->getSettlements($type, $s, $e);
             if (!$res['ok']) {
-                if (isset($res['error'])) $errors[] = $res['error'];
-                continue;
+                if ($required) $errors[] = $res['error'];
+                break;   // bu tür için diğer pencereleri deneme
             }
             foreach ($res['settlements'] as $st) {
-                $td = (int)($st['transactionDate'] ?? 0);
-                $od = (int)($st['orderDate'] ?? 0);
-                if ($td > 100000000000) $td = (int)($td / 1000);
-                if ($od > 100000000000) $od = (int)($od / 1000);
-                $ins->execute([
-                    $userId, $marketplace,
-                    $st['barcode'], $st['transactionType'],
-                    $st['commissionRate'], $st['commissionAmount'], $st['sellerRevenue'],
-                    $st['debt'], $st['credit'],
-                    $st['orderNumber'], $st['shipmentPackageId'],
-                    $st['paymentPeriod'], $td, $od,
-                ]);
-                $total++;
+                $td = (int)($st['transactionDate'] ?? 0); if ($td > 100000000000) $td = intdiv($td, 1000);
+                $od = (int)($st['orderDate'] ?? 0); if ($od > 100000000000) $od = intdiv($od, 1000);
+                $extId = $st['id'] !== '' ? $st['id'] : md5(json_encode($st));
+                $ins->execute([$userId, $marketplace, $extId, $st['barcode'], $st['transactionType'], $st['commissionRate'], $st['commissionAmount'],
+                               $st['sellerRevenue'], $st['debt'], $st['credit'], $st['orderNumber'], $st['shipmentPackageId'], $st['paymentPeriod'], $td, $od]);
+                $new += $ins->rowCount();
                 if ($type === 'Sale' && $st['barcode'] !== '' && $st['commissionRate'] > 0) {
                     $updRate->execute([$st['commissionRate'], $userId, $marketplace, $st['barcode']]);
                     $ratesUpdated++;
@@ -551,6 +548,83 @@ function sync_settlements(int $userId, string $marketplace, int $days = 30): arr
             }
         }
     }
+    return ['ok' => !$errors, 'records' => $new, 'rates_updated' => $ratesUpdated, 'errors' => $errors,
+            'error' => $errors ? implode(' · ', array_unique($errors)) : null];
+}
 
-    return ['ok' => true, 'records' => $total, 'rates_updated' => $ratesUpdated, 'errors' => $errors];
+/**
+ * Kargo faturalarını çeker: otherfinancials/DeductionInvoices içindeki kargo faturalarının seri numarasıyla
+ * cargo-invoice/{seri}/items uç noktasından gönderi ve iade kargo bedellerini (KDV hariç) ve desiyi alır.
+ * Daha önce çekilen faturalar tekrar çekilmez.
+ */
+function sync_cargo_invoices(int $userId, string $marketplace, int $days = 45): array
+{
+    $int = get_integration($userId, $marketplace);
+    if (!$int) return ['ok' => false, 'error' => 'Entegrasyon bulunamadı.'];
+    $client = integration_client($int);
+    if (!method_exists($client, 'getOtherFinancials') || !method_exists($client, 'getCargoInvoiceItems')) {
+        return ['ok' => false, 'error' => marketplace_label($marketplace) . ' için kargo faturası desteklenmiyor.'];
+    }
+    $db = db();
+    $seen = $db->prepare("SELECT 1 FROM cargo_invoices_seen WHERE user_id = ? AND marketplace = ? AND invoice_serial = ?");
+    $mark = $db->prepare("INSERT OR IGNORE INTO cargo_invoices_seen (user_id, marketplace, invoice_serial) VALUES (?,?,?)");
+    $ins = $db->prepare("INSERT OR IGNORE INTO cargo_invoice_items (user_id, marketplace, invoice_serial, order_number, parcel_id, item_type, is_return, amount, desi, invoice_date)
+                         VALUES (?,?,?,?,?,?,?,?,?,?)");
+    $invoices = 0; $items = 0; $errors = [];
+    foreach (finance_windows($days) as [$s, $e]) {
+        $res = $client->getOtherFinancials('DeductionInvoices', $s, $e);
+        if (!$res['ok']) { $errors[] = $res['error']; continue; }
+        foreach ($res['settlements'] as $rec) {
+            $label = mb_strtolower($rec['transactionType'] . ' ' . $rec['description']);
+            if (!str_contains($label, 'kargo')) continue;           // yalnızca kargo faturaları
+            $serial = $rec['id'];
+            if ($serial === '') continue;
+            $seen->execute([$userId, $marketplace, $serial]);
+            if ($seen->fetch()) continue;
+            $r = $client->getCargoInvoiceItems($serial);
+            if (!$r['ok']) { $errors[] = "Kargo faturası $serial: " . $r['error']; continue; }
+            $td = (int)($rec['transactionDate'] ?? 0); if ($td > 100000000000) $td = intdiv($td, 1000);
+            foreach ($r['items'] as $it) {
+                $isReturn = str_contains(mb_strtolower($it['type']), 'iade') ? 1 : 0;
+                $ins->execute([$userId, $marketplace, $serial, $it['orderNumber'], $it['parcelId'], $it['type'], $isReturn, $it['amount'], $it['desi'], $td]);
+                $items += $ins->rowCount();
+            }
+            $mark->execute([$userId, $marketplace, $serial]);
+            $invoices++;
+        }
+    }
+    // Faturadaki gerçek desiyi ürünlere işle (tek ürünlü paketler): "kesilen desi" hakediş kontrolünde kullanılır.
+    learn_charged_desi($userId, $marketplace);
+    return ['ok' => !$errors, 'invoices' => $invoices, 'items' => $items, 'errors' => $errors,
+            'error' => $errors ? implode(' · ', array_unique($errors)) : null];
+}
+
+/**
+ * Tek kalemli siparişlerde faturadaki desiyi o ürünün "kesilen desi"si olarak kaydeder (en son fatura).
+ */
+function learn_charged_desi(int $userId, string $marketplace): void
+{
+    $db = db();
+    $st = $db->prepare("SELECT o.lines, c.desi FROM cargo_invoice_items c
+                        JOIN orders o ON o.user_id = c.user_id AND o.marketplace = c.marketplace AND o.order_number = c.order_number
+                        WHERE c.user_id = ? AND c.marketplace = ? AND c.is_return = 0 AND c.desi > 0
+                        ORDER BY c.invoice_date");
+    $st->execute([$userId, $marketplace]);
+    $upd = $db->prepare("UPDATE products SET kesilen_desi = ? WHERE user_id = ? AND marketplace = ? AND barcode = ?");
+    foreach ($st->fetchAll() as $row) {
+        $lines = json_decode((string)$row['lines'], true) ?: [];
+        if (count($lines) !== 1 || (int)($lines[0]['quantity'] ?? 1) !== 1) continue;
+        $upd->execute([(float)$row['desi'], $userId, $marketplace, (string)($lines[0]['barcode'] ?? '')]);
+    }
+}
+
+/**
+ * Tam finans senkronu: ekstre + kargo faturaları + kâr kayıtlarının yeniden hesaplanması.
+ */
+function sync_finance(int $userId, string $marketplace, int $days = 30): array
+{
+    $s = sync_settlements($userId, $marketplace, $days);
+    $c = sync_cargo_invoices($userId, $marketplace, $days + 15);
+    $r = recompute_order_profits($userId, $marketplace, time() - ($days + 30) * 86400);
+    return ['ok' => ($s['ok'] ?? false) || ($c['ok'] ?? false), 'settlements' => $s, 'cargo' => $c, 'recompute' => $r];
 }
