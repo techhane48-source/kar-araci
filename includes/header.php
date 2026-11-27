@@ -36,7 +36,7 @@ $flash = flash_get();
         <a href="dashboard.php" class="nav-link">Dashboard</a>
         <a href="urunler.php" class="nav-link">Ürünlerim</a>
         <a href="toplu-analiz.php" class="nav-link">Toplu Analiz</a>
-        <a href="promosyon-analiz.php" class="nav-link">Promosyon Analiz</a>
+        <a href="promosyon-analiz.php" class="nav-link">Tarife &amp; Promosyon</a>
         <a href="canli-performans.php" class="nav-link">Canlı Performans</a>
         <a href="kar-marji.php" class="nav-link">Kâr Marjı</a>
         <a href="raporlar.php" class="nav-link">Raporlar</a>

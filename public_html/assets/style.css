@@ -366,3 +366,26 @@ details.row-detail summary::-webkit-details-marker{display:none}
 .pager{display:flex;gap:8px;align-items:center;justify-content:center;margin-top:14px}
 details.row-detail{position:relative}
 details.row-detail[open] > .breakdown{position:absolute;right:0;top:100%;z-index:20;background:var(--card,#fff);border:1px solid var(--border);border-radius:10px;padding:10px 12px;box-shadow:0 10px 30px rgba(0,0,0,.12)}
+
+/* Tarife ve promosyon analizi */
+.tariff-steps ol{margin:0 0 16px 18px;padding:0;display:grid;gap:8px;max-width:760px;line-height:1.5}
+.tariff-upload{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:8px 0}
+.tariff-head{display:flex;gap:24px;align-items:center;justify-content:space-between;flex-wrap:wrap;margin:16px 0}
+.tariff-type{font-size:20px;font-weight:700}
+.tariff-counts{display:flex;gap:16px;flex-wrap:wrap}
+.tariff-counts .warn,.tariff .tag.warn{color:#b45309}
+.tariff .tag{font-size:12px;margin-top:4px}
+.tariff-actions{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:12px 0}
+.tariff-sum{flex:1;min-width:200px;font-size:13px;color:var(--muted)}
+.tariff-table td{vertical-align:top}
+.tariff-prod{min-width:220px;max-width:320px}
+.tariff-prod .name{font-weight:600;line-height:1.35}
+.tariff-prod details{margin-top:4px;font-size:12px}
+.tariff-now{white-space:nowrap}
+.tariff-opt{min-width:150px;font-size:13px}
+.tariff-opt label{display:flex;gap:6px;align-items:baseline;flex-wrap:wrap;cursor:pointer}
+.tariff-opt .price{font-weight:700;font-size:14px}
+.tariff-opt .rates{margin:4px 0 2px 22px;display:grid;gap:2px}
+.tariff-opt .rates div{display:flex;justify-content:space-between;gap:8px}
+.tariff-opt.is-suggest{background:rgba(22,163,74,.07)}
+.tariff-opt:has(input:checked){box-shadow:inset 0 0 0 2px var(--accent, #2563eb)}
