@@ -9,6 +9,7 @@ if($_SERVER['REQUEST_METHOD']==='POST'){
     try{
         foreach(['phrase','cost','vat','days','action','date','confirm_save','replace','update_catalog','first_sale'] as $key)if(isset($_POST[$key])&&!is_string($_POST[$key]))throw new InvalidArgumentException('Geçersiz girdi.');
         $phrase=trim($_POST['phrase']??'');$cost=trim($_POST['cost']??'');$vat=trim($_POST['vat']??'');$date=trim($_POST['date']??'');
+        if($vat!==''&&!in_array($vat,['1','10','20'],true))throw new InvalidArgumentException('Alış KDV oranı %1, %10 veya %20 olmalıdır.');
         $days=(int)($_POST['days']??30);if(!in_array($days,[7,15,30,90],true))throw new InvalidArgumentException('Geçersiz tarih aralığı.');
         $q=db()->prepare("SELECT * FROM products WHERE user_id=? AND marketplace='trendyol' AND barcode<>'' ORDER BY name,barcode LIMIT 20001");$q->execute([$uid]);$products=$q->fetchAll();
         if(count($products)>20000)throw new InvalidArgumentException('Katalog sınırı aşıldı.');
@@ -23,6 +24,7 @@ if($_SERVER['REQUEST_METHOD']==='POST'){
             $gross=parse_money_input($cost);if($gross===null||$gross<=0)throw new InvalidArgumentException('KDV dahil maliyet girin.');
             $purchaseVat=$vat===''?null:parse_money_input($vat);if($vat!==''&&($purchaseVat===null||$purchaseVat<0||$purchaseVat>100))throw new InvalidArgumentException('KDV oranı geçersiz.');
             if($action==='save_group'){
+                if($vat==='')throw new InvalidArgumentException('Kaydetmek için alış KDV oranını seçin.');
                 // Direct panel cost entry is available to every signed-in account; file import stays Pro.
                 if(($_POST['confirm_save']??'')!=='1')throw new InvalidArgumentException('Kalıcı tarihli maliyet kaydı için açık onay gerekli.');
                 $firstSale=($_POST['first_sale']??'')==='1';
@@ -56,7 +58,7 @@ $pageTitle='Maliyet Senaryosu — '.APP_NAME;require __DIR__.'/../includes/heade
 <input type="hidden" name="csrf" value="<?=h(csrf_token())?>">
 <label>Ürün adı <input name="phrase" value="<?=h($phrase)?>" required minlength="3" maxlength="150"></label>
 <label>KDV dahil birim maliyet (TL) <input name="cost" value="<?=h($cost)?>" inputmode="decimal"></label>
-<label>Alış KDV oranı (%) — bilinmiyorsa boş bırakın <input name="vat" value="<?=h($vat)?>" inputmode="decimal"></label>
+<label>Alış faturası KDV oranı <select name="vat"><option value="">Seçin (yalnız önizleme için boş olabilir)</option><?php foreach(['1','10','20'] as $v):?><option value="<?=$v?>" <?=$vat===$v?'selected':''?>>%<?=$v?></option><?php endforeach;?></select></label>
 <label>Sipariş tarihi <select name="days"><?php foreach([7,15,30,90] as $day): ?><option value="<?=$day?>" <?=$day===$days?'selected':''?>>Son <?=$day?> gün</option><?php endforeach; ?></select></label>
 <button class="btn-primary" name="action" value="preview">Ürünleri bul</button>
 <?php if($candidates&&count($candidates)<=200): ?>

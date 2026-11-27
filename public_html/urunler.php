@@ -12,6 +12,7 @@ if($_SERVER['REQUEST_METHOD']==='POST'&&($_POST['action']??'')==='direct_cost'){
     if(!csrf_verify(is_string($_POST['csrf']??null)?$_POST['csrf']:null)){http_response_code(403);exit('Geçersiz oturum.');}
     try{
         foreach(['pid','cost','vat','scope'] as $key)if(!is_string($_POST[$key]??null))throw new InvalidArgumentException('Maliyet, KDV ve geçerlilik kapsamı gerekli.');
+        if(!in_array($_POST['vat'],['1','10','20'],true))throw new InvalidArgumentException('Alış KDV oranı %1, %10 veya %20 olmalıdır.');
         if(!ctype_digit($_POST['pid']))throw new InvalidArgumentException('Ürün geçersiz.');
         $uid=(int)$u['id'];$pid=(int)$_POST['pid'];$scope=$_POST['scope'];
         if(!in_array($scope,['today','first_sale'],true))throw new InvalidArgumentException('Geçerlilik kapsamını seçin.');
@@ -279,7 +280,7 @@ require __DIR__ . '/../includes/header.php';
         <td><?= tl((float)$p['price']) ?></td>
         <td><?php if($p['marketplace']==='trendyol'&&$p['barcode']!==''): ?><details><summary><?= $p['_has_cost']?tl((float)$p['cost']).' / %'.h((string)$p['cost_vat']):'Maliyet gir' ?></summary><form method="post" style="min-width:180px">
           <input type="hidden" name="csrf" value="<?=h(csrf_token())?>"><input type="hidden" name="action" value="direct_cost"><input type="hidden" name="pid" value="<?=(int)$p['id']?>"><input type="hidden" name="q" value="<?=h($q)?>"><input type="hidden" name="page" value="<?=$page?>">
-          <label>KDV dahil TL <input name="cost" required inputmode="decimal" value="<?= $p['_has_cost']?h((string)$p['cost']):'' ?>"></label><label>Alış KDV % <input name="vat" required inputmode="decimal" value="<?= $p['_has_cost']?h((string)$p['cost_vat']):'' ?>"></label>
+          <label>Ürün alış fiyatı (KDV dahil TL) <input name="cost" required inputmode="decimal" value="<?= $p['_has_cost']?h((string)$p['cost']):'' ?>"></label><label>Alış faturası KDV oranı <select name="vat" required><option value="">Seçin</option><?php foreach([1,10,20] as $v):?><option value="<?=$v?>" <?= $p['_has_cost']&&(float)$p['cost_vat']===(float)$v?'selected':'' ?>>%<?=$v?></option><?php endforeach;?></select></label>
           <label>Geçerlilik <select name="scope" required><option value="">Seçin</option><option value="today">Bugünden itibaren</option><option value="first_sale">İlk satıştan itibaren</option></select></label><button class="btn-primary">Maliyeti kaydet</button></form></details><?php else: ?><?= $p['_has_cost']?tl((float)$p['cost']):'—' ?><?php endif; ?></td>
         <td class="<?= $p['_profit'] < 0 ? 'neg' : 'pos' ?>"><?= $p['_has_cost'] ? tl($p['_profit']) : '—' ?></td>
         <td class="<?= $p['_ratio'] < 0 ? 'neg' : 'pos' ?>"><?= $p['_has_cost'] ? '%' . number_format($p['_ratio'], 1, ',', '.') : '—' ?></td>

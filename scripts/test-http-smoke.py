@@ -138,6 +138,11 @@ with tempfile.TemporaryDirectory(prefix="karfiyat-http-") as tmp:
             status, page=request("urunler.php",direct)
             assert status==403
             direct["csrf"]=csrf
+            status, page=request("urunler.php",dict(direct,vat="15"))
+            assert status==200 and "%1, %10 veya %20" in page
+            with sqlite3.connect(db) as con:
+                assert con.execute("SELECT cost FROM products WHERE id=?",(direct_id,)).fetchone()[0]==0
+            assert '<select name="vat" required>' in page and all('value="'+v+'"' in page for v in ["1","10","20"])
             status, page=request("urunler.php",direct)
             assert status==200 and "Maliyet ve alış KDV oranı kaydedildi." in page
             with sqlite3.connect(db) as con:

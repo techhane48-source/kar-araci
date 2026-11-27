@@ -24,17 +24,22 @@ $rangeUrl=static fn(int $p=1):string=>'canli-performans.php?mp='.urlencode($mp).
 
 // --- Maliyet kaydet (inline; Bugün Sipariş Alan Ürünler) ---
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'save_cost') {
-    if (!csrf_verify($_POST['csrf'] ?? '')) {
+    if (!csrf_verify(is_string($_POST['csrf']??null)?$_POST['csrf']:null)) {
         flash_set('error', 'Oturum süresi doldu.');
-    } else {
-        $pid = (int)($_POST['pid'] ?? 0);
-        $cost = parse_money_input((string)($_POST['cost'] ?? ''));
-        if ($pid > 0 && $cost !== null && $cost >= 0) {
-            db()->prepare("UPDATE products SET cost = ? WHERE id = ? AND user_id = ? AND marketplace = ?")
-               ->execute([$cost, $pid, $u['id'],$mp]);
-            flash_set('success', 'Maliyet güncellendi.');
-        }
-    }
+    } else try {
+        foreach(['pid','cost','vat','scope'] as $key)if(!is_string($_POST[$key]??null))throw new InvalidArgumentException('Maliyet, alış KDV ve geçerlilik kapsamı gerekli.');
+        if($mp!=='trendyol'||!ctype_digit($_POST['pid'])||!in_array($_POST['vat'],['1','10','20'],true)||!in_array($_POST['scope'],['today','first_sale'],true))throw new InvalidArgumentException('Ürün, alış KDV veya tarih seçimi geçersiz.');
+        $uid=(int)$u['id'];$pid=(int)$_POST['pid'];$scope=$_POST['scope'];
+        $res=with_marketplace_lock($uid,'trendyol',static function()use($uid,$pid,$scope){
+            $q=db()->prepare("SELECT barcode FROM products WHERE user_id=? AND id=? AND marketplace='trendyol' AND barcode<>''");$q->execute([$uid,$pid]);$bc=$q->fetchColumn();
+            if($bc===false)throw new InvalidArgumentException('Ürün bulunamadı.');
+            $values=$scope==='first_sale'?cost_history_first_sale_values([(string)$bc],$_POST['cost'],$_POST['vat']):cost_history_group_values([(string)$bc],date('Y-m-d'),$_POST['cost'],$_POST['vat']);
+            return ['ok'=>true]+cost_history_save(db(),$uid,$values,false,$scope==='first_sale'?'first_sale':'manual',true);
+        });
+        if(empty($res['ok']))throw new InvalidArgumentException($res['error']??'Maliyet kaydedilemedi.');
+        flash_set('success','Maliyet ve alış KDV oranı kaydedildi.');
+    }catch(InvalidArgumentException|RuntimeException $e){flash_set('error',$e->getMessage());}
+    catch(Throwable $e){flash_set('error','Maliyet kaydedilemedi; önceki kayıtlar korundu.');}
     e_redirect($rangeUrl());
 }
 
@@ -243,20 +248,23 @@ require __DIR__ . '/../includes/header.php';
       <p class="hint">Bugün henüz sipariş yok.</p>
     <?php else: ?>
     <table>
-      <tr><th>Ürün</th><th>Barkod</th><th>Mevcut Maliyet</th><th>Yeni Maliyet</th><th></th></tr>
+      <tr><th>Ürün</th><th>Barkod</th><th>Mevcut Maliyet</th><th>Yeni alış maliyeti ve KDV</th></tr>
       <?php foreach ($todayProducts as $bc => $p): ?>
       <tr>
         <td><?= h($p['name']) ?></td>
         <td style="font-size:12px"><?= h($bc) ?></td>
         <td><?= (float)$p['cost'] > 0 ? tl((float)$p['cost']) : '<span class="hint">boş</span>' ?></td>
         <td>
-          <form method="post" style="display:flex;gap:6px;align-items:center">
+          <form method="post" style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
             <input type="hidden" name="csrf" value="<?= csrf_token() ?>">
             <input type="hidden" name="action" value="save_cost"><input type="hidden" name="days" value="<?=$days?>"><input type="hidden" name="mp" value="<?=h($mp)?>">
             <input type="hidden" name="pid" value="<?= (int)$p['id'] ?>">
-            <input type="number" step="0.01" name="cost" value="<?= (float)$p['cost'] > 0 ? $p['cost'] : '' ?>" style="width:110px" required>
+            <label>KDV dahil TL <input inputmode="decimal" name="cost" value="<?= (float)$p['cost'] > 0 ? h((string)$p['cost']) : '' ?>" style="width:110px" required></label>
+            <label>Alış KDV <select name="vat" required><option value="">Seçin</option><?php foreach([1,10,20] as $v):?><option value="<?=$v?>" <?=(float)$p['cost']>0&&(float)($p['cost_vat']??-1)===(float)$v?'selected':''?>>%<?=$v?></option><?php endforeach;?></select></label>
+            <label>Geçerlilik <select name="scope" required><option value="">Seçin</option><option value="today">Bugünden itibaren</option><option value="first_sale">İlk satıştan itibaren</option></select></label>
+            <button type="submit" class="btn-primary" style="padding:6px 12px">Kaydet</button>
+          </form>
         </td>
-        <td><button type="submit" class="btn-primary" style="padding:6px 12px">Kaydet</button></form></td>
       </tr>
       <?php endforeach; ?>
     </table>
