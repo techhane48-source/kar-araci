@@ -206,8 +206,25 @@ with tempfile.TemporaryDirectory(prefix="karfiyat-http-") as tmp:
                     for width in (390, 1440):
                         view.set_viewport_size({"width":width,"height":900})
                         view.goto(base+"dashboard.php",wait_until="domcontentloaded")
-                        assert view.locator("#returns-overview").is_visible()
+                        assert view.locator(".ui-kpi").count() == 4
+                        assert view.locator(".ui-kpi").first.is_visible()
                         assert view.evaluate("document.documentElement.scrollWidth <= innerWidth + 2"), ("dashboard overflow",width)
+                        if width == 390:
+                            view.get_by_role("button",name="Menü",exact=True).click()
+                            assert view.get_by_role("dialog",name="Ana menü").is_visible()
+                            assert view.locator(".ui-workspace").evaluate("(e)=>e.inert")
+                            view.keyboard.press("Escape")
+                            assert not view.locator(".ui-workspace").evaluate("(e)=>e.inert")
+                        view.get_by_text("Finans ve hesaplama ayrıntıları",exact=True).click()
+                        assert view.locator("#returns-overview").is_visible()
+                        assert view.evaluate("document.documentElement.scrollWidth <= innerWidth + 2"), ("expanded dashboard overflow",width)
+                        view.goto(base+"canli-performans.php?days=30",wait_until="domcontentloaded")
+                        assert view.locator(".ui-kpi").count()==4
+                        assert view.locator(".ui-status").count()>0
+                        assert view.evaluate("document.documentElement.scrollWidth <= innerWidth + 2"), ("orders overflow",width)
+                        view.locator('input[name="q"]').fill("NO-SUCH-ORDER")
+                        view.get_by_role("button",name="Filtrele").click()
+                        assert view.get_by_text("Bu filtreye uygun sipariş yok.",exact=False).is_visible()
                     view.set_viewport_size({"width":390,"height":844})
                     view.goto(base+"iade-kontrol.php",wait_until="domcontentloaded")
                     view.get_by_role("button",name="Satılamaz olarak işaretle").click()

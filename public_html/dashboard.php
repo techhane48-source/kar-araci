@@ -8,6 +8,7 @@ $u = require_login();
 $ints = db()->prepare("SELECT marketplace FROM integrations WHERE user_id = ?");
 $ints->execute([$u['id']]);
 $mps = array_column($ints->fetchAll(), 'marketplace');
+$hasIntegration=(bool)$mps;
 if (!$mps) $mps = ['trendyol'];
 $mp = $_GET['mp'] ?? $mps[0];
 if (!in_array($mp, $mps, true)) $mp = $mps[0];
@@ -108,7 +109,7 @@ require __DIR__ . '/../includes/header.php';
   <div class="toolbar">
     <div><h1>Genel Bakış</h1><p class="ui-muted">Mağazanızın satış, kâr ve dikkat gerektiren işlemleri.</p></div>
     <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-      <select onchange="location.href='?mp='+encodeURIComponent(this.value)+'&days=<?= $days ?>'" style="width:auto">
+      <select aria-label="Pazaryeri" onchange="location.href='?mp='+encodeURIComponent(this.value)+'&days=<?= $days ?>'" style="width:auto">
         <?php foreach ($mps as $c): ?>
           <option value="<?= $c ?>" <?= $mp === $c ? 'selected' : '' ?>><?= h(marketplace_label($c)) ?></option>
         <?php endforeach; ?>
@@ -121,21 +122,11 @@ require __DIR__ . '/../includes/header.php';
     </div>
   </div>
 
-  <?php if (!$orders): ?>
-    <div class="card" style="padding:32px;text-align:center">
-      <h2>Henüz veri yok</h2>
-      <p class="hint" style="max-width:520px;margin:8px auto">
-        <?= $toplamUrun === 0
-            ? 'Mağazanı bağla, siparişler ve kârlılığın otomatik gelsin. <a href="magaza.php">Mağaza Bağla →</a>'
-            : 'Siparişler senkron edilmedi. <a href="canli-performans.php">Canlı Performans</a> sayfasından siparişleri senkronize et.' ?>
-      </p>
-    </div>
-  <?php else: ?>
-
+  <?php if(!$orders):?><section class="card ui-empty"><h2><?=$hasIntegration?'Bu dönemde kayıtlı sipariş yok':'Mağazanızı bağlayın'?></h2><p class="ui-muted"><?=$hasIntegration?'Farklı tarih aralığı seçin veya siparişlerinizi güncelleyin.':'Sipariş ve kâr bilgilerinizi görmek için Trendyol mağazanızı bağlayın.'?></p><a class="btn-primary" href="<?=$hasIntegration?'canli-performans.php':'magaza.php'?>"><?=$hasIntegration?'Siparişlere git':'Mağazamı bağla'?></a></section><?php endif;?>
   <section class="ui-kpi-grid" aria-label="Satış ve kâr göstergeleri">
-    <?php ui_kpi('wallet','Toplam satış',tl($ciro),$aralikLabel.' · aktif paketler');?>
+    <?php ui_kpi('wallet','Toplam satış',$orders?tl($ciro):'—',$aralikLabel.' · aktif paketler');?>
     <?php ui_kpi('finance','Tahmini Sipariş Kârı',$maliyetliSiparis+$closedKnown>0?tl($netKar):'—',$maliyetliSiparis.'/'.$siparis.' aktif paket hesaplandı',$netKar<0?'neg':'');?>
-    <?php ui_kpi('orders','Satış paketi',number_format($siparis,0,',','.'),$urunAdet.' ürün adedi');?>
+    <?php ui_kpi('orders','Satış paketi',$orders?number_format($siparis,0,',','.'):'—',$urunAdet.' ürün adedi');?>
     <?php ui_kpi('price','Tahmini kâr marjı',$maliyetliSiparis>0?'%'.number_format($karSatis,1,',','.'):'—','Hesaplanabilen satış üzerinden',$karSatis<0?'neg':'');?>
   </section>
   <?php $excludedCurrency=count(array_filter($orders,static fn($o)=>!order_is_domestic_try($o))); if($excludedCurrency): ?><p class="hint"><?= $excludedCurrency ?> paket ülke/para birimi doğrulanmadığından TL cirosuna dahil edilmedi. Eski kayıtları tekrar senkronize edin.</p><?php endif; ?>
@@ -265,6 +256,5 @@ require __DIR__ . '/../includes/header.php';
   </div>
 
   </div></details>
-  <?php endif; ?>
 </div>
 <?php require __DIR__ . '/../includes/footer.php'; ?>

@@ -154,18 +154,14 @@ require __DIR__ . '/../includes/header.php';
     <form method="post" style="display:flex;gap:8px;align-items:center">
       <input type="hidden" name="csrf" value="<?= h(csrf_token()) ?>">
       <input type="hidden" name="action" value="sync">
-      <select name="mp" style="width:auto">
-        <?php foreach ($mps as $c): ?>
-          <option value="<?= $c ?>" <?= $mp === $c ? 'selected' : '' ?>><?= h(marketplace_label($c)) ?></option>
-        <?php endforeach; ?>
-      </select>
-      <select name="sync_days" aria-label="Güncelleme geçmişi"><?php foreach([7,30,89] as $n):?><option value="<?=$n?>" <?=$days===$n?'selected':''?>>Son <?=$n?> gün</option><?php endforeach;?></select>
+      <input type="hidden" name="mp" value="<?=h($mp)?>">
+      <input type="hidden" name="sync_days" value="<?=$days?>">
       <button type="submit" class="btn-primary">Siparişleri güncelle</button>
     </form>
   </div>
 
   <form method="get" class="ui-filterbar">
-    <input type="hidden" name="mp" value="<?=h($mp)?>">
+    <label>Mağaza <select name="mp"><?php foreach($mps as $c):?><option value="<?=h($c)?>" <?=$mp===$c?'selected':''?>><?=h(marketplace_label($c))?></option><?php endforeach;?></select></label>
     <label>Görüntüleme aralığı <select name="days"><?php foreach([7,30,89] as $n):?><option value="<?=$n?>" <?=$days===$n?'selected':''?>>Son <?=$n?> gün</option><?php endforeach;?></select></label>
     <label>Sipariş veya paket no <input name="q" value="<?=h($search)?>" placeholder="Sipariş numarası"></label>
     <label>Durum <select name="status"><?php foreach([''=>'Tümü','new'=>'Yeni / hazırlanıyor','shipping'=>'Kargoda','delivered'=>'Teslim edildi','closed'=>'İptal / iade'] as $key=>$label):?><option value="<?=h($key)?>" <?=$statusFilter===$key?'selected':''?>><?=h($label)?></option><?php endforeach;?></select></label>
@@ -173,7 +169,7 @@ require __DIR__ . '/../includes/header.php';
   </form>
   <?php $flash = flash_get(); if ($flash): ?><div class="alert alert-<?= $flash['type'] ?>"><?= h($flash['msg']) ?></div><?php endif; ?>
 
-  <p class="hint">Son başarılı sipariş senkronu: <?= $lastOrdersSync > 0 ? date("d.m.Y H:i", $lastOrdersSync) : "Henüz yok" ?><?= $lastOrdersSync > 0 && $lastOrdersSync < time()-900 ? " — veriler eski olabilir" : "" ?>.</p>
+  <p class="hint">Son sipariş güncellemesi: <?= $lastOrdersSync > 0 ? date("d.m.Y H:i", $lastOrdersSync) : "Henüz yok" ?><?= $lastOrdersSync > 0 && $lastOrdersSync < time()-900 ? " — veriler eski olabilir" : "" ?>.</p>
   <?php if($mp==='trendyol'): ?><p class="hint"><?= h(sync_coverage_label(db(),(int)$u['id'],$mp,'orders_modified',$weekStart,time())) ?> Sipariş aralığı son güncelleme tarihine göredir; oluşturulma tarihi kapsamı garanti edilmez.</p><?php endif; ?>
   <section class="ui-kpi-grid" aria-label="Bugünkü satışlar">
     <?php ui_kpi('wallet','Bugün satış',tl($today['sale']),'Bugün · aktif satışlar');?>

@@ -24,16 +24,17 @@ $uiShell=$u&&$uiSection!==null;
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="assets/style.css?v=13">
-<?php if($uiShell):?><link rel="stylesheet" href="assets/admin-ui.css?v=1"><script defer src="assets/admin-ui.js?v=1"></script><?php endif;?>
+<?php if($uiShell):?><link rel="stylesheet" href="assets/admin-ui.css?v=2"><script defer src="assets/admin-ui.js?v=2"></script><?php endif;?>
 </head>
 <body<?= $uiShell?' class="ui-shell"':'' ?>>
 <a href="#main-content" class="skip-link">Ana içeriğe geç</a>
 <?php if($uiShell):?>
 <aside class="ui-sidebar" id="ui-sidebar">
 <a href="dashboard.php" class="ui-brand"><span class="ui-brand-mark"><?=ui_icon('finance')?></span><span>Covisca<small>E-ticaret yönetimi</small></span></a>
+<button type="button" class="ui-menu-close btn-ghost">Menüyü kapat</button>
 <nav class="ui-nav" aria-label="Ana menü"><?php foreach($uiNav as $key=>$section):?><a href="<?=h($section[1])?>" class="ui-nav-item<?=$key===$uiSection?' is-active':''?>" <?=$key===$uiSection?'aria-current="true"':''?>><?=ui_icon($key)?><span><?=h($section[0])?></span></a><?php endforeach;?></nav>
 <div class="ui-sidebar-bottom"><a href="index.php#hesapla">Kâr hesap makinesi</a><small>Covisca · Mağaza yönetimi</small></div>
-</aside><div class="ui-workspace">
+</aside><div class="ui-menu-backdrop" hidden></div><div class="ui-workspace">
 <header class="ui-header">
 <button type="button" class="ui-menu-toggle btn-ghost" aria-controls="ui-sidebar" aria-expanded="false"><?=ui_icon('menu')?> Menü</button>
 <a href="magaza.php" class="ui-header-link" aria-label="Mağaza bağlantısı"><?=ui_icon('store')?><span>Mağaza bağlantısı</span></a>
