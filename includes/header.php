@@ -11,6 +11,7 @@ $uiPage=basename((string)($_SERVER["SCRIPT_NAME"]??""));
 $uiNav=ui_navigation(!empty($u["is_admin"]));$uiSection=null;
 foreach($uiNav as $key=>$section)if(isset($section[2][$uiPage])){$uiSection=$key;break;}
 $uiShell=$u&&$uiSection!==null;
+$uiAuth=in_array($uiPage,['giris.php','kayit.php'],true);
 ?>
 <!DOCTYPE html>
 <html lang="tr">
@@ -24,9 +25,9 @@ $uiShell=$u&&$uiSection!==null;
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="assets/style.css?v=13">
-<?php if($uiShell):?><link rel="stylesheet" href="assets/admin-ui.css?v=2"><script defer src="assets/admin-ui.js?v=2"></script><?php endif;?>
+<?php if($uiShell||$uiAuth):?><link rel="stylesheet" href="assets/admin-ui.css?v=3"><script defer src="assets/admin-ui.js?v=2"></script><?php endif;?>
 </head>
-<body<?= $uiShell?' class="ui-shell"':'' ?>>
+<body<?= $uiShell?' class="ui-shell"':($uiAuth?' class="ui-auth"':'') ?>>
 <a href="#main-content" class="skip-link">Ana içeriğe geç</a>
 <?php if($uiShell):?>
 <aside class="ui-sidebar" id="ui-sidebar">

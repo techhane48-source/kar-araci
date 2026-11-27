@@ -210,37 +210,27 @@ $pageRows = array_slice($reportRows, ($page - 1) * $per, $per);
 $pageTitle = 'Raporlar — ' . APP_NAME;
 require __DIR__ . '/../includes/header.php';
 ?>
-<div class="page-head">
-  <h1>Raporlar</h1><?php if($rapor==='claims'&&$mp==='trendyol'): ?><p><a class="btn-ghost" href="iade-kontrol.php">İade depo kontrolü</a></p><?php endif; ?>
+<div class="wrap"><div class="page-head">
+  <h1>Finans ve Raporlar</h1><?php if($rapor==='claims'&&$mp==='trendyol'): ?><p><a class="btn-ghost" href="iade-kontrol.php">İade depo kontrolü</a></p><?php endif; ?>
   <p class="muted">Kârlılık analizleri · <a href="maliyet-senaryosu.php">Özel maliyet senaryosu</a> · <a href="raporlar.php?r=<?= h($rapor) ?>&mp=<?= urlencode($mp) ?>&days=<?= $days ?>&export=1">⬇ Raporu İndir (CSV)</a></p>
 </div>
 
-<div class="card">
-  <form method="get" style="display:flex;flex-wrap:wrap;gap:10px;align-items:end">
+<form method="get" class="ui-filterbar">
     <input type="hidden" name="mp" value="<?= h($mp) ?>">
     <label style="display:flex;flex-direction:column;gap:4px;font-size:13px">Rapor Seçin
-      <select name="r" onchange="this.form.submit()" style="padding:8px">
-        <?php foreach ($raporLabels as $k => $lbl): ?>
-          <option value="<?= $k ?>" <?= $rapor === $k ? 'selected' : '' ?>><?= h($lbl) ?></option>
-        <?php endforeach; ?>
-      </select>
+      <select name="r"><?php foreach(['Satış ve kâr'=>['order','product','category','product_cost_evidence'],'Finans hareketleri'=>['period_finance','order_finance','product_finance','ads','campaign'],'Kargo ve iadeler'=>['cargo_effective','claims','return'],'Fiyat rekabeti'=>['buybox']] as $group=>$keys):?><optgroup label="<?=h($group)?>"><?php foreach($keys as $k):?><option value="<?=h($k)?>" <?=$rapor===$k?'selected':''?>><?=h($raporLabels[$k])?></option><?php endforeach;?></optgroup><?php endforeach;?></select>
     </label>
     <label style="display:flex;flex-direction:column;gap:4px;font-size:13px">Tarih
-      <select name="days" onchange="this.form.submit()" style="padding:8px">
+      <select name="days">
         <?php foreach ([7 => 'Son 7 gün', 15 => 'Son 15 gün', 30 => 'Son 30 gün', 90 => 'Son 90 gün'] as $d => $lbl): ?>
           <option value="<?= $d ?>" <?= $days === $d ? 'selected' : '' ?>><?= $lbl ?></option>
         <?php endforeach; ?>
       </select>
     </label>
-  </form>
-</div>
-
-<div class="card table-card">
-  <p class="hint"><?= h($reportNote) ?></p>
+<button class="btn-primary">Raporu göster</button></form>
+<section class="card ui-report-summary"><h2><?=h($raporLabels[$rapor]??'Rapor')?></h2><details class="ui-disclosure"><summary>Bu rapor nasıl hesaplanıyor?</summary><div class="ui-detail-body"><p class="hint"><?=h($reportNote)?></p></div></details>
   <?php if(in_array($rapor,['order','product','category'],true)&&$excludedCurrency): ?><p class="hint"><?= $excludedCurrency ?> paket ülke/para birimi doğrulanmadığından kapsam dışı.</p><?php endif; ?>
-  <div style="display:flex;gap:24px;flex-wrap:wrap;margin-bottom:12px">
-  <?php foreach($summary as $label=>$value): ?><div><div class="muted"><?= h($label) ?></div><b><?= h((string)$value) ?></b></div><?php endforeach; ?>
-  </div>
+  <div class="ui-report-metrics"><?php foreach($summary as $label=>$value):?><div><span><?=h($label)?></span><strong><?=h((string)$value)?></strong></div><?php endforeach;?></div></section><div class="card table-card">
 
     <table>
       <tr><?php foreach ($reportCols as $c): ?><th><?= h($c) ?></th><?php endforeach; ?></tr>
@@ -268,5 +258,5 @@ require __DIR__ . '/../includes/header.php';
         <?php endfor; ?>
       </div>
     <?php endif; ?>
-</div>
+</div></div>
 <?php require __DIR__ . '/../includes/footer.php'; ?>

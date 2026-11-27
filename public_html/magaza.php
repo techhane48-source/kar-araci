@@ -164,26 +164,8 @@ if ($supported && $int) {
 }
 require __DIR__ . '/../includes/header.php';
 ?>
-<?php if($supported && $int): ?>
-<div class="wrap"><div class="card"><h2>Otomatik veri güncelleme</h2>
-<?php $day=date('Y-m-d');$activeTariffs=array_values(array_filter(cargo_tariffs(),static fn($t)=>$t['from']<=$day&&$t['through']>=$day));$primaryTariffs=array_filter($activeTariffs,static fn($t)=>($t['confidence']??'')!=='secondary_partial'); ?>
-<p class="hint">Kargo tarifesi: <?= $primaryTariffs?'Tarihli yönetici referansı mevcut; kapsamı kontrol edin.':($activeTariffs?'Sınırlı ikincil kaynak tahmini; resmî tarife doğrulanmadı.':'Geçerli tarife yok; yeni fiyatlar tahmin edilmez.') ?></p>
-<?php $heartbeat=(int)setting('auto_sync_heartbeat');$now=time();$active=$heartbeat>0&&$heartbeat<=$now&&$now-$heartbeat<=1800;
-$labels=['orders'=>'Siparişler','products'=>'Ürün / fiyat / stok','claims'=>'İadeler','settlements'=>'Cari ekstre','documents'=>'Finans / kargo belgeleri','payout_list'=>'Ödeme emirleri (güncel + geçmiş sayfa)','buybox'=>'Buybox (50 barkodluk dilim)','payout_detail'=>'Ödeme emri detay kontrolü'];
-$q=db()->prepare("SELECT job,state,last_success,last_attempt FROM sync_status WHERE user_id=? AND marketplace='trendyol'");$q->execute([$u['id']]);$status=[];foreach($q->fetchAll() as $row)$status[$row['job']]=$row; ?>
-<p><?= $active?'Sunucu çalıştırıcısı yakın zamanda sinyal verdi.':'Otomatik çalıştırıcının güncel sinyali yok; sunucu zamanlaması doğrulanmadı.' ?> <?= $heartbeat?date('d.m.Y H:i',$heartbeat):'' ?></p>
-<table><tr><th>Veri</th><th>Hedef kontrol aralığı</th><th>Son başarılı sorgu</th><th>Son durum</th></tr>
-<?php foreach(auto_sync_intervals() as $job=>$seconds):$st=$status[$job]??[]; ?><tr><td><?=h($labels[$job])?></td><td><?=$seconds/60?> dk</td><td><?=!empty($st['last_success'])?date('d.m.Y H:i',(int)$st['last_success']):'—'?></td><td><?=h(['success'=>'Başarılı','running'=>'Son deneme başladı','failed'=>'Başarısız'][$st['state']??'']??'Bekliyor')?></td></tr><?php endforeach;?></table>
-<p class="hint">Aralıklar hedef değerlerdir; API ve sunucu yoğunluğu nedeniyle gecikebilir. Otomasyon yalnızca veri okur; fiyat değiştirme veya iade onayı yapmaz. Buybox aralığı tüm kataloğun değil, en fazla 50 barkodluk bir dilimin aralığıdır. Eski veriler fiyat önerisi üretmez. Ödeme listesi güncel sayfayla birlikte bir geçmiş sayfayı tarar. Detay hataları ilgili ödeme emri için gecikmeli tekrar denenir; diğer emirler sırada ilerler. Bu tarama bankaya yatan tutarı bağımsız doğrulamaz.</p></div></div>
-<div class="wrap"><div class="card"><h2>İade talepleri (salt okunur)</h2>
-<form method="post"><input type="hidden" name="csrf" value="<?= h(csrf_token()) ?>"><input type="hidden" name="action" value="claims">
-<select name="claim_days"><option value="7">7 gün</option><option value="30" selected>30 gün</option><option value="89">89 gün</option></select>
-<button type="submit">İade taleplerini sorgula</button> <a href="raporlar.php?r=claims&amp;mp=trendyol">İade kayıtları</a></form>
-<p class="hint">Sadece veri okur; iade kabul, ret veya ücret iadesi yapmaz.</p></div></div>
-<?php endif; ?>
-
 <div class="wrap">
-  <h1>Mağaza Bağlama</h1>
+  <h1>Mağaza bağlantısı</h1>
   <p class="hint">Pazar yerinizi bağlayın; ürünleriniz, siparişleriniz ve kârlılığınız otomatik işlensin. API bilgileriniz yalnızca size aittir ve şifreli saklanır.</p>
 
   <?php if ($error): ?><div class="alert alert-error"><?= h($error) ?></div><?php endif; ?>
@@ -202,21 +184,21 @@ $q=db()->prepare("SELECT job,state,last_success,last_attempt FROM sync_status WH
     </div>
   <?php elseif ($hasConnection): ?>
     <div class="card">
-      <h2>Bağlı Mağaza</h2>
+      <div class="ui-connected"><h2>Trendyol mağazanız</h2><span class="ui-status success">Bağlantı kayıtlı</span></div>
       <div class="detail-row"><span>Satıcı ID</span><strong><?= h($int['seller_id']) ?></strong></div>
       <div class="detail-row"><span>Ortam</span><strong><?= $int['stage'] ? 'Test (stage)' : 'Üretim' ?></strong></div>
-      <div class="detail-row"><span>Son senkron</span><strong><?= $int['last_sync'] ? h($int['last_sync']) : 'Henüz yok' ?></strong></div>
+      <div class="detail-row"><span>Son ürün güncellemesi</span><strong><?= $int['last_sync'] ? h($int['last_sync']) : 'Henüz yok' ?></strong></div>
       <div class="actions" style="margin-top:14px; display:flex; gap:10px; flex-wrap:wrap">
         <form method="post" style="display:inline">
           <input type="hidden" name="csrf" value="<?= csrf_token() ?>">
           <input type="hidden" name="action" value="sync">
-          <button type="submit" class="btn-primary">Ürünleri Çek / Senkronize Et</button>
+          <button type="submit" class="btn-primary">Ürünleri güncelle</button>
         </form>
         <form method="post" style="display:inline">
           <input type="hidden" name="csrf" value="<?= csrf_token() ?>">
           <input type="hidden" name="action" value="settlements">
               <select name="finance_days" aria-label="Finans geçmişi"><option value="7">7 gün</option><option value="30" selected>30 gün</option><option value="90">90 gün</option></select>
-          <button type="submit" class="btn-ghost">Komisyonları Çek (Cari Hesap Ekstresi)</button>
+          <button type="submit" class="btn-ghost">Finans kayıtlarını güncelle</button>
         </form>
         <form method="post" style="display:inline" onsubmit="return confirm('Bağlantıyı kaldırmak istediğinize emin misiniz?');">
           <input type="hidden" name="csrf" value="<?= csrf_token() ?>">
@@ -224,7 +206,7 @@ $q=db()->prepare("SELECT job,state,last_success,last_attempt FROM sync_status WH
           <button type="submit" class="btn-danger">Bağlantıyı Kaldır</button>
         </form>
       </div>
-      <p class="hint" style="margin-top:14px">Ürünler çekildikten sonra <a href="urunler.php">Ürünlerim</a> sayfasında görünür. Maliyet alanını her ürün için siz girersiniz (API'den maliyet gelmez). <strong>"Komisyonları Çek"</strong> ile Trendyol'un resmi cari hesap ekstresinden gerçek komisyon oranı + kargo + hakediş çekilir ve ürünlerinize işlenir (tahmin yerine resmi değer).</p>
+      <p class="hint" style="margin-top:14px">Ürünler çekildikten sonra <a href="urunler.php">Ürünlerim</a> sayfasında görünür. Maliyet alanını her ürün için siz girersiniz (API'den maliyet gelmez). <strong>Finans kayıtlarını güncelle</strong> ile mevcut ekstre kayıtları okunur. Fatura kapsamı doğrulanmış giderler tahminlerin yerine kullanılabilir.</p>
     </div>
 
     <div class="card" style="margin-top:16px">
@@ -233,8 +215,8 @@ $q=db()->prepare("SELECT job,state,last_success,last_attempt FROM sync_status WH
         <input type="hidden" name="csrf" value="<?= csrf_token() ?>">
         <input type="hidden" name="action" value="connect">
         <div class="field"><label>Satıcı ID</label><input type="text" name="seller_id" value="<?= h($int['seller_id']) ?>" required></div>
-        <div class="field"><label>API Key</label><input type="password" name="api_key" value="<?= h($int['api_key']) ?>" required autocomplete="off"></div>
-        <div class="field"><label>API Secret</label><input type="password" name="api_secret" value="<?= h($int['api_secret']) ?>" required autocomplete="off"></div>
+        <div class="field"><label>API Key</label><input type="password" name="api_key" placeholder="Yeni API anahtarı" required autocomplete="off"></div>
+        <div class="field"><label>API Secret</label><input type="password" name="api_secret" placeholder="Yeni API gizli anahtarı" required autocomplete="off"></div>
         <label class="check"><input type="checkbox" name="stage" value="1" <?= $int['stage'] ? 'checked' : '' ?>> Test ortamı (stage) kullan</label>
         <button type="submit" class="btn-primary" style="margin-top:12px">Bağlantıyı Test Et ve Güncelle</button>
       </form>
@@ -243,7 +225,7 @@ $q=db()->prepare("SELECT job,state,last_success,last_attempt FROM sync_status WH
     <div class="card" style="margin-top:16px">
       <h2>Fiyat Yönetimi (Trendyol)</h2>
       <?php if (!$priceRows): ?>
-        <p class="hint">Henüz senkronize edilmiş ürün yok. Önce yukarıdaki "Ürünleri Çek / Senkronize Et" ile ürünlerinizi aktarın.</p>
+        <p class="hint">Henüz senkronize edilmiş ürün yok. Önce yukarıdaki "Ürünleri güncelle" ile ürünlerinizi aktarın.</p>
       <?php else: ?>
         <?php if ($priceLiveError): ?><div class="alert alert-error"><?= h($priceLiveError) ?></div><?php endif; ?>
         <p class="hint">Her ürünün yanına yeni satış fiyatını girin ve "Gönder"e basın. Fiyat, Trendyol'da ürünün barkodu üzerinden güncellenir. Fiyat/stok son senkronizasyondan gelir — güncel için "Ürünleri Çek"e basın.</p>
@@ -258,7 +240,7 @@ $q=db()->prepare("SELECT job,state,last_success,last_attempt FROM sync_status WH
               <td><?= $r['livePrice'] > 0 ? tl($r['livePrice']) : '—' ?></td>
               <td><?= tl($r['cost']) ?></td>
               <td>
-                <form method="post" style="display:flex;gap:8px;align-items:center">
+                <form method="post" style="display:flex;gap:8px;align-items:center" onsubmit="return confirm('Bu barkodun gerçek Trendyol satış fiyatını değiştirmek istediğinize emin misiniz?');">
                   <input type="hidden" name="csrf" value="<?= csrf_token() ?>">
                   <input type="hidden" name="action" value="update_price">
                   <input type="hidden" name="barcode" value="<?= h($r['barcode']) ?>">
@@ -267,7 +249,7 @@ $q=db()->prepare("SELECT job,state,last_success,last_attempt FROM sync_status WH
                   <input type="number" step="0.01" min="0" name="new_price" placeholder="<?= $r['price'] ?>"
                          value="<?= $r['livePrice'] > 0 ? $r['livePrice'] : '' ?>"
                          required <?= $r['barcode'] === '' ? 'disabled' : '' ?>>
-                  <button type="submit" class="btn-primary" <?= $r['barcode'] === '' ? 'disabled' : '' ?>>Gönder</button>
+                  <button type="submit" class="btn-primary" <?= $r['barcode'] === '' ? 'disabled' : '' ?>>Trendyol'a gönder</button>
                 </form>
               </td>
             </tr>
@@ -300,6 +282,24 @@ $q=db()->prepare("SELECT job,state,last_success,last_attempt FROM sync_status WH
     </div>
   <?php endif; ?>
 </div>
+<?php if($supported && $int): ?>
+<div class="wrap"><details class="ui-disclosure"><summary>Otomatik veri güncelleme ayrıntıları</summary><div class="ui-detail-body table-card">
+<?php $day=date('Y-m-d');$activeTariffs=array_values(array_filter(cargo_tariffs(),static fn($t)=>$t['from']<=$day&&$t['through']>=$day));$primaryTariffs=array_filter($activeTariffs,static fn($t)=>($t['confidence']??'')!=='secondary_partial'); ?>
+<p class="hint">Kargo tarifesi: <?= $primaryTariffs?'Tarihli yönetici referansı mevcut; kapsamı kontrol edin.':($activeTariffs?'Sınırlı ikincil kaynak tahmini; resmî tarife doğrulanmadı.':'Geçerli tarife yok; yeni fiyatlar tahmin edilmez.') ?></p>
+<?php $heartbeat=(int)setting('auto_sync_heartbeat');$now=time();$active=$heartbeat>0&&$heartbeat<=$now&&$now-$heartbeat<=1800;
+$labels=['orders'=>'Siparişler','products'=>'Ürün / fiyat / stok','claims'=>'İadeler','settlements'=>'Cari ekstre','documents'=>'Finans / kargo belgeleri','payout_list'=>'Ödeme emirleri (güncel + geçmiş sayfa)','buybox'=>'Buybox (50 barkodluk dilim)','payout_detail'=>'Ödeme emri detay kontrolü'];
+$q=db()->prepare("SELECT job,state,last_success,last_attempt FROM sync_status WHERE user_id=? AND marketplace='trendyol'");$q->execute([$u['id']]);$status=[];foreach($q->fetchAll() as $row)$status[$row['job']]=$row; ?>
+<p><?= $active?'Sunucu çalıştırıcısı yakın zamanda sinyal verdi.':'Otomatik çalıştırıcının güncel sinyali yok; sunucu zamanlaması doğrulanmadı.' ?> <?= $heartbeat?date('d.m.Y H:i',$heartbeat):'' ?></p>
+<table><tr><th>Veri</th><th>Hedef kontrol aralığı</th><th>Son başarılı sorgu</th><th>Son durum</th></tr>
+<?php foreach(auto_sync_intervals() as $job=>$seconds):$st=$status[$job]??[]; ?><tr><td><?=h($labels[$job])?></td><td><?=$seconds/60?> dk</td><td><?=!empty($st['last_success'])?date('d.m.Y H:i',(int)$st['last_success']):'—'?></td><td><?=h(['success'=>'Başarılı','running'=>'Son deneme başladı','failed'=>'Başarısız'][$st['state']??'']??'Bekliyor')?></td></tr><?php endforeach;?></table>
+<p class="hint">Aralıklar hedef değerlerdir; API ve sunucu yoğunluğu nedeniyle gecikebilir. Otomasyon yalnızca veri okur; fiyat değiştirme veya iade onayı yapmaz. Buybox aralığı tüm kataloğun değil, en fazla 50 barkodluk bir dilimin aralığıdır. Eski veriler fiyat önerisi üretmez. Ödeme listesi güncel sayfayla birlikte bir geçmiş sayfayı tarar. Detay hataları ilgili ödeme emri için gecikmeli tekrar denenir; diğer emirler sırada ilerler. Bu tarama bankaya yatan tutarı bağımsız doğrulamaz.</p></div></details></div>
+<div class="wrap"><div class="card"><h2>İade kayıtlarını güncelle</h2>
+<form method="post"><input type="hidden" name="csrf" value="<?= h(csrf_token()) ?>"><input type="hidden" name="action" value="claims">
+<select name="claim_days"><option value="7">7 gün</option><option value="30" selected>30 gün</option><option value="89">89 gün</option></select>
+<button type="submit">İade taleplerini sorgula</button> <a href="raporlar.php?r=claims&amp;mp=trendyol">İade kayıtları</a></form>
+<p class="hint">Sadece veri okur; iade kabul, ret veya ücret iadesi yapmaz.</p></div></div>
+<?php endif; ?>
+
 <?php if ($priceJobs): ?>
 <div class="wrap"><div class="card table-card"><h2>Fiyat güncelleme talepleri</h2>
 <table><tr><th>Barkod</th><th>Fiyat</th><th>Durum</th><th>Kontrol</th></tr>

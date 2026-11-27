@@ -80,8 +80,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') !== '2fa')
 $pageTitle = 'Giriş — ' . APP_NAME;
 require __DIR__ . '/../includes/header.php';
 ?>
-<div class="wrap">
-  <div class="card auth-card">
+<div class="wrap ui-auth-wrap"><div class="ui-auth-intro"><span class="ui-auth-mark"><?=ui_icon('finance')?></span><h1>Covisca</h1><p>Mağazanızı, satışlarınızı ve kârınızı tek yerden yönetin.</p><p class="ui-muted">Trendyol bağlantınızı hesabınızı oluşturduktan sonra yapabilirsiniz.</p></div><div class="card auth-card">
     <?php if ($pending): ?>
       <h2>İki faktörlü doğrulama</h2>
       <div class="sub" style="margin:6px 0 16px">Kimlik doğrulayıcı uygulamanızdaki (Google Authenticator vb.) 6 haneli kodu girin.</div>
@@ -103,12 +102,12 @@ require __DIR__ . '/../includes/header.php';
         <input type="hidden" name="csrf" value="<?= h(csrf_token()) ?>">
         <input type="hidden" name="next" value="<?= h($_GET['next'] ?? '') ?>">
         <div class="row">
-          <label>E-posta</label>
-          <input type="email" name="email" value="<?= h($_POST['email'] ?? '') ?>" required>
+          <label for="auth-email">E-posta</label>
+          <input type="email" id="auth-email" autocomplete="email" name="email" value="<?= h($_POST['email'] ?? '') ?>" required>
         </div>
         <div class="row">
-          <label>Şifre</label>
-          <input type="password" name="password" required>
+          <label for="auth-password">Şifre</label>
+          <input type="password" id="auth-password" autocomplete="current-password" name="password" required>
         </div>
         <button type="submit" class="btn-primary" style="width:100%">Giriş Yap</button>
       </form>

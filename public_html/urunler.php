@@ -214,15 +214,15 @@ require __DIR__ . '/../includes/header.php';
 ?>
 <div class="wrap">
   <div class="toolbar">
-    <h1>Ürünlerim</h1><div class="actions"><a class="btn-primary" href="maliyet-senaryosu.php">Toplu maliyet gir</a><a class="btn-ghost" href="maliyet-gecmisi.php">Maliyet geçmişi</a></div>
+    <div><h1>Ürünlerim</h1><p class="ui-muted">Model ve varyantları inceleyin, alış maliyetlerini tamamlayın.</p></div><div class="actions"><a class="btn-primary" href="maliyet-senaryosu.php">Toplu maliyet gir</a><a class="btn-ghost" href="maliyet-gecmisi.php">Maliyet geçmişi</a></div>
     <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
       <form method="get" style="display:flex;gap:8px;align-items:center">
-        <input type="text" name="q" value="<?= h($q) ?>" placeholder="Ürün, model, ebat veya barkod ara..." style="width:240px">
+        <input type="text" name="q" value="<?= h($q) ?>" aria-label="Ürün veya barkod ara" placeholder="Ürün, model, ebat veya barkod ara..." style="width:240px">
         <button type="submit" class="btn-ghost">Ara</button>
         <?php if ($q !== ''): ?><a href="urunler.php" class="btn-ghost" style="text-decoration:none">Temizle</a><?php endif; ?>
       </form>
       <?php if ($pro): ?>
-      <details><summary>Excel / CSV (isteğe bağlı)</summary>
+      <details class="ui-file-tools"><summary>Excel ile işlem yap</summary>
         <a href="urunler.php?export=maliyet" class="btn-ghost" style="text-decoration:none" title="Melontik formatında Excel indir">⬇ Maliyet Şablonu İndir (Excel)</a>
         <a href="urunler.php?export=maliyet&bos=1" class="btn-ghost" style="text-decoration:none" title="Sadece maliyeti henüz girilmemiş ürünleri indir">Sadece maliyeti boş</a>
         <a href="urunler.php?export=maliyet&format=csv" class="btn-ghost" style="text-decoration:none;font-size:12px" title="CSV olarak indir">CSV</a>
@@ -246,48 +246,44 @@ require __DIR__ . '/../includes/header.php';
   </div>
 
   <?php if ($totalCount > 0 && $maliyetsiz > 0): ?>
-  <div class="alert alert-error" style="margin-bottom:14px">
+  <div class="ui-callout" style="margin-bottom:14px">
     <b><?= $maliyetsiz ?></b> ürüne henüz maliyet girilmedi — kâr hesaplanamaz.
     <a href="maliyet-senaryosu.php" style="margin-left:auto">Panelden toplu maliyet gir</a>
   </div>
   <?php endif; ?>
 
-  <div class="kpi-row" style="grid-template-columns:repeat(3,1fr);margin-bottom:20px">
-    <div class="kpi"><div class="k-label">Toplam Net Kâr</div><div class="k-value <?= $totals['profit'] < 0 ? 'neg' : 'pos' ?>"><?= tl($totals['profit']) ?></div></div>
-    <div class="kpi"><div class="k-label">Ana ürün / model</div><div class="k-value"><?=$modelCount?></div><div class="hint"><?=$totalCount?> barkod / ürün kaydı</div></div>
-    <div class="kpi"><div class="k-label">Toplam Komisyon</div><div class="k-value"><?= tl($totals['commission']) ?></div></div>
-  </div>
-
+  <section class="ui-kpi-grid ui-three" aria-label="Ürün özeti">
+<?php ui_kpi('products','Ana ürün / model',(string)$modelCount,$totalCount.' barkod kaydı');?>
+<?php ui_kpi('check','Maliyeti kayıtlı',(string)($totalCount-$maliyetsiz),'Barkod bazında');?>
+<?php ui_kpi('wallet','Maliyeti eksik',(string)$maliyetsiz,'Kâr hesabı için gerekli');?>
+</section><details class="ui-disclosure"><summary>Ürün fiyat senaryosu toplamları</summary><div class="ui-detail-body"><p class="hint">Her ürün için bir adet satış varsayımıdır; gerçekleşen mağaza kârı değildir.</p><div class="detail-row"><span>Tahmini ürün kârı toplamı</span><strong><?=tl($totals['profit'])?></strong></div><div class="detail-row"><span>Komisyon senaryosu toplamı</span><strong><?=tl($totals['commission'])?></strong></div></div></details>
   <?php if (!$products): ?>
     <div class="card empty"><?= $q !== '' ? 'Aramanızla eşleşen ürün yok.' : 'Henüz ürün yok. <a href="index.php">Hesap makinesinden</a> ürünlerini kaydetmeye başla.' ?></div>
   <?php else: ?>
-  <div class="card table-card">
+  <div class="card table-card ui-catalog-table">
     <table>
-      <tr><th>Ürün</th><th>Barkod</th><th>Pazaryeri</th><th>Kategori</th><th>Satış</th><th>Alış maliyeti / KDV</th><th>Net Kâr</th><th>Kâr Oranı</th><th>Kâr Marjı</th><th></th></tr>
+      <tr><th>Ürün</th><th>Satış fiyatı</th><th>Alış maliyeti / KDV</th><th>Tahmini kâr</th><th>Kâr marjı</th><th>İşlem</th></tr>
       <?php foreach ($products as $parent): $grouped=(int)$parent['variants']>1;$gid=(int)$parent['group_id']; ?>
       <?php if($grouped):?>
       <tr id="model-<?=$gid?>" data-model-group="<?=$gid?>">
-        <td><a class="btn-ghost" href="<?=h($url($page,$open===$gid?0:$gid))?>" aria-expanded="<?=$open===$gid?'true':'false'?>"><?=$open===$gid?'▾':'▸'?> <?=h($parent['name'])?></a><div class="hint"><?=h((string)$parent['variant_model_code'])?> · <?=(int)$parent['variants']?> varyant</div></td>
-        <td>—</td><td><?=h(marketplace_label($parent['marketplace']))?></td><td><?=h($parent['category'])?></td>
+        <td><a class="btn-ghost" href="<?=h($url($page,$open===$gid?0:$gid))?>" aria-expanded="<?=$open===$gid?'true':'false'?>"><?=$open===$gid?'▾':'▸'?> <?=h($parent['name'])?></a><div class="hint"><?=h((string)$parent['variant_model_code'])?> · <?=(int)$parent['variants']?> varyant</div><div class="hint"><?=h(marketplace_label($parent['marketplace']))?> · <?=h($parent['category'])?></div></td>
+        
         <td><?=tl((float)$parent['min_price'])?><?php if((float)$parent['min_price']!==(float)$parent['max_price']):?> – <?=tl((float)$parent['max_price'])?><?php endif;?></td>
         <td><div class="hint"><?=(int)$parent['cost_known']?> / <?=(int)$parent['variants']?> maliyet girildi</div><a class="btn-ghost" href="perde-maliyeti.php?pid=<?=$gid?>">Perde maliyeti gir</a></td>
-        <td colspan="4"><a class="btn-ghost" href="<?=h($url($page,$open===$gid?0:$gid))?>"><?=$open===$gid?'Varyantları gizle':'Varyantları göster'?></a></td>
+        <td colspan="3"><a class="btn-ghost" href="<?=h($url($page,$open===$gid?0:$gid))?>"><?=$open===$gid?'Varyantları gizle':'Varyantları göster'?></a></td>
       </tr>
       <?php endif;?>
       <?php foreach($grouped?($open===$gid?$expanded:[]):[$parent] as $p):?>
       <tr <?=$grouped?'data-variant-row="'.$gid.'"':''?>>
-        <td><?php if($grouped):?><span class="hint">↳</span> <b><?=h((string)($p['variant_size']??'Ebat belirsiz'))?></b><div class="hint"><?=h($p['name'])?></div><?php else:?><?=h($p['name'])?><?php endif;?><?= !$p['_has_cost'] ? ' <span class="hint" style="font-size:11px;color:var(--muted)">(maliyet girilmedi)</span>' : '' ?></td>
-        <td style="font-size:11px;color:var(--muted)"><?= $p['barcode'] !== '' ? h($p['barcode']) : '—' ?></td>
-        <td><?= h(marketplace_label($p['marketplace'])) ?></td>
-        <td style="font-size:12px"><?= h($p['category']) ?></td>
+        <td><?php if($grouped):?><span class="hint">↳</span> <b><?=h((string)($p['variant_size']??'Ebat belirsiz'))?></b><div class="hint"><?=h($p['name'])?></div><?php else:?><?=h($p['name'])?><?php endif;?><?= !$p['_has_cost'] ? ' <span class="hint" style="font-size:11px;color:var(--muted)">(maliyet girilmedi)</span>' : '' ?><div class="hint"><?= $p['barcode'] !== '' ? h($p['barcode']) : '—' ?> · <?=h(marketplace_label($p['marketplace']))?> · <?=h($p['category'])?></div></td>
         <td><?= tl((float)$p['price']) ?></td>
         <td><?php if($p['marketplace']==='trendyol'&&$p['barcode']!==''): ?><details><summary><?= $p['_has_cost']?tl((float)$p['cost']).' / %'.h((string)$p['cost_vat']):'Maliyet gir' ?></summary><form method="post" style="min-width:180px">
           <input type="hidden" name="csrf" value="<?=h(csrf_token())?>"><input type="hidden" name="action" value="direct_cost"><input type="hidden" name="pid" value="<?=(int)$p['id']?>"><input type="hidden" name="q" value="<?=h($q)?>"><input type="hidden" name="page" value="<?=$page?>"><input type="hidden" name="open" value="<?=$open?>"><input type="hidden" name="vp" value="<?=$vp?>">
           <label>Ürün alış fiyatı (KDV dahil TL) <input name="cost" required inputmode="decimal" value="<?= $p['_has_cost']?h((string)$p['cost']):'' ?>"></label><label>Alış faturası KDV oranı <select name="vat" required><option value="">Seçin</option><?php foreach([1,10,20] as $v):?><option value="<?=$v?>" <?= $p['_has_cost']&&(float)$p['cost_vat']===(float)$v?'selected':'' ?>>%<?=$v?></option><?php endforeach;?></select></label>
           <label>Geçerlilik <select name="scope" required><option value="">Seçin</option><option value="today">Bugünden itibaren</option><option value="first_sale">İlk satıştan itibaren</option></select></label><button class="btn-primary">Maliyeti kaydet</button></form><p><a class="btn-ghost" href="perde-maliyeti.php?pid=<?=(int)$p['id']?>">Perde maliyeti gir</a></p></details><?php else: ?><?= $p['_has_cost']?tl((float)$p['cost']):'—' ?><?php endif; ?></td>
         <td class="<?= $p['_profit'] < 0 ? 'neg' : 'pos' ?>"><?= $p['_has_cost'] ? tl($p['_profit']) : '—' ?></td>
-        <td class="<?= $p['_ratio'] < 0 ? 'neg' : 'pos' ?>"><?= $p['_has_cost'] ? '%' . number_format($p['_ratio'], 1, ',', '.') : '—' ?></td>
-        <td class="<?= $p['_margin'] < 0 ? 'neg' : 'pos' ?>"><?= $p['_has_cost'] ? '%' . number_format($p['_margin'], 1, ',', '.') : '—' ?></td>
+        
+        <td class="<?= $p['_margin'] < 0 ? 'neg' : 'pos' ?>"><?= $p['_has_cost'] ? '%' . number_format($p['_margin'], 1, ',', '.') : '—' ?><?php if($p['_has_cost']):?><div class="hint">Maliyete oranı: %<?=number_format($p['_ratio'],1,',','.')?></div><?php endif;?></td>
         <td>
           <form method="post" style="display:inline" onsubmit="return confirm('Bu ürünü sil?')">
             <input type="hidden" name="csrf" value="<?= h(csrf_token()) ?>">
@@ -298,7 +294,7 @@ require __DIR__ . '/../includes/header.php';
         </td>
       </tr>
       <?php endforeach; ?>
-      <?php if($grouped&&$open===$gid&&$variantPages>1):?><tr><td colspan="10"><nav aria-label="Varyant sayfaları" style="display:flex;gap:12px;align-items:center"><?php if($vp>1):?><a class="btn-ghost" href="<?=h($url($page,$gid,$vp-1))?>">Önceki varyantlar</a><?php endif;?><span>Varyant sayfası <?=$vp?> / <?=$variantPages?></span><?php if($vp<$variantPages):?><a class="btn-ghost" href="<?=h($url($page,$gid,$vp+1))?>">Sonraki varyantlar</a><?php endif;?></nav></td></tr><?php endif;?>
+      <?php if($grouped&&$open===$gid&&$variantPages>1):?><tr><td colspan="6"><nav aria-label="Varyant sayfaları" style="display:flex;gap:12px;align-items:center"><?php if($vp>1):?><a class="btn-ghost" href="<?=h($url($page,$gid,$vp-1))?>">Önceki varyantlar</a><?php endif;?><span>Varyant sayfası <?=$vp?> / <?=$variantPages?></span><?php if($vp<$variantPages):?><a class="btn-ghost" href="<?=h($url($page,$gid,$vp+1))?>">Sonraki varyantlar</a><?php endif;?></nav></td></tr><?php endif;?>
       <?php endforeach; ?>
     </table>
   </div>

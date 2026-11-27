@@ -163,6 +163,7 @@ with tempfile.TemporaryDirectory(prefix="karfiyat-http-") as tmp:
             assert status==200 and page.count('data-variant-row=')==100 and 'Sonraki varyantlar' in page
             status, page=request(f"urunler.php?q=CI-G-149&open={gid}&vp=2")
             assert status==200 and page.count('data-variant-row=')==50 and 'CI-G-149' in page
+            assert 'ui-catalog-table' in page and "Tahmini kâr" in page
             print("PASS model grouping, exact barcode search and variant pagination")
             # The same priced package must contribute to the daily and period profit.
             status, page=request("canli-performans.php?days=7")
@@ -225,6 +226,12 @@ with tempfile.TemporaryDirectory(prefix="karfiyat-http-") as tmp:
                         view.locator('input[name="q"]').fill("NO-SUCH-ORDER")
                         view.get_by_role("button",name="Filtrele").click()
                         assert view.get_by_text("Bu filtreye uygun sipariş yok.",exact=False).is_visible()
+                    for width in (390,1440):
+                        view.set_viewport_size({"width":width,"height":900})
+                        for route,selector in (("urunler.php",".ui-catalog-table"),("promosyon-analiz.php",".ui-upload"),("raporlar.php",".ui-report-summary"),("magaza.php",".ui-context")):
+                            view.goto(base+route,wait_until="domcontentloaded")
+                            assert view.locator(selector).is_visible(), route
+                            assert view.evaluate("document.documentElement.scrollWidth <= innerWidth + 2"), (route,width)
                     view.set_viewport_size({"width":390,"height":844})
                     view.goto(base+"iade-kontrol.php",wait_until="domcontentloaded")
                     view.get_by_role("button",name="Satılamaz olarak işaretle").click()
