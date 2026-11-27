@@ -79,6 +79,20 @@ $star=analysis_schema(['Ürün İsmi','Barkod','1 YILDIZ ÜST FİYAT','1 YILDIZ 
 $sr=analysis_row($star,['Synthetic','001','180','160.01','160','140.01','140','200','200','','','5','Var','SYN-ID'],$products,'etiket');
 $tests['star bounds and unknown commission']=$sr['tiers']['star1']['price']===180.0&&$sr['tiers']['star2']['min_price']===140.01&&$sr['tiers']['star3']['profit']===null;
 db()->exec("DELETE FROM analysis_rows WHERE module='flash'");
+$at=strtotime('2026-11-27 12:00:00+03:00');
+$tests['period year anchored to upload']=campaign_period_window('30 Aralık 08.00-2 Ocak 07.59',strtotime('2026-12-29 12:00:00+03:00'))===[strtotime('2026-12-30 08:00:00+03:00'),strtotime('2027-01-02 07:59:59+03:00')];
+$normal=analysis_row($dual,['Synthetic','001','500.01','500','400.01','400','300.01','300','26 Kasım 08.00-29 Kasım 07.59','21','13.1','8.4','6.1','29 Kasım 08.00-3 Aralık 07.59','21','17.6','15.8','13.6'],$products,'komisyon');
+$normal['campaign_meta']=['tsf'=>'200','basis'=>'200','customer'=>'200','plus_customer'=>'','promo'=>'','current_rate'=>'20','choice'=>'3 Günlük Fiyat'];
+$ctx=['komisyon'=>['row'=>$normal,'at'=>$at]];
+$quotes=campaign_link_quotes($pr,'plus',$ctx,$products['001'],$at,$at);
+$tests['same barcode and period separate normal Plus profit']=isset($quotes['period3_plus'],$quotes['period4_plus'])&&$quotes['period3_plus']['normal_rate']===6.1&&$quotes['period3_plus']['plus_rate']===9.0&&$quotes['period4_plus']['plus_rate']===15.0;
+$modified=$pr;$modified['campaign_meta']['promo']='Unknown campaign';
+$tests['unknown promotion blocks linked quote']=campaign_link_quotes($modified,'plus',$ctx,$products['001'],$at,$at)===[];
+$tests['stale uploaded record blocks quote']=campaign_link_quotes($pr,'plus',$ctx,$products['001'],$at-86400,$at)===[];
+$fr1=analysis_row($fr,$frow,$products,'flash');$fr2=analysis_row($fr,$frow2,$products,'flash');
+$tests['flash slot must fit one full period']=isset(campaign_link_quotes($fr1,'flash',$ctx,$products['001'],$at,$at)['flash24'])&&campaign_link_quotes($fr2,'flash',$ctx,$products['001'],$at,$at)===[];
+$normal['tiers']['period3_tier3']['min_price']=299.0;
+$tests['overlapping tariff rejected']=campaign_normal_tiers($normal,3)===null;
 // A synthetic workbook with original sheet metadata, style IDs and two rows.
 $headers=['ÜRÜN İSMİ','BARKOD','1.Fiyat Alt Limit','2.Fiyat Üst Limiti','2.Fiyat Alt Limit','3.Fiyat Üst Limiti','3.Fiyat Alt Limit','4.Fiyat Üst Limiti','Tarih aralığı (3 Gün)','1.KOMİSYON','2.KOMİSYON','3.KOMİSYON','4.KOMİSYON','Tarih aralığı (4 Gün)','1.KOMİSYON','2.KOMİSYON','3.KOMİSYON','4.KOMİSYON','KOMİSYONA ESAS FİYAT','GÜNCEL TSF','Güncel Uygulanan Promosyonlar','YENİ TSF (FİYAT GÜNCELLE)','Tarife Seçimi','FULL EXTERNAL ID'];
 $vals=['Synthetic','001','500.01','500','400.01','400','300.01','300','26 Kasım 08.00-29 Kasım 07.59','21','13.1','8.4','6.1','29 Kasım 08.00-3 Aralık 07.59','21','17.6','15.8','13.6','500','500','','','7 Günlük Fiyat','SYNTHETIC-EXTERNAL-ID'];

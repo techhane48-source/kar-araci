@@ -5,6 +5,7 @@ require_once __DIR__.'/profit_targets.php';
 require_once __DIR__.'/xlsx.php';
 require_once __DIR__.'/tariff_apply.php';
 require_once __DIR__.'/campaign_rules.php';
+require_once __DIR__.'/campaign_link.php';
 
 const ANALYSIS_MAX_ROWS=20000;
 const ANALYSIS_MAX_COLS=128;
@@ -61,7 +62,7 @@ function analysis_period_tariff_schema(array $headers): ?array
         $key='period'.$days.'_tier'.$i;$rates[$key]=$indices[$days===3?0:1];
         $prices[$key]=['index'=>$upper[$i]??$lower[$i],'lower_index'=>$lower[$i]??null,'upper_index'=>$upper[$i]??null,'period_index'=>$dateIndex,'label'=>$days.' Gün / '.$i.'. Kademe'];
     }
-    return ['barcode'=>$barcode,'name'=>$name===false?null:$name,'prices'=>$prices,'rates'=>$rates,'period_tariff'=>true,'apply_columns'=>tariff_apply_columns($headers)];
+    return ['barcode'=>$barcode,'name'=>$name===false?null:$name,'prices'=>$prices,'rates'=>$rates,'period_tariff'=>true,'apply_columns'=>tariff_apply_columns($headers),'campaign_meta'=>campaign_normal_meta($headers)];
 }
 function analysis_period_price(array $def,array $row): ?array
 {
