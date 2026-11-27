@@ -133,3 +133,23 @@ function campaign_rank_normal(array $r,int $now):array{
     }
     $out=[];foreach($groups as $values){if(count($values)<2)continue;$max=max($values);foreach($values as $key=>$v)if(abs($v-$max)<0.000001)$out[$key]=true;}return $out;
 }
+
+/** Current XLSX snapshot, not a future offer or realized order profit. */
+function campaign_snapshot(array $meta,?array $product):?array{
+    $tsf=campaign_cents($meta['tsf']??null);$basis=campaign_cents($meta['basis']??null);$customer=campaign_cents($meta['customer']??null);
+    $rate=analysis_rate((string)($meta['current_rate']??''));
+    if($tsf===null||$basis===null||$customer===null||$customer>$basis||$basis>$tsf||$rate===null)return null;
+    $out=['tsf'=>$tsf/100,'basis'=>$basis/100,'customer'=>$customer/100,'rate'=>$rate,
+        'commission'=>round($basis*$rate/100,0,PHP_ROUND_HALF_UP)/100,'profit'=>null,'margin'=>null,'reason'=>'Maliyet veya kargo bilgisi eksik.'];
+    if($product!==null&&is_numeric($product['cost']??null)&&$product['cost']>0&&is_numeric($product['cargo']??null)&&$product['cargo']>0){
+        try{$calc=product_profit($product,$basis/100,$rate);$out['profit']=$calc['profit'];$out['margin']=$calc['margin'];
+            $out['reason']='Dosyadaki mevcut matrah ve oran; kayıtlı maliyet ve kargo üzerinden tahmini birim kâr. Yeni fiyat önerisi veya gerçekleşen sipariş değildir.';
+        }catch(InvalidArgumentException $e){$out['reason']='Ürün hesap ayarları geçersiz.';}
+    }
+    return $out;
+}
+function campaign_normal_draft_current(array $row,array $product,int $uploaded,int $now):bool{
+    if($uploaded>$now||campaign_day($uploaded)!==campaign_day($now))return false;
+    $price=campaign_clean_snapshot($row['campaign_meta']??[]);
+    return $price!==null&&campaign_cents($product['price']??null)===$price&&is_numeric($product['cargo']??null)&&$product['cargo']>0;
+}

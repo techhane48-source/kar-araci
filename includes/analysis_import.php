@@ -196,15 +196,15 @@ function analysis_row(array $schema,array $row,array $products,string $module,ar
             if($schema['campaign_kind']==='plus'){
                 $n=parse_money_input($meta['tsf']??'');$basis=parse_money_input($meta['basis']??'');$customer=parse_money_input($meta['customer']??'');
                 $clean=campaign_empty_promo($meta['promo']??'')&&$n!==null&&$basis!==null&&$customer!==null&&abs($n-$basis)<0.005&&abs($n-$customer)<0.005&&($meta['plus_customer']??'')===''&&($meta['plus_basis']??'')==='';
-                if(!$clean){$t['profit']=null;$t['margin']=null;$t['profit_delta']=null;$t['reason']='Plus fiyatı üst sınırı gösteriliyor; promosyon finansmanı veya mevcut Plus fiyatı doğrulanmadan kâr hesaplanmaz.';}
+                if(!$clean){$t['profit']=null;$t['margin']=null;$t['profit_delta']=null;$t['min_endpoint_profit']=null;$t['reason']='Plus fiyatı üst sınırı gösteriliyor; promosyon finansmanı veya mevcut Plus fiyatı doğrulanmadan kâr hesaplanmaz.';}
                 elseif($t['profit']!==null)$t['reason']='Promosyonsuz Plus teklif senaryosu; dönem ve katılım doğrulanmalı.';
             }elseif($schema['campaign_kind']==='flash'||$schema['campaign_kind']==='etiket'){
-                $t['profit']=null;$t['margin']=null;$t['profit_delta']=null;$t['reason']=$price===null?'Bu zaman diliminde teklif yok veya aralık geçersiz.':'Komisyon ve promosyon bilgisi doğrulanmalı; güncel komisyon yeni fiyata taşınmaz.';
+                $t['profit']=null;$t['margin']=null;$t['profit_delta']=null;$t['min_endpoint_profit']=null;$t['reason']=$price===null?'Bu zaman diliminde teklif yok veya aralık geçersiz.':'Komisyon ve promosyon bilgisi doğrulanmalı; güncel komisyon yeni fiyata taşınmaz.';
             }
         }
         if($source!==null&&$t['profit']!==null){
             $candidate=tariff_candidate($source,$t);
-            if($candidate===null){$t['profit']=null;$t['margin']=null;$t['profit_delta']=null;$t['min_endpoint_profit']=null;$t['reason']='Mevcut promosyon / fiyat farkı var; yeni fiyatın matrahı doğrulanmadan kâr hesaplanmaz.';}
+            if($candidate===null){$t['profit']=null;$t['margin']=null;$t['profit_delta']=null;$t['min_endpoint_profit']=null;$t['profit_delta']=null;$t['reason']='Mevcut promosyon / fiyat farkı var; yeni fiyatın matrahı doğrulanmadan kâr hesaplanmaz.';}
             if($candidate!==null){
                 try{$calc=product_profit($p,$candidate['effective'],$rate);$t['application']=$candidate;$t['profit']=$calc['profit'];$t['margin']=$calc['margin'];$t['profit_delta']=$baseline!==null?$calc['profit']-$baseline['profit']:null;$t['application_target']=$rule?target_pass($rule,$calc,$cost,$candidate['effective']):null;}catch(InvalidArgumentException $e){}
             }

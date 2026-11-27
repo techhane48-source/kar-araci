@@ -126,6 +126,16 @@ $tests['no ranking different audiences or slots']=campaign_rank_quotes('flash',$
 $qs['star2']['period']='B';$tests['do not compare different periods']=campaign_rank_quotes('etiket',$qs)===[];
 $blocked=campaign_link_quotes($pr,'plus',$ctx,$products['001'],$at,$at,['kind'=>'profit','value'=>999999]);
 $tests['linked quote target applied']=isset($blocked['period3_plus'])&&$blocked['period3_plus']['target_met']===false;
+$snapMeta=['tsf'=>'1000','basis'=>'900','customer'=>'800','current_rate'=>'19','promo'=>'Synthetic discount'];
+$snap=campaign_snapshot($snapMeta,$products['001']);
+$tests['snapshot actual basis separate from customer']=abs($snap['commission']-171)<1e-8&&abs($snap['basis']-900)<1e-8&&abs($snap['customer']-800)<1e-8&&$snap['profit']===product_profit($products['001'],900,19)['profit'];
+$tests['snapshot missing rate not substituted']=campaign_snapshot(array_replace($snapMeta,['current_rate'=>'']),$products['001'])===null;
+$tests['snapshot invalid price relation rejected']=campaign_snapshot(array_replace($snapMeta,['customer'=>'950']),$products['001'])===null;
+$tests['snapshot missing cost retains commission only']=campaign_snapshot($snapMeta,null)['profit']===null;
+$cleanRow=['campaign_meta'=>['tsf'=>'200','basis'=>'200','customer'=>'200','promo'=>'','plus_customer'=>'']];
+$tests['draft clean current snapshot accepted']=campaign_normal_draft_current($cleanRow,$products['001'],$at,$at);
+$tests['draft stale snapshot rejected']=!campaign_normal_draft_current($cleanRow,$products['001'],$at-86400,$at);
+$tests['draft catalog price changed rejected']=!campaign_normal_draft_current($cleanRow,array_replace($products['001'],['price'=>210]),$at,$at);
 $bulk=analysis_schema(['Barkod','Fiyat'],'bulk');
 $rows=(static function(){for($i=0;$i<20000;$i++)yield ['001','200'];})();
 $stats=analysis_save(db(),1,'bulk','bulk',$bulk,$rows,$products);
