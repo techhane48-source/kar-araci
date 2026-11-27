@@ -96,6 +96,7 @@ final class TrendyolClient
         $totalPages = min($totalPages, $maxPage);
 
         $all = [];
+        $failedPages = 0;
         $batch = 10; // aynı anda çekilen sayfa sayısı (Trendyol rate-limit'e karşı makul)
 
         for ($start = 0; $start < $totalPages; $start += $batch) {
@@ -107,8 +108,14 @@ final class TrendyolClient
             }
 
             $results = $this->requestParallel($requests);
-            foreach ($results as $res) {
-                if (!isset($res['http']) || $res['http'] !== 200) continue;
+            foreach ($results as $i => $res) {
+                if (!isset($res['http']) || $res['http'] !== 200) {
+                    // Hız sınırı / geçici hata: bir kez, kısa beklemeyle tekrar dene.
+                    usleep(1500000);
+                    [$m, $path, $q] = $requests[$i];
+                    $res = $this->request($m, $path, $q);
+                }
+                if (!isset($res['http']) || $res['http'] !== 200) { $failedPages++; continue; }
                 $items = $res['body']['content'] ?? [];
                 foreach ($items as $it) {
                     $all[] = [
@@ -127,7 +134,7 @@ final class TrendyolClient
             }
         }
 
-        return ['ok' => true, 'products' => $all, 'count' => count($all)];
+        return ['ok' => true, 'products' => $all, 'count' => count($all), 'failed_pages' => $failedPages];
     }
 
     /**
@@ -147,10 +154,11 @@ final class TrendyolClient
      * (Eski /shipment-packages ucu deprecate oldu; 556 "Service Unavailable" dönüyor.)
      * @param string $status Created | Picking | Invoiced | Shipped | Cancelled | Delivered | UnDelivered | ...
      */
-    public function getOrders(string $status = '', string $startDate = '', string $endDate = '', int $maxPage = 10): array
+    public function getOrders(string $status = '', string $startDate = '', string $endDate = '', int $maxPage = 50): array
     {
         $all = [];
         $seen = [];
+        $truncated = false;
         $size = 200;
 
         // Zaman aralığı (saniye). Trendyol sipariş ucu ~15 günlük pencereyle sınırlar;
@@ -186,11 +194,16 @@ final class TrendyolClient
 
                     $lines = [];
                     foreach (($it['lines'] ?? []) as $ol) {
+                        // Birim fiyatlar. Satıcının cebinden çıkan indirim yalnızca satıcı indirimidir;
+                        // Trendyol'un karşıladığı indirim (tyDiscount) satıcının hasılatını düşürmez.
+                        $gross = (float)($ol['lineGrossAmount'] ?? ($ol['amount'] ?? 0));
+                        $sellerDisc = (float)($ol['lineSellerDiscount'] ?? ($ol['discount'] ?? 0));
                         $lines[] = [
-                            'barcode' => $ol['sku'] ?? '',
+                            'barcode' => (string)($ol['barcode'] ?? ($ol['sku'] ?? '')),
                             'productName' => $ol['productName'] ?? '',
                             'quantity' => (int)($ol['quantity'] ?? 0),
-                            'price' => (float)($ol['amount'] ?? ($ol['lineGrossAmount'] ?? 0)) - (float)($ol['lineTotalDiscount'] ?? ($ol['discount'] ?? 0)),
+                            'price' => $gross - $sellerDisc,
+                            'vatRate' => isset($ol['vatRate']) ? (float)$ol['vatRate'] : null,
                             'merchantSku' => $ol['merchantSku'] ?? '',
                         ];
                     }
@@ -208,13 +221,17 @@ final class TrendyolClient
 
                 $totalPages = (int)($res['body']['totalPages'] ?? 0);
                 $page++;
-                if ($page >= $totalPages || $page >= $maxPage || count($items) === 0) {
+                if ($page >= $totalPages || count($items) === 0) {
+                    break;
+                }
+                if ($page >= $maxPage) {
+                    $truncated = true;   // sınıra takıldı: sessizce kesme, çağırana bildir
                     break;
                 }
             }
         }
 
-        return ['ok' => true, 'orders' => $all, 'count' => count($all)];
+        return ['ok' => true, 'orders' => $all, 'count' => count($all), 'truncated' => $truncated];
     }
 
     /**

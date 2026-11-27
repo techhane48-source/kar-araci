@@ -39,6 +39,7 @@ $products = $rows->fetchAll();
 $rep = null;
 $repApplied = false;
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['repricing'])) {
+    if (!csrf_verify($_POST['csrf'] ?? '')) { flash_set('error', 'Oturum süresi doldu, tekrar deneyin.'); e_redirect('kar-marji.php?mp=' . urlencode($mp)); }
     $tip = $_POST['tip'] ?? 'marj';
     $deger = (float)($_POST['deger'] ?? 0);
     $apply = isset($_POST['apply']);
@@ -113,7 +114,7 @@ require __DIR__ . '/../includes/header.php';
   <h2>Toplu Yeniden Fiyatlama</h2>
   <p class="hint" style="margin:4px 0 10px">Maliyeti girilmiş ürünlerde hedef kâra göre yeni satış fiyatı çözülür (geri alınamaz — önce raporu indir).</p>
   <form method="post" style="display:flex;flex-wrap:wrap;gap:10px;align-items:end">
-    <input type="hidden" name="repricing" value="1">
+    <input type="hidden" name="repricing" value="1"><input type="hidden" name="csrf" value="<?= h(csrf_token()) ?>">
     <label style="display:flex;flex-direction:column;gap:4px;font-size:13px">Hedef
       <select name="tip" style="padding:8px">
         <option value="marj">Kâr Marjı (%) = kâr/satış</option>
@@ -132,7 +133,7 @@ require __DIR__ . '/../includes/header.php';
       <strong><?= $rep['sayi'] ?> ürün</strong> hedefe göre fiyatlanacak.
       <a href="kar-marji.php?export=repricing&mp=<?= urlencode($mp) ?>" class="btn-ghost" style="margin-left:8px">⬇ Raporu İndir (CSV)</a>
       <form method="post" style="display:inline">
-        <input type="hidden" name="repricing" value="1">
+        <input type="hidden" name="repricing" value="1"><input type="hidden" name="csrf" value="<?= h(csrf_token()) ?>">
         <input type="hidden" name="tip" value="<?= h($rep['tip']) ?>">
         <input type="hidden" name="deger" value="<?= h((string)$rep['deger']) ?>">
         <button type="submit" name="apply" value="1" class="btn-primary" style="margin-left:8px" onclick="return confirm('<?= $rep['sayi'] ?> ürünün fiyatı geri alınamaz şekilde güncellenecek. Emin misin?')">Uygula</button>

@@ -368,7 +368,7 @@ document.getElementById("save-btn").addEventListener("click", async () => {
   };
   const resp = await fetch("api-save.php", {
     method: "POST",
-    headers: {"Content-Type": "application/json"},
+    headers: {"Content-Type": "application/json", "X-CSRF-Token": <?= json_encode(csrf_token()) ?>},
     body: JSON.stringify(body)
   });
   const r = await resp.json();

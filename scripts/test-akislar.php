@@ -104,10 +104,20 @@ $jar = merge_jar($jar, $r['headers']);
 // 3. Ürün kaydet (API)
 $r = req('GET', "$base/index.php", ['headers' => ["Cookie: $jar"]]);
 check($r['status'] === 200, "Giriş yapılmış ana sayfa 200");
+preg_match('/"X-CSRF-Token":\s*"([a-f0-9]{64})"/', $r['body'], $mm);
+$apiCsrf = $mm[1] ?? '';
+check($apiCsrf !== '', "Ana sayfa api-save için CSRF token veriyor");
+
+// CSRF token olmadan api-save reddedilmeli
+$r = req('POST', "$base/api-save.php", [
+    'body' => json_encode(['marketplace' => 'trendyol', 'category' => 'Giyim', 'name' => 'CSRF', 'cost' => 1, 'price' => 2]),
+    'headers' => ["Cookie: $jar", 'Content-Type: text/plain'],
+]);
+check($r['status'] === 403, "Token'sız api-save 403 döner");
 
 $r = req('POST', "$base/api-save.php", [
     'body' => json_encode(['marketplace' => 'trendyol', 'category' => 'Giyim', 'name' => 'Kadın Bot', 'cost' => 200, 'price' => 400, 'cargo' => 50, 'rate' => 21.36]),
-    'headers' => ["Cookie: $jar", 'Content-Type: application/json'],
+    'headers' => ["Cookie: $jar", 'Content-Type: application/json', "X-CSRF-Token: $apiCsrf"],
 ]);
 check($r['status'] === 200, "api-save 200");
 $j = json_decode($r['body'], true);
@@ -201,18 +211,21 @@ $still = $pdo->query("SELECT COUNT(*) FROM products WHERE id = $victimPid")->fet
 check((int)$still === 1, "IDOR engellendi (başkasının ürünü silinemedi)");
 
 // 9. Ücretsiz plan 5 ürün limiti (other@example.com)
+$r = req('GET', "$base/index.php", ['headers' => ["Cookie: $jar2"]]);
+preg_match('/"X-CSRF-Token":\s*"([a-f0-9]{64})"/', $r['body'], $mm);
+$apiCsrf2 = $mm[1] ?? '';
 for ($i = 0; $i < 5; $i++) {
     req('POST', "$base/api-save.php", [
         'body' => json_encode(['marketplace' => 'trendyol', 'category' => 'Giyim', 'name' => "Ürün $i", 'cost' => 10, 'price' => 20, 'cargo' => 5, 'service_fee' => 1, 'stopaj' => 0, 'return_rate' => 1]),
-        'headers' => ["Cookie: $jar2", 'Content-Type: application/json'],
+        'headers' => ["Cookie: $jar2", 'Content-Type: application/json', "X-CSRF-Token: $apiCsrf2"],
     ]);
 }
 $r = req('POST', "$base/api-save.php", [
     'body' => json_encode(['marketplace' => 'trendyol', 'category' => 'Giyim', 'name' => '6. ürün', 'cost' => 10, 'price' => 20, 'cargo' => 5, 'service_fee' => 1, 'stopaj' => 0, 'return_rate' => 1]),
-    'headers' => ["Cookie: $jar2", 'Content-Type: application/json'],
+    'headers' => ["Cookie: $jar2", 'Content-Type: application/json', "X-CSRF-Token: $apiCsrf2"],
 ]);
 $j = json_decode($r['body'], true);
-check(($j['ok'] ?? false) === false, "Ücretsiz plan 6. ürünü reddeder: " . ($j['error'] ?? ''));
+check(($j['ok'] ?? false) === false && str_contains($j['error'] ?? '', '5 ürün'), "Ücretsiz plan 6. ürünü reddeder: " . ($j['error'] ?? ''));
 
 // --- Temizlik test DIŞINDA yapılır: sunucuyu durdur, data/*.sqlite* sil, yeniden başlat ---
 echo "\n" . ($fail === 0 ? "TÜM TESTLER GEÇTİ" : "$fail TEST BAŞARISIZ") . "\n";

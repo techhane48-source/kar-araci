@@ -22,7 +22,7 @@ foreach ($integrations as $i) {
     $res = sync_products((int)$i['user_id'], $i['marketplace']);
     if ($res['ok']) {
         $ok++;
-        echo "[OK] u{$i['user_id']} {$i['marketplace']}: +{$res['inserted']} yeni, {$res['skipped']} mevcut\n";
+        echo "[OK] u{$i['user_id']} {$i['marketplace']}: +{$res['inserted']} yeni, {$res['updated']} güncellendi" . (!empty($res['warning']) ? " [UYARI] {$res['warning']}" : '') . "\n";
     } else {
         $fail++;
         echo "[FAIL] u{$i['user_id']} {$i['marketplace']}: {$res['error']}\n";

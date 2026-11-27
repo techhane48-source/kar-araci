@@ -6,6 +6,13 @@ header('Content-Type: application/json; charset=utf-8');
 
 $u = require_login();
 
+// Yalnızca kendi sayfamızdan gelen JSON isteği: CSRF token başlıkta olmalı.
+if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST' || !csrf_verify($_SERVER['HTTP_X_CSRF_TOKEN'] ?? '')) {
+    http_response_code(403);
+    echo json_encode(['ok' => false, 'error' => 'Oturum doğrulanamadı. Sayfayı yenileyip tekrar deneyin.']);
+    exit;
+}
+
 $data = json_decode(file_get_contents('php://input'), true);
 if (!is_array($data)) {
     echo json_encode(['ok' => false, 'error' => 'Geçersiz istek']);

@@ -84,29 +84,36 @@ function category_rate(string $categoryName, string $marketplace): float
     return 15.0; // bilinmeyen kategori için güvenli varsayılan
 }
 
-/**
- * Net kâr hesabı (komisyon hesaplama modeli).
- * Kâr = Satış − Alış − Komisyon − Kargo − Ek Bedel (ihracat/aynı gün) − KDV (ödenen)
- * Tüm tutarlar KDV dahil TL. KDV = (Satış − Alış − Komisyon − Kargo − Ek Bedel) × KDV/(1+KDV).
- */
-function calc_profit(float $cost, float $price, float $cargo, float $rate, float $kdvRate = 20.0, float $extraFee = 0.0, float $serviceFee = 0.0, float $stopaj = 0.0, float $returnRate = 0.0): array
+/** Pazaryeri kesintilerinin (komisyon, kargo, hizmet/ek bedel) KDV oranı (%). Ürünün KDV'sinden bağımsızdır. */
+const FEE_KDV_RATE = 20.0;
+
+/** KDV dahil tutarın içindeki KDV. */
+function vat_in(float $grossAmount, float $kdvRate): float
 {
-    $commission = $price * ($rate / 100);
-    $returnLoss = $price * ($returnRate / 100);   // iade oranı kadar satış tutarı kaybı (tutucu tahmin)
-    $kdvFrac = $kdvRate / (100 + $kdvRate);
-    // Net KDV (Melontik modeli) = Satış KDV − Maliyet KDV − Komisyon KDV − Kargo KDV − Hizmet KDV.
-    // Stopaj ayrı bir tevkifat kalemidir, KDV tabanına girmez. Negatif çıkarsa 0 alınır (floor).
-    $netKdv = ($price - $cost - $commission - $cargo - $extraFee - $serviceFee) * $kdvFrac;
+    return $kdvRate > 0 ? $grossAmount * $kdvRate / (100 + $kdvRate) : 0.0;
+}
+
+/**
+ * Kâr çekirdeği. Tüm tutarlar KDV dahil TL.
+ * Net KDV = Satış KDV − Maliyet KDV − (Komisyon + Kargo + Ek bedel + Hizmet bedeli) KDV'si (%20).
+ * Negatif çıkarsa 0 alınır (devreden KDV'nin bu siparişte nakde dönmediği varsayımı).
+ */
+function profit_core(float $sale, float $saleVat, float $cost, float $costVat, float $commission, float $cargo,
+                     float $extraFee, float $serviceFee, float $stopaj, float $returnLoss): array
+{
+    $feeVat = vat_in($commission + $cargo + $extraFee + $serviceFee, FEE_KDV_RATE);
+    $netKdv = $saleVat - $costVat - $feeVat;
     if ($netKdv < 0) $netKdv = 0.0;
-    $profit = $price - $cost - $commission - $cargo - $extraFee - $serviceFee - $stopaj - $netKdv - $returnLoss;
-    $margin = $price > 0 ? ($profit / $price) * 100 : 0.0;   // kâr marjı = kâr / satış
-    $ratio = $cost > 0 ? ($profit / $cost) * 100 : 0.0;      // kâr oranı = kâr / maliyet
+    $profit = $sale - $cost - $commission - $cargo - $extraFee - $serviceFee - $stopaj - $netKdv - $returnLoss;
     return [
         'profit' => $profit,
-        'margin' => $margin,
-        'ratio' => $ratio,
+        'margin' => $sale > 0 ? ($profit / $sale) * 100 : 0.0,   // kâr marjı = kâr / satış
+        'ratio' => $cost > 0 ? ($profit / $cost) * 100 : 0.0,    // kâr oranı = kâr / maliyet
         'commission' => $commission,
         'net_kdv' => $netKdv,
+        'sale_kdv' => $saleVat,
+        'cost_kdv' => $costVat,
+        'fee_kdv' => $feeVat,
         'extra_fee' => $extraFee,
         'service_fee' => $serviceFee,
         'stopaj' => $stopaj,
@@ -116,8 +123,29 @@ function calc_profit(float $cost, float $price, float $cargo, float $rate, float
 }
 
 /**
- * Stopaj (tevkifat) — Melontik modeli: KDV-hariç satış tutarının belirli oranı.
- * Trendyol için %1 (0.01). $stopajRate yüzde olarak verilir (örn. 1.0).
+ * Beklenen iade kaybı (₺/sipariş). İade edilen üründe satış ve komisyon geri döner;
+ * satıcının gerçek kaybı gidiş + dönüş kargosu ve hizmet bedelidir. $returnRate yüzde (örn. 5).
+ */
+function expected_return_loss(float $returnRate, float $cargo, float $serviceFee): float
+{
+    return $returnRate > 0 ? ($returnRate / 100) * (2 * $cargo + $serviceFee) : 0.0;
+}
+
+/**
+ * Net kâr hesabı (tek ürün). Tüm tutarlar KDV dahil TL.
+ * $kdvRate: ürünün satış KDV oranı. $costKdvRate: alış faturasındaki KDV oranı (null → satışla aynı).
+ */
+function calc_profit(float $cost, float $price, float $cargo, float $rate, float $kdvRate = 20.0, float $extraFee = 0.0,
+                     float $serviceFee = 0.0, float $stopaj = 0.0, float $returnRate = 0.0, ?float $costKdvRate = null): array
+{
+    $commission = $price * ($rate / 100);
+    $returnLoss = expected_return_loss($returnRate, $cargo, $serviceFee);
+    return profit_core($price, vat_in($price, $kdvRate), $cost, vat_in($cost, $costKdvRate ?? $kdvRate),
+                       $commission, $cargo, $extraFee, $serviceFee, $stopaj, $returnLoss);
+}
+
+/**
+ * Stopaj (tevkifat): KDV hariç satış tutarının belirli oranı. Trendyol için %1. $stopajRate yüzde (örn. 1.0).
  */
 function auto_stopaj(float $price, float $kdvRate = 20.0, float $stopajRate = 1.0): float
 {
@@ -125,62 +153,47 @@ function auto_stopaj(float $price, float $kdvRate = 20.0, float $stopajRate = 1.
     return $price / (1 + $kdvRate / 100) * ($stopajRate / 100);
 }
 
-/** Trendyol sabit hizmet bedeli (₺). */
+/** Trendyol sabit hizmet bedeli (₺, KDV dahil). Ayarlardan değiştirilebilir. */
 function trendyol_service_fee(): float
 {
-    return 13.19;
+    $v = function_exists('setting') ? (string) setting('trendyol_service_fee') : '';
+    return ($v !== '' && is_numeric($v)) ? (float) $v : 13.19;
 }
 
 /**
- * Ters hesap motoru — Melontik'in "Fiyat Oluştur" çekirdeği.
- * Hedef net kâr (₺) veya hedef kâr marjı (%) ver; gerekli satış fiyatını kuruşuna çöz.
- * Komisyon, hizmet bedeli, kargo, stopaj (KDV-hariç × oran), Net KDV (floor 0) ve iade kaybı
- * tam olarak modele dahildir. Binary search ile Net KDV floor'unu da doğru ele alır.
- *
- * @param float $targetProfit  hedef net kâr (₺). 0 ise $targetMargin kullanılır.
- * @param float $targetMargin  hedef kâr marjı (%) = kâr / satış. 0 ise $targetProfit kullanılır.
- * @param float $stopajRate    stopaj oranı (%) — Trendyol %1.
+ * Ters hesap: hedef net kâr (₺) veya hedef kâr marjı (%) için gereken satış fiyatı.
+ * Kâr, calc_profit ile birebir aynı modelle hesaplanır (stopaj fiyata göre yeniden hesaplanır);
+ * Net KDV'nin 0'a kırpılması fonksiyonu kırıklı yaptığı için ikili arama kullanılır.
  */
 function calc_price(float $cost, float $cargo, float $rate, float $kdvRate = 20.0,
                     float $extraFee = 0.0, float $serviceFee = 13.19, float $stopajRate = 1.0,
-                    float $returnRate = 0.0, float $targetProfit = 0.0, float $targetMargin = 0.0): array
+                    float $returnRate = 0.0, float $targetProfit = 0.0, float $targetMargin = 0.0,
+                    ?float $costKdvRate = null): array
 {
-    $rateFrac = $rate / 100;
-    $returnFrac = $returnRate / 100;
-    $kdvFrac = $kdvRate / (100 + $kdvRate);
-    $kdvDiv = 1 + $kdvRate / 100;
-    $stopajFrac = $stopajRate / 100;
-
-    $profitAt = function (float $P) use ($cost, $cargo, $rateFrac, $kdvFrac, $extraFee, $serviceFee, $stopajFrac, $kdvDiv, $returnFrac): float {
-        $commission = $P * $rateFrac;
-        $stopaj = $P / $kdvDiv * $stopajFrac;
-        $netKdv = ($P - $cost - $commission - $cargo - $extraFee - $serviceFee) * $kdvFrac;
-        if ($netKdv < 0) $netKdv = 0.0;
-        $returnLoss = $P * $returnFrac;
-        return $P - $cost - $commission - $cargo - $extraFee - $serviceFee - $stopaj - $netKdv - $returnLoss;
+    $at = function (float $P) use ($cost, $cargo, $rate, $kdvRate, $extraFee, $serviceFee, $stopajRate, $returnRate, $costKdvRate): array {
+        return calc_profit($cost, $P, $cargo, $rate, $kdvRate, $extraFee, $serviceFee,
+                           auto_stopaj($P, $kdvRate, $stopajRate), $returnRate, $costKdvRate);
     };
-
     $f = $targetMargin > 0
-        ? (function (float $P) use ($profitAt, $targetMargin): float {
-            return $profitAt($P) - $P * $targetMargin / 100;
-        })
-        : (function (float $P) use ($profitAt, $targetProfit): float {
-            return $profitAt($P) - $targetProfit;
-        });
+        ? fn(float $P): float => $at($P)['profit'] - $P * $targetMargin / 100
+        : fn(float $P): float => $at($P)['profit'] - $targetProfit;
 
     $lo = 0.0;
     $hi = ($cost + $cargo + $extraFee + $serviceFee) * 4 + 1000.0;
     $guard = 0;
     while ($f($hi) < 0 && $guard++ < 60) { $hi *= 2; }
-
-    for ($i = 0; $i < 200; $i++) {
-        $mid = ($lo + $hi) / 2;
-        if ($f($mid) > 0) $hi = $mid; else $lo = $mid;
+    if ($f($hi) < 0) {
+        // Hedefe hiçbir fiyatta ulaşılamıyor (ör. komisyon + marj ≥ %100).
+        return ['price' => 0.0, 'profit' => 0.0, 'margin' => 0.0, 'ratio' => 0.0, 'commission' => 0.0, 'net_kdv' => 0.0,
+                'service_fee' => $serviceFee, 'stopaj' => 0.0, 'cargo' => $cargo, 'extra_fee' => $extraFee, 'return_loss' => 0.0];
     }
-    $P = ($lo + $hi) / 2;
-    if (!is_finite($P) || $P <= 0) $P = 0.0;
-
-    $r = calc_profit($cost, $P, $cargo, $rate, $kdvRate, $extraFee, $serviceFee, auto_stopaj($P, $kdvRate, $stopajRate), $returnRate);
+    for ($i = 0; $i < 100; $i++) {
+        $mid = ($lo + $hi) / 2;
+        if ($f($mid) >= 0) $hi = $mid; else $lo = $mid;
+    }
+    $P = round($hi, 2);
+    if ($f($P) < 0) $P += 0.01;   // kuruşa yuvarlarken hedefin altına düşme
+    $r = $at($P);
 
     return [
         'price' => $P,
@@ -311,7 +324,7 @@ function sync_products(int $userId, string $marketplace): array
 
     $db = db();
     $inserted = 0;
-    $skipped = 0;
+    $updated = 0;
 
     // Mevcut barkodları TEK sorguda al -> HashSet (O(1) arama, 10k+ ürün için hızlı)
     $existing = [];
@@ -325,6 +338,9 @@ function sync_products(int $userId, string $marketplace): array
     $ins = $db->prepare("INSERT INTO products (user_id, name, barcode, marketplace, category, rate, cost, price, quantity, cargo, service_fee, stopaj, return_rate)
                           VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?, 0, 0, 0, 0)");
 
+    $upd = $db->prepare("UPDATE products SET name = ?, price = ?, quantity = ? WHERE user_id = ? AND marketplace = ? AND barcode = ?");
+    $updByName = $db->prepare("UPDATE products SET price = ?, quantity = ? WHERE user_id = ? AND marketplace = ? AND name = ? AND barcode = ''");
+
     $db->beginTransaction();
     try {
         foreach ($res['products'] as $p) {
@@ -336,7 +352,14 @@ function sync_products(int $userId, string $marketplace): array
 
             // Tekil anahtar: barkod (Trendyol'da benzersiz). Barkod yoksa isim'e düş.
             $key = ($barcode !== '') ? ('b:' . $barcode) : ('n:' . $name);
-            if (isset($existing[$key])) { $skipped++; continue; }
+            if (isset($existing[$key])) {
+                // Var olan ürün: pazaryerindeki güncel fiyat, stok ve ad işlenir.
+                // Kullanıcının girdiği maliyet, kargo, KDV ve komisyon oranına dokunulmaz.
+                if ($barcode !== '') $upd->execute([$name, $price, (int)($p['quantity'] ?? 0), $userId, $marketplace, $barcode]);
+                else $updByName->execute([$price, (int)($p['quantity'] ?? 0), $userId, $marketplace, $name]);
+                $updated++;
+                continue;
+            }
             $existing[$key] = true;
 
             $ins->execute([$userId, $name, $barcode, $marketplace, $cat, $rate, $price, (int)($p['quantity'] ?? 0)]);
@@ -352,7 +375,11 @@ function sync_products(int $userId, string $marketplace): array
     $db->prepare("UPDATE integrations SET last_sync = datetime('now') WHERE user_id = ? AND marketplace = ?")
         ->execute([$userId, $marketplace]);
 
-    return ['ok' => true, 'inserted' => $inserted, 'skipped' => $skipped, 'total' => $res['count']];
+    $out = ['ok' => true, 'inserted' => $inserted, 'updated' => $updated, 'skipped' => 0, 'total' => $res['count']];
+    if (!empty($res['failed_pages'])) {
+        $out['warning'] = $res['failed_pages'] . ' sayfa Trendyol\'dan alınamadı; bazı ürünler eksik olabilir. Birkaç dakika sonra tekrar senkronize edin.';
+    }
+    return $out;
 }
 
 /**
@@ -398,53 +425,56 @@ function sync_orders(int $userId, string $marketplace, int $days = 7): array
     }
     db()->prepare("UPDATE integrations SET last_orders_sync = ? WHERE user_id = ? AND marketplace = ?")
         ->execute([time(), $userId, $marketplace]);
-    return ['ok' => true, 'count' => $count];
+    $out = ['ok' => true, 'count' => $count];
+    if (!empty($res['truncated'])) {
+        $out['warning'] = 'Sipariş sayısı tek seferde çekilebilecek sınırı aştı; en eski siparişlerin bir kısmı alınamamış olabilir. Daha kısa bir tarih aralığıyla tekrar deneyin.';
+    }
+    return $out;
 }
 
 /**
- * Siparişin tahmini net kârını hesaplar (Canlı Performans).
- * Satırları barkod ile kayıtlı ürünlerle eşleştirir; maliyet + komisyon oranı + kargo + hizmet + stopaj + Net KDV.
- * Maliyeti girilmemiş bir satır varsa ['ok'=>false,'missing'=>true] döner (Melontik: "kâr hesaplanamadı").
+ * Siparişin (paketin) tahmini net kârı (Canlı Performans, raporlar).
+ * - Her satır kendi KDV oranı (siparişte varsa satırınki, yoksa ürününki) ve komisyon oranıyla hesaplanır.
+ * - Kargo ve hizmet bedeli paket başına BİR KEZ düşülür (kargo: satırlardaki en yüksek kargo tutarı).
+ * - Stopaj her satırın KDV hariç tutarı üzerinden %1.
+ * Maliyeti girilmemiş bir satır varsa ['ok'=>false,'missing'=>true] döner.
  */
 function calc_order_profit(array $order, array $byBarcode): array
 {
-    $sale = (float)($order['total_price'] ?? 0);
     $lines = $order['lines'] ?? [];
-    if (!is_array($lines) || !$lines || $sale <= 0) {
-        return ['ok' => false, 'missing' => true, 'sale' => $sale, 'profit' => null];
+    if (is_string($lines)) $lines = json_decode($lines, true) ?: [];
+    if (!is_array($lines) || !$lines) {
+        return ['ok' => false, 'missing' => true, 'sale' => (float)($order['total_price'] ?? 0), 'profit' => null];
     }
 
-    $cost = 0.0;
-    $cargo = 0.0;
-    $weightedRate = 0.0;
-    $saleSum = 0.0;
+    $sale = $saleVat = $cost = $costVat = $commission = $stopaj = $cargo = 0.0;
     $missing = false;
-    $kdv = 20.0;
 
     foreach ($lines as $line) {
         $qty = max(1, (int)($line['quantity'] ?? 1));
-        $lineSale = (float)($line['price'] ?? 0) * $qty;
-        $saleSum += $lineSale;
+        $lineSale = (float)($line['price'] ?? 0) * $qty;   // price = birim net fiyat (satıcı indirimi düşülmüş)
         $p = $byBarcode[$line['barcode'] ?? ''] ?? null;
-        if ($p && (float)$p['cost'] > 0) {
-            $cost += (float)$p['cost'] * $qty;
-            $cargo += (float)$p['cargo'];
-            $weightedRate += $lineSale * (float)$p['rate'];
-            if (isset($p['kdv'])) $kdv = (float)$p['kdv'];
-        } else {
-            $missing = true;
-            $weightedRate += $lineSale * 20.0;
-        }
+        if (!$p || (float)$p['cost'] <= 0) { $missing = true; continue; }
+
+        $kdv = isset($line['vatRate']) && $line['vatRate'] !== null ? (float)$line['vatRate'] : (float)($p['kdv'] ?? 20);
+        $rate = (float)$p['rate'];
+        $lineCost = (float)$p['cost'] * $qty;
+
+        $sale += $lineSale;
+        $saleVat += vat_in($lineSale, $kdv);
+        $cost += $lineCost;
+        $costVat += vat_in($lineCost, $kdv);
+        $commission += $lineSale * $rate / 100;
+        $stopaj += auto_stopaj($lineSale, $kdv, 1.0);
+        $cargo = max($cargo, (float)$p['cargo']);
     }
 
-    if ($missing) {
-        return ['ok' => false, 'missing' => true, 'sale' => $sale, 'profit' => null];
+    if ($missing || $sale <= 0) {
+        return ['ok' => false, 'missing' => true, 'sale' => $sale ?: (float)($order['total_price'] ?? 0), 'profit' => null];
     }
 
-    $rate = $saleSum > 0 ? $weightedRate / $saleSum : 20.0;
     $service = trendyol_service_fee();
-    $stopajTl = auto_stopaj($sale, $kdv, 1.0);
-    $r = calc_profit($cost, $sale, $cargo, $rate, $kdv, 0.0, $service, $stopajTl, 0.0);
+    $r = profit_core($sale, $saleVat, $cost, $costVat, $commission, $cargo, 0.0, $service, $stopaj, 0.0);
 
     return [
         'ok' => true,

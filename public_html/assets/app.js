@@ -48,10 +48,13 @@ function stopajValue(P, kdvRate){
 function computeAt(P, cost, cargo, rateFrac, kdvRate, extra, serviceFee, returnFrac){
   const commission = P * rateFrac;
   const stopaj = stopajValue(P, kdvRate);
-  const kdvFrac = kdvRate / (100 + kdvRate);
-  let netKdv = (P - cost - commission - cargo - extra - serviceFee) * kdvFrac;
-  if(netKdv < 0) netKdv = 0;   // Melontik: Net KDV negatif çıkarsa 0
-  const returnLoss = P * returnFrac;
+  // Net KDV = satış KDV'si − maliyet KDV'si − kesintilerin KDV'si. Ürün KDV'si %1/%10/%20 olabilir;
+  // komisyon, kargo, hizmet ve ek bedel her zaman %20 KDV'lidir.
+  const vatIn = (x, r) => r > 0 ? x * r / (100 + r) : 0;
+  let netKdv = vatIn(P, kdvRate) - vatIn(cost, kdvRate) - vatIn(commission + cargo + extra + serviceFee, 20);
+  if(netKdv < 0) netKdv = 0;   // negatif net KDV 0 alınır
+  // İade kaybı: iade edilen üründe satış ve komisyon geri döner; kayıp gidiş + dönüş kargosu ve hizmet bedelidir.
+  const returnLoss = returnFrac * (2 * cargo + serviceFee);
   const profit = P - cost - commission - cargo - extra - serviceFee - stopaj - netKdv - returnLoss;
   return {commission, stopaj, netKdv, returnLoss, profit};
 }

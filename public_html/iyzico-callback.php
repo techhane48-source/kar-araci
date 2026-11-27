@@ -3,77 +3,93 @@ declare(strict_types=1);
 require_once __DIR__ . '/../includes/functions.php';
 
 /**
- * iyzico CheckoutForm callback'i. Ödeme sonrası iyzico bu sayfaya token ile
- * yönlendirir; sonucu doğrulayıp başarılıysa Pro planı aktif eder.
+ * iyzico CheckoutForm callback'i.
+ *
+ * iyzico ödeme sonrası kullanıcının tarayıcısını bu sayfaya BAŞKA BİR SİTEDEN POST ile gönderir.
+ * Oturum çerezi SameSite=Lax olduğu için bu istekte gelmez; bu yüzden kullanıcı oturumdan değil,
+ * iyzico'dan doğrulanan ödeme sonucundaki basketId'den (KF-<kullanıcıId>-<zaman>) bulunur.
+ * Sonuç her zaman iyzico API'sinden token ile sorgulanır; tarayıcıdan gelen hiçbir alana güvenilmez.
  */
 
-$u = require_login();
-
-$token = $_POST['token'] ?? $_GET['token'] ?? '';
+$token = (string)($_POST['token'] ?? $_GET['token'] ?? '');
 if ($token === '') {
-    flash_set('error', 'Ödeme doğrulama bilgisi eksik.');
-    e_redirect('odeme.php');
+    e_redirect('odeme.php?odeme=eksik');
 }
 
 $iyzicoKey = setting('iyzico_api_key');
 $iyzicoSecret = setting('iyzico_secret_key');
 $iyzicoSandbox = setting('iyzico_sandbox') === '1';
-
 if ($iyzicoKey === '' || $iyzicoSecret === '') {
-    flash_set('error', 'Kartlı ödeme yapılandırılmamış.');
-    e_redirect('odeme.php');
+    e_redirect('odeme.php?odeme=yapilandirilmamis');
 }
 
 require_once __DIR__ . '/../includes/iyzico.php';
 $client = new IyzicoClient($iyzicoKey, $iyzicoSecret, $iyzicoSandbox);
 $res = $client->retrieveCheckoutFormResult($token);
-
-if (!$res['ok'] || !is_array($res['result'])) {
-    flash_set('error', 'Ödeme doğrulanamadı: ' . ($res['error'] ?? 'Bilinmeyen hata'));
-    e_redirect('odeme.php');
+if (!$res['ok'] || !is_array($res['result'] ?? null)) {
+    e_redirect('odeme.php?odeme=dogrulanamadi');
 }
 
 $result = $res['result'];
-$paymentStatus = $result['paymentStatus'] ?? '';
+$paymentStatus = (string)($result['paymentStatus'] ?? '');
 $fraudStatus = (int)($result['fraudStatus'] ?? 0);
-$reference = 'IYZ-' . substr($token, 0, 12);
+$basketId = (string)($result['basketId'] ?? '');
+$paidPrice = (float)($result['paidPrice'] ?? 0);
+$paymentId = (string)($result['paymentId'] ?? '');
+$expected = (float) setting('pro_price');
 
-// Çift ödeme koruması: aynı token zaten onaylanmışsa tekrar işleme
-$dup = db()->prepare("SELECT id FROM payments WHERE reference = ? AND status = 'approved'");
-$dup->execute([$reference]);
-if ($dup->fetch()) {
-    flash_set('info', 'Bu ödeme zaten kaydedilmiş.');
-    e_redirect('odeme.php');
+if ($paymentStatus !== 'SUCCESS' || $fraudStatus !== 1) {
+    e_redirect('odeme.php?odeme=basarisiz');
+}
+if (!preg_match('/^KF-(\d+)-\d+$/', $basketId, $m)) {
+    e_redirect('odeme.php?odeme=dogrulanamadi');
+}
+if ($paidPrice + 0.01 < $expected) {
+    // Ödenen tutar plan fiyatının altında: otomatik aktif etme, yönetici incelesin.
+    error_log("iyzico: eksik tutar basket=$basketId paid=$paidPrice expected=$expected");
+    e_redirect('odeme.php?odeme=tutar');
 }
 
-if ($paymentStatus === 'SUCCESS' && $fraudStatus === 1) {
-    $amount = (float) setting('pro_price');
+$userId = (int)$m[1];
+$reference = 'IYZ-' . ($paymentId !== '' ? $paymentId : substr(hash('sha256', $token), 0, 24));
 
-    // 1 aylık Pro tanımla (mevcut süre varsa üzerine ekle) — admin onayıyla aynı mantık
-    $target = db()->prepare("SELECT plan_expires, referred_by FROM users WHERE id = ?");
-    $target->execute([$u['id']]);
+$db = db();
+$db->beginTransaction();
+try {
+    // Çift işleme koruması (kullanıcı sayfayı yenilerse ya da iyzico tekrar gönderirse)
+    $dup = $db->prepare("SELECT id FROM payments WHERE reference = ? AND status = 'approved'");
+    $dup->execute([$reference]);
+    if ($dup->fetch()) {
+        $db->commit();
+        e_redirect('odeme.php?odeme=zaten');
+    }
+
+    $target = $db->prepare("SELECT plan_expires, referred_by FROM users WHERE id = ?");
+    $target->execute([$userId]);
     $t = $target->fetch();
+    if (!$t) {
+        $db->rollBack();
+        error_log("iyzico: kullanıcı bulunamadı basket=$basketId");
+        e_redirect('odeme.php?odeme=dogrulanamadi');
+    }
+
     $base = ($t['plan_expires'] && $t['plan_expires'] >= date('Y-m-d')) ? $t['plan_expires'] : date('Y-m-d');
     $expires = date('Y-m-d', strtotime($base . ' +1 month'));
 
-    db()->prepare("UPDATE users SET plan = 'pro', plan_expires = ? WHERE id = ?")
-        ->execute([$expires, $u['id']]);
-    db()->prepare("INSERT INTO payments (user_id, amount, reference, status, reviewed_at)
-                   VALUES (?, ?, ?, 'approved', datetime('now'))")
-        ->execute([$u['id'], $amount, $reference]);
+    $db->prepare("UPDATE users SET plan = 'pro', plan_expires = ? WHERE id = ?")->execute([$expires, $userId]);
+    $db->prepare("INSERT INTO payments (user_id, amount, reference, status, reviewed_at) VALUES (?, ?, ?, 'approved', datetime('now'))")
+       ->execute([$userId, $paidPrice, $reference]);
 
     // Partner hakedişi (yönlendiren kullanıcıya %15)
     if (!empty($t['referred_by'])) {
-        $commission = $amount * 0.15;
-        $month = date('Y-m');
-        db()->prepare("INSERT INTO partner_commissions (partner_id, referred_user_id, amount, month, status)
-                       VALUES (?, ?, ?, ?, 'pending')")
-            ->execute([(int)$t['referred_by'], (int)$u['id'], $commission, $month]);
+        $db->prepare("INSERT INTO partner_commissions (partner_id, referred_user_id, amount, month, status) VALUES (?, ?, ?, ?, 'pending')")
+           ->execute([(int)$t['referred_by'], $userId, $paidPrice * 0.15, date('Y-m')]);
     }
-
-    flash_set('success', "Ödemen alındı! Pro planın $expires tarihine kadar aktif.");
-} else {
-    flash_set('error', 'Ödeme başarısız oldu veya doğrulanamadı. Tekrar deneyin.');
+    $db->commit();
+} catch (Throwable $e) {
+    if ($db->inTransaction()) $db->rollBack();
+    error_log('iyzico callback hatası: ' . $e->getMessage());
+    e_redirect('odeme.php?odeme=dogrulanamadi');
 }
 
-e_redirect('odeme.php');
+e_redirect('odeme.php?odeme=ok');

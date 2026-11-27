@@ -7,6 +7,22 @@ $pro = is_pro($u);
 $iban = setting('iban');
 $accountName = setting('account_name');
 $price = (float) setting('pro_price');
+
+// iyzico dönüşü (iyzico-callback.php buraya durum koduyla yönlendirir)
+$odemeMesaj = [
+    'ok' => ['success', 'Ödemen alındı, Pro planın aktif.'],
+    'zaten' => ['info', 'Bu ödeme zaten kaydedilmiş.'],
+    'basarisiz' => ['error', 'Ödeme başarısız oldu. Kartından para çekildiyse bizimle iletişime geç.'],
+    'tutar' => ['error', 'Ödeme tutarı doğrulanamadı; işlemin elle incelenecek.'],
+    'dogrulanamadi' => ['error', 'Ödeme doğrulanamadı. Kartından para çekildiyse bizimle iletişime geç.'],
+    'eksik' => ['error', 'Ödeme doğrulama bilgisi eksik.'],
+    'yapilandirilmamis' => ['error', 'Kartlı ödeme yapılandırılmamış.'],
+];
+if (isset($_GET['odeme'], $odemeMesaj[$_GET['odeme']])) {
+    [$tip, $msg] = $odemeMesaj[$_GET['odeme']];
+    flash_set($tip, $msg);
+    e_redirect('odeme.php');
+}
 $iyzicoKey = setting('iyzico_api_key');
 $iyzicoSecret = setting('iyzico_secret_key');
 $iyzicoSandbox = setting('iyzico_sandbox') === '1';
