@@ -12,6 +12,15 @@ return_inventory_save($db,1,'I1','resellable','');$saved=$db->query("SELECT * FR
 $t['resellable zero inventory impairment']=return_inventory_evidence($c,$p,1,$saved)['inventory_loss']===0.0;
 return_inventory_save($db,1,'I1','partial','20,00');$saved=$db->query("SELECT * FROM return_inventory_checks")->fetch();
 $t['partial recovery loss']=return_inventory_evidence($c,$p,1,$saved)['inventory_loss']===30.0;
+$t['legacy group identity unverified']=return_inventory_evidence($c,$p,1,array_replace($saved,['group_line_id'=>null]))['inventory_loss']===null;
+$t['wrong item identity withheld']=return_inventory_evidence($c,$p,1,array_replace($saved,['item_id'=>'OTHER']))['inventory_loss']===null;
+$t['batch lookup scoped']=count(return_inventory_checks($db,1,[$c,$c]))===1&&return_inventory_checks($db,2,[$c])===[];
+$t['group identity captured']=$saved['group_line_id']==='';
+$grouped=$c;$grouped['group_line_id']='L1';
+$t['group identity change with same timestamp blocked']=return_inventory_evidence($grouped,$p,1,$saved)['inventory_loss']===null;
+$db->exec("UPDATE return_inventory_checks SET group_line_id=NULL WHERE user_id=1 AND item_id='I1'");
+return_inventory_save($db,1,'I1','partial','20,00');
+$t['legacy inspection explicitly refreshed']=return_inventory_evidence($c,$p,1,return_inventory_checks($db,1,[$c])['I1'])['inventory_loss']===30.0;
 $t['overclaim blocks loss']=return_inventory_evidence($c,$p,3,$saved)['inventory_loss']===null;
 $t['changed claim blocks loss']=return_inventory_evidence(array_replace($c,['modified_ms'=>$c['modified_ms']+1]),$p,1,$saved)['inventory_loss']===null;
 $changed=$p;$changed['lines'][0]['cost_snapshot']=51;$t['changed cost blocks loss']=return_inventory_evidence($c,$changed,1,$saved)['inventory_loss']===null;

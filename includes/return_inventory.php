@@ -21,7 +21,8 @@ function return_inventory_evidence(array $claim,?array $order,int $acceptedCount
     catch(InvalidArgumentException $e){return array_replace($out,['state'=>'Maliyet geçersiz']);}
     $out['cost']=$cost/10000.0;
     if(!$inspection)return array_replace($out,['state'=>'Depo kontrolü girilmedi']);
-    foreach(['claim_id','order_number','outbound_package','line_id','barcode'] as $key)
+    if(!array_key_exists('group_line_id',$inspection)||$inspection['group_line_id']===null||(string)$inspection['group_line_id']!==(string)($claim['group_line_id']??''))return array_replace($out,['state'=>'İade grup kimliği doğrulanmadı; yeniden depo kontrolü gerekli']);
+    foreach(['claim_id','item_id','order_number','outbound_package','line_id','barcode'] as $key)
         if((string)($inspection[$key]??'')!==(string)($claim[$key]??''))return array_replace($out,['state'=>'İade kimliği değişti; yeniden kontrol gerekli']);
     if((int)($inspection['claim_modified_ms']??0)!==(int)$claim['modified_ms']||(int)($inspection['cost_units']??0)!==$cost)
         return array_replace($out,['state'=>'İade veya maliyet değişti; yeniden kontrol gerekli']);
@@ -72,6 +73,18 @@ function return_inventory_key(array $r): string
 {
     return json_encode([(string)$r['order_number'],(string)$r['outbound_package'],($r['group_line_id']??'')!==''?'group':'legacy',(string)(($r['group_line_id']??'')!==''?$r['group_line_id']:$r['line_id']),(string)$r['barcode']],JSON_THROW_ON_ERROR);
 }
+/** Read inspection evidence in bounded tenant-scoped batches. */
+function return_inventory_checks(PDO $db,int $uid,array $claims): array
+{
+    $ids=array_values(array_unique(array_filter(array_map('strval',array_column($claims,'item_id')),static fn($id)=>$id!=='')));
+    $out=[];
+    foreach(array_chunk($ids,200) as $chunk){
+        $q=$db->prepare("SELECT * FROM return_inventory_checks WHERE user_id=? AND item_id IN (".implode(',',array_fill(0,count($chunk),'?')).")");
+        $q->execute(array_merge([$uid],$chunk));
+        while($r=$q->fetch())$out[(string)$r['item_id']]=$r;
+    }
+    return $out;
+}
 function return_inventory_save(PDO $db,int $uid,string $itemId,string $condition,string $raw): void
 {
     if(!in_array($condition,['resellable','partial','unusable'],true))throw new InvalidArgumentException('Depo durumu geçersiz.');
@@ -89,9 +102,9 @@ function return_inventory_save(PDO $db,int $uid,string $itemId,string $condition
             $value=finance_units($v);
             if($value<=0||$value>=$cost)throw new InvalidArgumentException('Kısmi geri kazanım 0 ile kayıtlı maliyet arasında olmalı.');
         }
-        $db->prepare("INSERT INTO return_inventory_checks(user_id,item_id,claim_id,order_number,outbound_package,line_id,barcode,claim_modified_ms,cost_units,condition,recovery_units,checked_at)
-          VALUES(?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(user_id,item_id) DO UPDATE SET claim_id=excluded.claim_id,order_number=excluded.order_number,outbound_package=excluded.outbound_package,line_id=excluded.line_id,barcode=excluded.barcode,claim_modified_ms=excluded.claim_modified_ms,cost_units=excluded.cost_units,condition=excluded.condition,recovery_units=excluded.recovery_units,checked_at=excluded.checked_at")
-          ->execute([$uid,$itemId,$claim['claim_id'],$claim['order_number'],$claim['outbound_package'],$claim['line_id'],$claim['barcode'],$claim['modified_ms'],$cost,$condition,$value,time()]);
+        $db->prepare("INSERT INTO return_inventory_checks(user_id,item_id,claim_id,order_number,outbound_package,line_id,barcode,claim_modified_ms,cost_units,condition,recovery_units,checked_at,group_line_id)
+          VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(user_id,item_id) DO UPDATE SET claim_id=excluded.claim_id,order_number=excluded.order_number,outbound_package=excluded.outbound_package,line_id=excluded.line_id,barcode=excluded.barcode,claim_modified_ms=excluded.claim_modified_ms,cost_units=excluded.cost_units,condition=excluded.condition,recovery_units=excluded.recovery_units,checked_at=excluded.checked_at,group_line_id=excluded.group_line_id")
+          ->execute([$uid,$itemId,$claim['claim_id'],$claim['order_number'],$claim['outbound_package'],$claim['line_id'],$claim['barcode'],$claim['modified_ms'],$cost,$condition,$value,time(),(string)($claim['group_line_id']??'')]);
         $db->commit();
     }catch(Throwable $e){if($db->inTransaction())$db->rollBack();throw $e;}
 }

@@ -30,7 +30,7 @@ function migrate(): void
 {
     $pdo = db();
     // Versioned, serialized and atomic; normal reads avoid schema writes.
-    $version=9;
+    $version=10;
     if((int)$pdo->query('PRAGMA user_version')->fetchColumn()>=$version)return;
     $pdo->exec('BEGIN IMMEDIATE');
     try{
@@ -210,6 +210,9 @@ function migrate(): void
         cost_units INTEGER NOT NULL,condition TEXT NOT NULL,recovery_units INTEGER NOT NULL,checked_at INTEGER NOT NULL,
         PRIMARY KEY(user_id,item_id)
     )");
+    $inspectionCols=array_column($pdo->query("PRAGMA table_info(return_inventory_checks)")->fetchAll(PDO::FETCH_ASSOC),'name');
+    // NULL means legacy inspection did not capture the group identity.
+    if(!in_array('group_line_id',$inspectionCols,true))$pdo->exec("ALTER TABLE return_inventory_checks ADD COLUMN group_line_id TEXT DEFAULT NULL");
     $pdo->exec("CREATE INDEX IF NOT EXISTS idx_claim_inventory_line ON trendyol_claim_items(user_id,outbound_package,status,order_number,line_id,barcode)");
     $pdo->exec("CREATE TABLE IF NOT EXISTS sync_ranges (
         user_id INTEGER NOT NULL, marketplace TEXT NOT NULL, job TEXT NOT NULL,

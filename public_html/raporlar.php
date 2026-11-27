@@ -82,14 +82,14 @@ if($rapor==='order'){
     $q->execute([$u['id'],$fromTs*1000]);$states=[];$matched=0;$known=0;$claimRows=$q->fetchAll();
     $claimOrders=[];foreach($claimRows as $row)if($row['matched_package']!==null)$claimOrders[$row['matched_package']]=['marketplace'=>'trendyol','package_number'=>$row['matched_package'],'order_number'=>$row['matched_order'],'currency_code'=>$row['currency_code'],'country_code'=>$row['country_code'],'lines'=>$row['lines'],'order_date'=>$row['order_date']];
     $claimOrders=cost_history_overlay(db(),(int)$u['id'],$claimOrders);
-    $counts=return_accepted_counts(db(),(int)$u['id'],$claimRows);$checks=db()->prepare("SELECT * FROM return_inventory_checks WHERE user_id=? AND item_id=?");$inventoryKnown=0;$inventoryLoss=0.0;
+    $counts=return_accepted_counts(db(),(int)$u['id'],$claimRows);$checks=return_inventory_checks(db(),(int)$u['id'],$claimRows);$inventoryKnown=0;$inventoryLoss=0.0;
     if($mp==='trendyol')foreach($claimRows as $row){
         $order=$claimOrders[$row['matched_package']??'']??null;
         $match=claim_order_match($row,$order);
         $states[$row['status']]=($states[$row['status']]??0)+1;
         if($match['state']==='Paket ve ürün satırı eşleşti')$matched++;
         if($match['cost']!==null)$known++;
-        $checks->execute([$u['id'],$row['item_id']]);$inventory=return_inventory_evidence($row,$order,$counts[return_inventory_key($row)]??0,$checks->fetch()?:null);
+        $inventory=return_inventory_evidence($row,$order,$counts[return_inventory_key($row)]??0,$checks[$row['item_id']]??null);
         if($inventory['ready']){$inventoryKnown++;$inventoryLoss+=$inventory['inventory_loss'];}
         $reportRows[]=[$row['claim_id'],$row['order_number'],$row['barcode'],$row['product_name'],$row['status'],$row['reason'],date('d.m.Y H:i',intdiv((int)$row['modified_ms'],1000)),$match['state'].' / '.$match['scope'],$match['cost'],$inventory['state'],$inventory['recovery'],$inventory['inventory_loss']];
     }
