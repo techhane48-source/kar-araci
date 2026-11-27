@@ -231,7 +231,12 @@ with tempfile.TemporaryDirectory(prefix="karfiyat-http-") as tmp:
                         for route,selector in (("urunler.php",".ui-catalog-table"),("promosyon-analiz.php",".ui-upload"),("raporlar.php",".ui-report-summary"),("magaza.php",".ui-context")):
                             view.goto(base+route,wait_until="domcontentloaded")
                             assert view.locator(selector).is_visible(), route
-                            assert view.evaluate("document.documentElement.scrollWidth <= innerWidth + 2"), (route,width)
+                            overflow = view.evaluate("""() => ({width:document.documentElement.scrollWidth, viewport:innerWidth, elements:[...document.querySelectorAll('body *')].filter(e=>{const r=e.getBoundingClientRect();return r.width>0 && r.right>innerWidth+2 && !e.closest('.table-card,.ui-tabs')}).slice(0,12).map(e=>[e.tagName,e.className?.baseVal??e.className,Math.round(e.getBoundingClientRect().right)])})""")
+                            assert overflow["width"]<=overflow["viewport"]+2, (route,width,overflow)
+                            if route=="urunler.php":
+                                view.locator(".ui-file-tools summary").click()
+                                assert view.evaluate("document.documentElement.scrollWidth <= innerWidth + 2"), ("expanded file tools",width)
+                                view.locator(".ui-file-tools summary").click()
                     view.set_viewport_size({"width":390,"height":844})
                     view.goto(base+"iade-kontrol.php",wait_until="domcontentloaded")
                     view.get_by_role("button",name="Satılamaz olarak işaretle").click()

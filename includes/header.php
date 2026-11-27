@@ -25,7 +25,7 @@ $uiAuth=in_array($uiPage,['giris.php','kayit.php'],true);
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="assets/style.css?v=13">
-<?php if($uiShell||$uiAuth):?><link rel="stylesheet" href="assets/admin-ui.css?v=3"><script defer src="assets/admin-ui.js?v=2"></script><?php endif;?>
+<?php if($uiShell||$uiAuth):?><link rel="stylesheet" href="assets/admin-ui.css?v=4"><script defer src="assets/admin-ui.js?v=2"></script><?php endif;?>
 </head>
 <body<?= $uiShell?' class="ui-shell"':($uiAuth?' class="ui-auth"':'') ?>>
 <a href="#main-content" class="skip-link">Ana içeriğe geç</a>

@@ -215,9 +215,9 @@ require __DIR__ . '/../includes/header.php';
 <div class="wrap">
   <div class="toolbar">
     <div><h1>Ürünlerim</h1><p class="ui-muted">Model ve varyantları inceleyin, alış maliyetlerini tamamlayın.</p></div><div class="actions"><a class="btn-primary" href="maliyet-senaryosu.php">Toplu maliyet gir</a><a class="btn-ghost" href="maliyet-gecmisi.php">Maliyet geçmişi</a></div>
-    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-      <form method="get" style="display:flex;gap:8px;align-items:center">
-        <input type="text" name="q" value="<?= h($q) ?>" aria-label="Ürün veya barkod ara" placeholder="Ürün, model, ebat veya barkod ara..." style="width:240px">
+    <div class="ui-catalog-tools">
+      <form method="get" class="ui-catalog-search">
+        <input type="text" name="q" value="<?= h($q) ?>" aria-label="Ürün veya barkod ara" placeholder="Ürün, model, ebat veya barkod ara...">
         <button type="submit" class="btn-ghost">Ara</button>
         <?php if ($q !== ''): ?><a href="urunler.php" class="btn-ghost" style="text-decoration:none">Temizle</a><?php endif; ?>
       </form>
@@ -311,12 +311,12 @@ require __DIR__ . '/../includes/header.php';
   </div>
   <?php endif; ?>
 
-  <div class="note" style="max-width:640px">
+  <details class="ui-disclosure"><summary>CSV dosya biçimi ve örnek şablon</summary><div class="ui-detail-body ui-csv-help">
     <b>CSV formatı:</b> Başlık satırı <code>name,marketplace,category,cost,price,cargo,service_fee,stopaj,return_rate</code> olmalı.
     Türkçe eşdeğerler de kabul edilir (urun_adi, pazaryeri, kategori, alis, satis, kargo, hizmet_bedeli, stopaj, iade…).
     marketplace: <code>trendyol</code>, <code>hepsiburada</code>, <code>amazon</code> veya <code>n11</code>.
     <a href="csv-sablon.php" style="display:inline-block;margin-top:8px">⬇ Örnek CSV şablonu indir</a>
-  </div>
+  </div></details>
   <?php endif; ?>
 </div>
 <?php require __DIR__ . '/../includes/footer.php'; ?>
