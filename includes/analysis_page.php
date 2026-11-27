@@ -38,11 +38,27 @@ if($_SERVER['REQUEST_METHOD']==='POST'){
             $picks=array_filter($picks,static fn($v)=>is_string($v)&&$v!=='');
             if(!$auto&&!$picks)throw new RuntimeException('Bu sayfadan kademe seçin.');
             $q=$db->prepare("SELECT row_no,payload_json FROM analysis_rows WHERE user_id=? AND kind=? AND module=? ORDER BY row_no");$q->execute($args);
+            // Recheck current costs, rules and original source before preparing a price file.
+            $data=xlsx_read($source,true);$schema=analysis_schema($data['headers'],$module);$rawRows=[];
+            foreach($data['rows'] as $raw){
+                $bc='b:'.trim((string)($raw[$schema['barcode']]??''));
+                if($bc==='b:')continue;
+                if(isset($rawRows[$bc]))throw new RuntimeException('Dosyada tekrarlayan barkod var.');
+                $rawRows[$bc]=$raw;
+            }
+            $products=[];$duplicates=[];$pq=$db->prepare("SELECT * FROM products WHERE user_id=? AND marketplace='trendyol' AND barcode!=''");$pq->execute([$u['id']]);
+            while($product=$pq->fetch()){$bc=$product['barcode'];if(isset($products[$bc]))$duplicates[$bc]=true;$products[$bc]=$product;}
+            foreach($duplicates as $bc=>$unused)unset($products[$bc]);
+            $rules=target_rules($db,(int)$u['id']);
             $selected=[];$used=[];$seen=[];$now=time();
             while($row=$q->fetch()){
                 $r=json_decode($row['payload_json'],true);$id=(int)$row['row_no'];$bc='b:'.$r['barcode'];
                 if(isset($seen[$bc]))throw new RuntimeException('Dosyada tekrarlayan barkod var; aktarım yapılmadı.');$seen[$bc]=true;
                 $choice=null;
+                if($auto||isset($picks[$id])){
+                    if(!isset($rawRows[$bc])||json_encode(analysis_row($schema,$rawRows[$bc],$products,$module,$rules),JSON_THROW_ON_ERROR|JSON_UNESCAPED_UNICODE)!==json_encode($r,JSON_THROW_ON_ERROR|JSON_UNESCAPED_UNICODE))
+                        throw new RuntimeException('Ürün veya analiz ayarları değişti. Güncel Excel ile yeniden analiz edin.');
+                }
                 if($auto){foreach(array_keys($r['tiers']) as $key){if(!str_starts_with($key,'period'.$days.'_'))continue;$c=tariff_apply_select($r,$key,true,false,$now);if($c!==null&&($choice===null||$c['profit']>$choice['profit']))$choice=$c;}}
                 elseif(isset($picks[$id])){$used[$id]=true;$choice=tariff_apply_select($r,$picks[$id],false,$promoOk,$now);if($choice===null)throw new RuntimeException('Seçilen kademe uygulanamıyor: dönem, maliyet veya promosyon onayını kontrol edin.');}
                 if($choice!==null)$selected[$bc]=$choice;

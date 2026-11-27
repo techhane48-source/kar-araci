@@ -41,6 +41,21 @@ $rr=['tiers'=>['period3_tier3'=>['profit'=>20,'period'=>'26 Kasım 08.00-29 Kas�
 $tests['auto skips promotion']=tariff_apply_select($rr,'period3_tier3',true,true,$now)===null;
 $tests['manual requires promotion acknowledgement']=tariff_apply_select($rr,'period3_tier3',false,false,$now)===null;
 $tests['manual period selection']=tariff_apply_select($rr,'period3_tier3',false,true,$now)['choice']==='3 Günlük Fiyat';
+// A synthetic workbook with original sheet metadata, style IDs and two rows.
+$headers=['ÜRÜN İSMİ','BARKOD','1.Fiyat Alt Limit','2.Fiyat Üst Limiti','2.Fiyat Alt Limit','3.Fiyat Üst Limiti','3.Fiyat Alt Limit','4.Fiyat Üst Limiti','Tarih aralığı (3 Gün)','1.KOMİSYON','2.KOMİSYON','3.KOMİSYON','4.KOMİSYON','Tarih aralığı (4 Gün)','1.KOMİSYON','2.KOMİSYON','3.KOMİSYON','4.KOMİSYON','KOMİSYONA ESAS FİYAT','GÜNCEL TSF','Güncel Uygulanan Promosyonlar','YENİ TSF (FİYAT GÜNCELLE)','Tarife Seçimi','FULL EXTERNAL ID'];
+$vals=['Synthetic','001','500.01','500','400.01','400','300.01','300','26 Kasım 08.00-29 Kasım 07.59','21','13.1','8.4','6.1','29 Kasım 08.00-3 Aralık 07.59','21','17.6','15.8','13.6','500','500','','','7 Günlük Fiyat','SYNTHETIC-EXTERNAL-ID'];
+$xml='<?xml version="1.0" encoding="UTF-8"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>';
+foreach([$headers,$vals,array_replace($vals,[1=>'002'])] as $i=>$v){
+    $rn=$i+1;$xml.='<row r="'.$rn.'">';
+    foreach($v as $j=>$val){$ref=chr(65+$j).$rn;$xml.='<c r="'.$ref.'" s="2" t="inlineStr"><is><t>'.htmlspecialchars($val,ENT_XML1|ENT_QUOTES,'UTF-8').'</t></is></c>';}
+    $xml.='</row>';
+}
+$xml.='</sheetData><dataValidations count="1"><dataValidation type="list" sqref="W2:W3"><formula1>"3 Günlük Fiyat,4 Günlük Fiyat"</formula1></dataValidation></dataValidations></worksheet>';
+$orig=$dir.'/original.xlsx';$out=$dir.'/output.xlsx';$z=new ZipArchive();$z->open($orig,ZipArchive::CREATE|ZipArchive::OVERWRITE);$z->addFromString('xl/worksheets/sheet1.xml',$xml);$z->addFromString('docProps/custom.xml','synthetic untouched');$z->close();
+tariff_export_xlsx($orig,$out,['b:001'=>['tsf'=>400.0,'choice'=>'3 Günlük Fiyat']]);
+$after=xlsx_read($out,true);$z=new ZipArchive();$z->open($out);$patched=$z->getFromName('xl/worksheets/sheet1.xml');
+$tests['original workbook updates selected row only']=$after['rows'][0][21]==='400.00'&&$after['rows'][0][22]==='3 Günlük Fiyat'&&$after['rows'][1][21]===''&&$after['rows'][1][22]==='7 Günlük Fiyat';
+$tests['external ids styles and validation preserved']=$after['rows'][0][23]==='SYNTHETIC-EXTERNAL-ID'&&str_contains($patched,'dataValidations')&&str_contains($patched,'r="V2" s="2"')&&$z->getFromName('docProps/custom.xml')==='synthetic untouched';$z->close();
 $bulk=analysis_schema(['Barkod','Fiyat'],'bulk');
 $rows=(static function(){for($i=0;$i<20000;$i++)yield ['001','200'];})();
 $stats=analysis_save(db(),1,'bulk','bulk',$bulk,$rows,$products);

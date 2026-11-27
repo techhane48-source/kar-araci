@@ -103,6 +103,8 @@ function tariff_export_xlsx(string $source,string $dest,array $selected):void
         $done=[];
         foreach($xp->query('/s:worksheet/s:sheetData/s:row') as $row){
             $rn=(int)$row->getAttribute('r');if($rn<=$data['header_row'])continue;
+            $newCell=$xp->query('s:c[@r="'.$letter($cols['new']).$rn.'"]',$row)->item(0);
+            if($newCell&&($xp->query('s:f',$newCell)->length||trim($read($newCell))!==''))throw new RuntimeException('Orijinal dosyada doldurulmuş yeni fiyat var.');
             $bcCell=$xp->query('s:c[@r="'.$letter($schema['barcode']).$rn.'"]',$row)->item(0);
             if(!$bcCell)continue;$bc=trim($read($bcCell));$key='b:'.$bc;if(!isset($selected[$key]))continue;
             if(isset($done[$key]))throw new RuntimeException('Excel barkodu tekrar ediyor.');

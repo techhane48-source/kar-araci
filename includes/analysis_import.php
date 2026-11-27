@@ -178,7 +178,7 @@ function analysis_row(array $schema,array $row,array $products,string $module,ar
         if($source!==null&&$t['profit']!==null){
             $candidate=tariff_candidate($source,$t);
             if($candidate!==null){
-                try{$calc=product_profit($p,$candidate['effective'],$rate);$t['application']=$candidate;$t['profit']=$calc['profit'];$t['margin']=$calc['margin'];$t['application_target']=$rule?target_pass($rule,$calc,$cost,$candidate['effective']):null;}catch(InvalidArgumentException $e){}
+                try{$calc=product_profit($p,$candidate['effective'],$rate);$t['application']=$candidate;$t['profit']=$calc['profit'];$t['margin']=$calc['margin'];$t['profit_delta']=$baseline!==null?$calc['profit']-$baseline['profit']:null;$t['application_target']=$rule?target_pass($rule,$calc,$cost,$candidate['effective']):null;}catch(InvalidArgumentException $e){}
             }
         }
         $tiers[$key]=$t;
