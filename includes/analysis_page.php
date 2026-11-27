@@ -41,12 +41,12 @@ if($_SERVER['REQUEST_METHOD']==='POST'){
                 $q=$db->prepare($sql." ORDER BY row_no");$q->execute($filters);
                 header('Content-Type: text/csv; charset=utf-8');header('Content-Disposition: attachment; filename="karfiyat-analiz.csv"');
                 echo "\xEF\xBB\xBF";$out=fopen('php://output','w');
-                $head=['Barkod','Ürün','Maliyet','Hedef kuralı','Kayıtlı satış fiyatı','Kayıtlı komisyon %','Kayıtlı fiyat tahmini kâr'];foreach($columns as $def){$label=csv_safe_text($def['label']);array_push($head,$label,$label.' komisyon %',$label.' tahmini kâr',$label.' alt uç fiyat',$label.' alt uç tahmini kâr',$label.' mevcut kâra fark',$label.' komisyon kaynağı',$label.' hedef',$label.' açıklama');}
+                $head=['Barkod','Ürün','Maliyet','Hedef kuralı','Kayıtlı satış fiyatı','Kayıtlı komisyon %','Kayıtlı fiyat tahmini kâr'];foreach($columns as $def){$label=csv_safe_text($def['label']);array_push($head,$label,$label.' dönem',$label.' komisyon %',$label.' tahmini kâr',$label.' alt uç fiyat',$label.' alt uç tahmini kâr',$label.' mevcut kâra fark',$label.' komisyon kaynağı',$label.' hedef',$label.' açıklama');}
                 fputcsv($out,$head,';','"','');
                 while($item=$q->fetch()){
                     $r=json_decode($item['payload_json'],true);
                     $line=[csv_safe_text($r['barcode']),csv_safe_text($r['name']),$r['cost'],csv_safe_text($r['rule']??''),$r['baseline_price']??null,$r['baseline_rate']??null,$r['baseline_profit']??null];
-                    foreach($columns as $key=>$unused){$t=$r['tiers'][$key];array_push($line,$t['price'],$t['rate'],$t['profit'],$t['min_price']??null,$t['min_endpoint_profit']??null,$t['profit_delta']??null,$t['rate_source']??null,isset($t['target_met'])?($t['target_met']?'Evet':'Hayır'):'—',csv_safe_text($t['reason']));}
+                    foreach($columns as $key=>$unused){$t=$r['tiers'][$key];array_push($line,$t['price'],csv_safe_text($t['period']??''),$t['rate'],$t['profit'],$t['min_price']??null,$t['min_endpoint_profit']??null,$t['profit_delta']??null,$t['rate_source']??null,isset($t['target_met'])?($t['target_met']?'Evet':'Hayır'):'—',csv_safe_text($t['reason']));}
                     fputcsv($out,$line,';','"','');
                 }fclose($out);exit;
             }
@@ -74,7 +74,7 @@ require __DIR__.'/header.php';
 <div class="card"><h2>Dosya yükle</h2><form method="post" enctype="multipart/form-data">
 <input type="hidden" name="csrf" value="<?= h(csrf_token()) ?>"><input type="hidden" name="action" value="analyze">
 <input type="file" name="csv" accept=".xlsx,.csv" required><button class="btn-primary">Analiz et</button></form>
-<p class="hint">Örnek başlıklar: Barkod; Fiyat; 1. Fiyat Aralığı; 1. Komisyon Oranı. Promosyonlarda eşleşen komisyon kolonu yoksa kâr hesaplanmaz. Fiyat aralığının alt ve üst uçları ayrı senaryodur; otomatik seçime girmez. Fark, kayıtlı satış fiyatı ve kayıtlı komisyonla hesaplanan tahmini kâra göredir. Açık uçlu aralıklar ve bilinmeyen kolonlar hesaplanmaz.</p></div>
+<p class="hint">Örnek başlıklar: Barkod; Fiyat; 1. Fiyat Aralığı; 1. Komisyon Oranı. Promosyonlarda eşleşen komisyon kolonu yoksa kâr hesaplanmaz. Fiyat aralığının alt ve üst uçları ayrı senaryodur; otomatik seçime girmez. Fark, kayıtlı satış fiyatı ve kayıtlı komisyonla hesaplanan tahmini kâra göredir. Trendyol 3 ve 4 günlük tarife dosyalarında açık uçlu fiyat kademeleri yalnız bilinen sınırda hesaplanır. Tarih aralığı satırda gösterilir; otomatik kampanya seçimi yapılmaz.</p></div>
 <?php if($job): ?>
 <div class="card table-card" style="margin-top:16px"><h2>Sonuçlar — <?= (int)$stats['rows'] ?> satır</h2>
 <p><?= (int)$stats['matched'] ?> eşleşen · <?= (int)$stats['unmatched'] ?> eşleşmeyen · <?= (int)$stats['missing_cost'] ?> maliyeti eksik · <?= (int)$stats['profitable'] ?> pozitif senaryo · <?= isset($stats['meets_target'])?(int)$stats['meets_target']:'—' ?> hedefi karşılayan satır</p>
@@ -85,6 +85,7 @@ require __DIR__.'/header.php';
 <?php foreach($rows as $row):$r=json_decode($row['payload_json'],true); ?><tr>
 <td><input type="checkbox" name="sel[]" value="<?= (int)$row['row_no'] ?>"></td><td><?= h($r['barcode']) ?></td><td><?= h($r['name']) ?></td><td><?= $r['cost']===null?'—':tl((float)$r['cost']) ?></td><td><?= isset($r['baseline_price'])?tl((float)$r['baseline_price']):'—' ?><br><?= isset($r['baseline_profit'])?tl((float)$r['baseline_profit']):'—' ?></td>
 <?php foreach($columns as $key=>$def):$t=$r['tiers'][$key]; ?><td>
+<?php if(!empty($t['period'])): ?><small><?=h($t['period'])?></small><br><?php endif; ?>
 <?= $t['price']===null?'—':tl((float)$t['price']) ?>
 <?php if($t['rate']!==null): ?><br>%<?= number_format((float)$t['rate'],2,',','.') ?> komisyon<?php endif; ?>
 <?php if($t['profit']!==null): ?><br><b class="<?= $t['profit']<0?'neg':'pos' ?>"><?= tl((float)$t['profit']) ?></b><?php endif; ?>

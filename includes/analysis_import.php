@@ -31,10 +31,50 @@ function analysis_rate(string $raw): ?float
     return $v!==null&&$v>=0&&$v<=100?$v:null;
 }
 
+/** Trendyol's two-period tariff: exact recognized headers, distinct rate sets.
+ * Both periods share the price thresholds. Open ends are illustrative boundary prices only. */
+function analysis_period_tariff_schema(array $headers): ?array
+{
+    $h=array_map(static fn($v)=>analysis_header((string)$v),$headers);
+    $dates=[];foreach($h as $i=>$v)if(in_array($v,['tariharaligi3gun','tariharaligi4gun'],true)){
+        if(isset($dates[$v]))throw new RuntimeException('Tekrarlanan tarife dönem başlığı.');
+        $dates[$v]=$i;
+    }
+    if(!$dates)return null;
+    $first=$dates['tariharaligi3gun']??null;$second=$dates['tariharaligi4gun']??null;
+    if($first===null||$second===null||$first>=$second)throw new RuntimeException('Tarife dönemleri eksik veya sırası geçersiz.');
+    $unique=static function(string $v)use($h):int{
+        $indices=array_keys($h,$v,true);if(count($indices)!==1)throw new RuntimeException('Tarife kolonu eksik veya tekrar ediyor: '.$v);return $indices[0];
+    };
+    $barcode=$unique('barkod');$name=array_search('urunismi',$h,true);
+    $lower=[];$upper=[];
+    for($i=1;$i<=4;$i++){
+        if($i<4)$lower[$i]=$unique($i.'fiyataltlimit');
+        if($i>1)$upper[$i]=$unique($i.'fiyatustlimiti');
+    }
+    $prices=[];$rates=[];
+    foreach([3=>$first,4=>$second] as $days=>$dateIndex)for($i=1;$i<=4;$i++){
+        $indices=array_keys($h,$i.'komisyon',true);
+        if(count($indices)!==2||$indices[0]<=$first||$indices[0]>=$second||$indices[1]<=$second)throw new RuntimeException('Tarife dönem komisyonları eksik veya konumu geçersiz.');
+        $key='period'.$days.'_tier'.$i;$rates[$key]=$indices[$days===3?0:1];
+        $prices[$key]=['index'=>$upper[$i]??$lower[$i],'lower_index'=>$lower[$i]??null,'upper_index'=>$upper[$i]??null,'period_index'=>$dateIndex,'label'=>$days.' Gün / '.$i.'. Kademe'];
+    }
+    return ['barcode'=>$barcode,'name'=>$name===false?null:$name,'prices'=>$prices,'rates'=>$rates,'period_tariff'=>true];
+}
+function analysis_period_price(array $def,array $row): ?array
+{
+    $lo=$def['lower_index']===null?null:parse_money_input((string)($row[$def['lower_index']]??''));
+    $hi=$def['upper_index']===null?null:parse_money_input((string)($row[$def['upper_index']]??''));
+    if(($def['lower_index']!==null&&($lo===null||$lo<=0||$lo>100000000))||($def['upper_index']!==null&&($hi===null||$hi<=0||$hi>100000000))||($lo!==null&&$hi!==null&&$lo>$hi))return null;
+    return ['price'=>$hi??$lo,'range'=>true,'min'=>$lo,'boundary'=>$hi===null?'lower':($lo===null?'upper':'bounded')];
+}
 /** Explicit known column aliases, not arbitrary fields containing 'price'. */
 function analysis_schema(array $headers,string $module): array
 {
     if(count($headers)>ANALYSIS_MAX_COLS)throw new RuntimeException('Kolon sınırı aşıldı.');
+    if(in_array($module,['komisyon','plus'],true)){
+        $period=analysis_period_tariff_schema($headers);if($period!==null)return $period;
+    }
     $barcode=null;$name=null;$prices=[];$rates=[];
     $aliases=['fiyat'=>'base','price'=>'base','satisfiyati'=>'base','satisfiyat'=>'base',
        'superavantajfiyat'=>'super','superavantajfiyataraligi'=>'super',
@@ -55,7 +95,7 @@ function analysis_schema(array $headers,string $module): array
             if($barcode!==null)throw new RuntimeException('Birden fazla barkod kolonu.');
             $barcode=$i;continue;
         }
-        if(in_array($h,['urunadi','urun','name'],true))$name=$i;
+        if(in_array($h,['urunadi','urunismi','urun','name'],true))$name=$i;
         $key=$aliases[$h]??null;
         if(preg_match('/^(\d+)(?:fiyat|fiyataraligi|price)$/D',$h,$m))$key='tier'.$m[1];
         if($key!==null){
@@ -110,19 +150,21 @@ function analysis_row(array $schema,array $row,array $products,string $module,ar
         try{$baseline=product_profit($p);$baselinePrice=(float)$p['price'];$baselineRate=(float)$p['rate'];}catch(InvalidArgumentException $e){}
     }
     foreach($schema['prices'] as $key=>$def){
-        $price=analysis_price((string)($row[$def['index']]??''));
+        $period=isset($def['period_index'])?trim((string)($row[$def['period_index']]??'')):null;
+        $price=isset($def['period_index'])?($period!==''?analysis_period_price($def,$row):null):analysis_price((string)($row[$def['index']]??''));
         $explicit=isset($schema['rates'][$key]);
         $rate=$explicit?analysis_rate((string)($row[$schema['rates'][$key]]??'')):($module==='bulk'&&$p? (float)$p['rate']:null);
-        $t=['price'=>$price['price']??null,'range'=>$price['range']??false,'rate'=>$rate,'profit'=>null,'margin'=>null,'reason'=>'','target_met'=>null,'min_price'=>$price['min']??null,'min_endpoint_profit'=>null,'profit_delta'=>null,'rate_source'=>$explicit?'file':($module==='bulk'&&$p?'catalog':null)];
+        $t=['price'=>$price['price']??null,'range'=>$price['range']??false,'rate'=>$rate,'profit'=>null,'margin'=>null,'reason'=>'','target_met'=>null,'min_price'=>($price['boundary']??null)==='lower'?null:($price['min']??null),'period'=>$period,'boundary'=>$price['boundary']??null,'min_endpoint_profit'=>null,'profit_delta'=>null,'rate_source'=>$explicit?'file':($module==='bulk'&&$p?'catalog':null)];
         if($cost===null)$t['reason']=$p?'Maliyet eksik':'Barkod eşleşmedi';
         elseif($price===null)$t['reason']='Fiyat veya kapalı aralık okunamadı';
         elseif($rate===null||$rate<0||$rate>100)$t['reason']='Kademe komisyonu eksik';
         else{
             try{$calc=product_profit($p,$price['price'],$rate);$t['profit']=$calc['profit'];$t['margin']=$calc['margin'];
                 if($baseline!==null)$t['profit_delta']=$calc['profit']-$baseline['profit'];
-                if($price['range']&&$price['min']>0)$t['min_endpoint_profit']=product_profit($p,$price['min'],$rate)['profit'];
+                if($price['range']&&($t['min_price']??0)>0)$t['min_endpoint_profit']=product_profit($p,$price['min'],$rate)['profit'];
                 // A range endpoint or unverified campaign is not an automatically eligible selection.
                 $t['reason']=$price['range']?'Aralık uçları: tahmini senaryo; uygunluk doğrulanmadı':'Tahmini hesap; kampanya uygunluğu doğrulanmadı';
+                if(isset($def['period_index']))$t['reason']=match($t['boundary']){'lower'=>'Alt limit ve üzeri: yalnız alt limit senaryosu','upper'=>'Üst limit ve altı: yalnız üst limit senaryosu',default=>'Alt ve üst limit senaryoları'}.'; tarife uygunluğu doğrulanmadı';
                 if($module==='bulk')$t['reason']=$price['range']?'Aralık uçları: tahmini senaryo':'Tahmini hesap';
                 if($rule&&!$price['range']&&($module==='bulk'||in_array($module,['komisyon','plus'],true))){
                     $t['target_met']=target_pass($rule,$calc,$cost,$price['price']);
