@@ -148,6 +148,18 @@ with tempfile.TemporaryDirectory(prefix="karfiyat-http-") as tmp:
             with sqlite3.connect(db) as con:
                 assert con.execute("SELECT cost,cost_vat,price FROM products WHERE id=?",(direct_id,)).fetchone()==(80.0,10.0,200.0)
                 assert con.execute("SELECT source FROM product_cost_history WHERE user_id=? AND barcode='CI002'",(uid,)).fetchone()==("first_sale",)
+            # Verified model groups are one row, with lazy/paged variant details.
+            with sqlite3.connect(db) as con:
+                for i in range(150):
+                    con.execute("INSERT INTO products(user_id,marketplace,name,barcode,category,rate,price,variant_model_key,variant_model_code,variant_size) VALUES(?,?,?,?,?,?,?,?,?,?)",(uid,"trendyol","CI grouped curtain",f"CI-G-{i:03}","Perde",20,100,"ci-model-group","CI-MODEL",f"{150+i} x 200"))
+                gid=con.execute("SELECT MIN(id) FROM products WHERE user_id=? AND variant_model_key='ci-model-group'",(uid,)).fetchone()[0]
+            status, page=request("urunler.php?q=CI-G-149")
+            assert status==200 and page.count('data-model-group=')==1 and '150 varyant' in page and 'data-variant-row=' not in page
+            status, page=request(f"urunler.php?q=CI-G-149&open={gid}")
+            assert status==200 and page.count('data-variant-row=')==100 and 'Sonraki varyantlar' in page
+            status, page=request(f"urunler.php?q=CI-G-149&open={gid}&vp=2")
+            assert status==200 and page.count('data-variant-row=')==50 and 'CI-G-149' in page
+            print("PASS model grouping, exact barcode search and variant pagination")
             # The same priced package must contribute to the daily and period profit.
             status, page=request("canli-performans.php?days=7")
             assert status==200 and 'data-profit-count="1"' in page, "Daily profit aggregation missing"

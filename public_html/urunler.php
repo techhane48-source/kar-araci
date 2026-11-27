@@ -26,7 +26,7 @@ if($_SERVER['REQUEST_METHOD']==='POST'&&($_POST['action']??'')==='direct_cost'){
         flash_set('success','Maliyet ve alış KDV oranı kaydedildi.');
     }catch(InvalidArgumentException|RuntimeException $e){flash_set('error',$e->getMessage());}
     catch(Throwable $e){flash_set('error','Maliyet kaydedilemedi; önceki kayıtlar korundu.');}
-    e_redirect('urunler.php?q='.urlencode(is_string($_POST['q']??null)?$_POST['q']:'').'&page='.max(1,(int)($_POST['page']??1)));
+    e_redirect('urunler.php?q='.urlencode(is_string($_POST['q']??null)?$_POST['q']:'').'&page='.max(1,(int)($_POST['page']??1)).'&open='.max(0,(int)($_POST['open']??0)).'&vp='.max(1,(int)($_POST['vp']??1)));
 }
 
 // ---- Maliyet şablonu indir (Melontik formatı: 14 kolon) ----
@@ -171,51 +171,44 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'impor
     e_redirect('urunler.php');
 }
 
-// ---- Arama + sayfalama (14k+ ürün için performans) ----
-$q = trim($_GET['q'] ?? '');
-$where = 'user_id = ?';
-$args = [$u['id']];
-if ($q !== '') {
-    $where .= ' AND (name LIKE ? OR barcode LIKE ?)';
-    $args[] = '%' . $q . '%';
-    $args[] = '%' . $q . '%';
+// Model grouping is based only on verified catalogue identity; legacy rows stay separate.
+// Search matches any variant; a matched model shows all its variants.
+$q = trim(is_string($_GET['q']??null)?$_GET['q']:'');
+$uid=(int)$u['id'];
+$keyExpr="CASE WHEN marketplace='trendyol' AND variant_model_key IS NOT NULL AND variant_model_key<>'' THEN 'm:'||variant_model_key ELSE 'p:'||id END";
+$cte="WITH scoped AS (SELECT *, $keyExpr AS group_key FROM products WHERE user_id=?), matched AS (SELECT DISTINCT group_key FROM scoped";
+$args=[$uid];
+if($q!==''){
+    $cte.=" WHERE name LIKE ? OR barcode LIKE ? OR variant_model_code LIKE ? OR variant_size LIKE ?";
+    for($i=0;$i<4;$i++)$args[]='%'.$q.'%';
 }
-
-// KPI toplamları: yalnızca gerekli kolonlar, tüm ürünler üzerinden (hafif döngü)
-$totalProfit = 0.0; $totalRevenue = 0.0; $totalCommission = 0.0; $totalCount = 0; $maliyetsiz = 0;
-$totStmt = db()->prepare("SELECT marketplace, cost, price, cargo, rate, kdv, cost_vat, extra_fee, service_fee, stopaj, stopaj_mode, stopaj_rate, allow_negative_vat, return_rate FROM products WHERE $where");
+$cte.="), grouped AS (SELECT s.group_key,MIN(s.id) AS group_id,MAX(s.id) AS newest_id,COUNT(*) AS variants,SUM(CASE WHEN s.cost>0 THEN 1 ELSE 0 END) AS cost_known,MIN(s.price) AS min_price,MAX(s.price) AS max_price FROM scoped s JOIN matched m ON s.group_key=m.group_key GROUP BY s.group_key) ";
+$totalProfit=0.0;$totalCommission=0.0;$totalCount=0;$maliyetsiz=0;
+$totStmt=db()->prepare($cte."SELECT s.marketplace,s.cost,s.price,s.cargo,s.rate,s.kdv,s.cost_vat,s.extra_fee,s.service_fee,s.stopaj,s.stopaj_mode,s.stopaj_rate,s.allow_negative_vat,s.return_rate FROM scoped s JOIN matched m ON s.group_key=m.group_key");
 $totStmt->execute($args);
-while ($tp=$totStmt->fetch()) {
-    if ((float)$tp['cost'] <= 0) $maliyetsiz++;
-    $rr = product_profit($tp);
-    if ((float)$tp['cost'] > 0) $totalProfit += $rr['profit'];
-    $totalRevenue += (float)$tp['price'];
-    $totalCommission += $rr['commission'];
-    $totalCount++;
+while($tp=$totStmt->fetch()){
+    if((float)$tp['cost']<=0)$maliyetsiz++;
+    $rr=product_profit($tp);
+    if((float)$tp['cost']>0)$totalProfit+=$rr['profit'];
+    $totalCommission+=$rr['commission'];$totalCount++;
 }
-$totals = ['profit' => $totalProfit, 'revenue' => $totalRevenue, 'commission' => $totalCommission, 'count' => $totalCount];
-
-// Sayfalama
-$perPage = 50;
-$page = max(1, (int) ($_GET['page'] ?? 1));
-$totalPages = max(1, (int) ceil($totalCount / $perPage));
-$page = min($page, $totalPages);
-$offset = ($page - 1) * $perPage;
-
-// Yalnızca bu sayfanın ürünleri
-$stmt = db()->prepare("SELECT * FROM products WHERE $where ORDER BY id DESC LIMIT $perPage OFFSET $offset");
-$stmt->execute($args);
-$products = $stmt->fetchAll();
-
-foreach ($products as &$p) {
-    $r = product_profit($p);
-    $p['_profit'] = $r['profit'];
-    $p['_margin'] = $r['margin'];
-    $p['_ratio'] = $r['ratio'];
-    $p['_has_cost'] = (float)$p['cost'] > 0;
-}
-unset($p);
-
+$totals=['profit'=>$totalProfit,'commission'=>$totalCommission,'count'=>$totalCount];
+$st=db()->prepare($cte."SELECT COUNT(*) FROM grouped");$st->execute($args);$modelCount=(int)$st->fetchColumn();
+$perPage=50;$page=max(1,(int)($_GET['page']??1));$totalPages=max(1,(int)ceil($modelCount/$perPage));$page=min($page,$totalPages);$offset=($page-1)*$perPage;
+$st=db()->prepare($cte."SELECT s.*,g.group_id,g.variants,g.cost_known,g.min_price,g.max_price FROM grouped g JOIN scoped s ON s.id=g.group_id ORDER BY g.newest_id DESC LIMIT $perPage OFFSET $offset");$st->execute($args);$products=$st->fetchAll();
+$open=max(0,(int)($_GET['open']??0));$vp=max(1,(int)($_GET['vp']??1));$variantPages=1;$expanded=[];
+$enrich=static function(array $p):array{
+    $r=product_profit($p);$p['_profit']=$r['profit'];$p['_margin']=$r['margin'];$p['_ratio']=$r['ratio'];$p['_has_cost']=(float)$p['cost']>0;return $p;
+};
+foreach($products as &$p){
+    $p=$enrich($p);
+    if((int)$p['group_id']===$open&&(int)$p['variants']>1){
+        $variantPages=max(1,(int)ceil((int)$p['variants']/100));$vp=min($vp,$variantPages);$vo=($vp-1)*100;
+        $st=db()->prepare("SELECT * FROM products WHERE user_id=? AND marketplace='trendyol' AND variant_model_key=? ORDER BY variant_size,barcode,id LIMIT 100 OFFSET $vo");
+        $st->execute([$uid,$p['variant_model_key']]);$expanded=array_map($enrich,$st->fetchAll());
+    }
+}unset($p);
+$url=static fn(int $pg,int $opened=0,int $vpage=1):string=>'urunler.php?q='.urlencode($q).'&page='.$pg.'&open='.$opened.'&vp='.$vpage.($opened?'#model-'.$opened:'');
 $pageTitle = 'Ürünlerim — ' . APP_NAME;
 require __DIR__ . '/../includes/header.php';
 ?>
@@ -224,7 +217,7 @@ require __DIR__ . '/../includes/header.php';
     <h1>Ürünlerim</h1><div class="actions"><a class="btn-primary" href="maliyet-senaryosu.php">Toplu maliyet gir</a><a class="btn-ghost" href="maliyet-gecmisi.php">Maliyet geçmişi</a></div>
     <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
       <form method="get" style="display:flex;gap:8px;align-items:center">
-        <input type="text" name="q" value="<?= h($q) ?>" placeholder="Ürün adı veya barkod ara..." style="width:240px">
+        <input type="text" name="q" value="<?= h($q) ?>" placeholder="Ürün, model, ebat veya barkod ara..." style="width:240px">
         <button type="submit" class="btn-ghost">Ara</button>
         <?php if ($q !== ''): ?><a href="urunler.php" class="btn-ghost" style="text-decoration:none">Temizle</a><?php endif; ?>
       </form>
@@ -261,7 +254,7 @@ require __DIR__ . '/../includes/header.php';
 
   <div class="kpi-row" style="grid-template-columns:repeat(3,1fr);margin-bottom:20px">
     <div class="kpi"><div class="k-label">Toplam Net Kâr</div><div class="k-value <?= $totals['profit'] < 0 ? 'neg' : 'pos' ?>"><?= tl($totals['profit']) ?></div></div>
-    <div class="kpi"><div class="k-label">Ürün Sayısı</div><div class="k-value"><?= $totals['count'] ?><?= !$pro ? ' / ' . FREE_PRODUCT_LIMIT : '' ?></div></div>
+    <div class="kpi"><div class="k-label">Ana ürün / model</div><div class="k-value"><?=$modelCount?></div><div class="hint"><?=$totalCount?> barkod / ürün kaydı</div></div>
     <div class="kpi"><div class="k-label">Toplam Komisyon</div><div class="k-value"><?= tl($totals['commission']) ?></div></div>
   </div>
 
@@ -271,15 +264,25 @@ require __DIR__ . '/../includes/header.php';
   <div class="card table-card">
     <table>
       <tr><th>Ürün</th><th>Barkod</th><th>Pazaryeri</th><th>Kategori</th><th>Satış</th><th>Alış maliyeti / KDV</th><th>Net Kâr</th><th>Kâr Oranı</th><th>Kâr Marjı</th><th></th></tr>
-      <?php foreach ($products as $p): ?>
-      <tr>
-        <td><?= h($p['name']) ?><?= !$p['_has_cost'] ? ' <span class="hint" style="font-size:11px;color:var(--muted)">(maliyet girilmedi)</span>' : '' ?></td>
+      <?php foreach ($products as $parent): $grouped=(int)$parent['variants']>1;$gid=(int)$parent['group_id']; ?>
+      <?php if($grouped):?>
+      <tr id="model-<?=$gid?>" data-model-group="<?=$gid?>">
+        <td><a class="btn-ghost" href="<?=h($url($page,$open===$gid?0:$gid))?>" aria-expanded="<?=$open===$gid?'true':'false'?>"><?=$open===$gid?'▾':'▸'?> <?=h($parent['name'])?></a><div class="hint"><?=h((string)$parent['variant_model_code'])?> · <?=(int)$parent['variants']?> varyant</div></td>
+        <td>—</td><td><?=h(marketplace_label($parent['marketplace']))?></td><td><?=h($parent['category'])?></td>
+        <td><?=tl((float)$parent['min_price'])?><?php if((float)$parent['min_price']!==(float)$parent['max_price']):?> – <?=tl((float)$parent['max_price'])?><?php endif;?></td>
+        <td><div class="hint"><?=(int)$parent['cost_known']?> / <?=(int)$parent['variants']?> maliyet girildi</div><a class="btn-ghost" href="perde-maliyeti.php?pid=<?=$gid?>">Perde maliyeti gir</a></td>
+        <td colspan="4"><a class="btn-ghost" href="<?=h($url($page,$open===$gid?0:$gid))?>"><?=$open===$gid?'Varyantları gizle':'Varyantları göster'?></a></td>
+      </tr>
+      <?php endif;?>
+      <?php foreach($grouped?($open===$gid?$expanded:[]):[$parent] as $p):?>
+      <tr <?=$grouped?'data-variant-row="'.$gid.'"':''?>>
+        <td><?php if($grouped):?><span class="hint">↳</span> <b><?=h((string)($p['variant_size']??'Ebat belirsiz'))?></b><div class="hint"><?=h($p['name'])?></div><?php else:?><?=h($p['name'])?><?php endif;?><?= !$p['_has_cost'] ? ' <span class="hint" style="font-size:11px;color:var(--muted)">(maliyet girilmedi)</span>' : '' ?></td>
         <td style="font-size:11px;color:var(--muted)"><?= $p['barcode'] !== '' ? h($p['barcode']) : '—' ?></td>
         <td><?= h(marketplace_label($p['marketplace'])) ?></td>
         <td style="font-size:12px"><?= h($p['category']) ?></td>
         <td><?= tl((float)$p['price']) ?></td>
         <td><?php if($p['marketplace']==='trendyol'&&$p['barcode']!==''): ?><details><summary><?= $p['_has_cost']?tl((float)$p['cost']).' / %'.h((string)$p['cost_vat']):'Maliyet gir' ?></summary><form method="post" style="min-width:180px">
-          <input type="hidden" name="csrf" value="<?=h(csrf_token())?>"><input type="hidden" name="action" value="direct_cost"><input type="hidden" name="pid" value="<?=(int)$p['id']?>"><input type="hidden" name="q" value="<?=h($q)?>"><input type="hidden" name="page" value="<?=$page?>">
+          <input type="hidden" name="csrf" value="<?=h(csrf_token())?>"><input type="hidden" name="action" value="direct_cost"><input type="hidden" name="pid" value="<?=(int)$p['id']?>"><input type="hidden" name="q" value="<?=h($q)?>"><input type="hidden" name="page" value="<?=$page?>"><input type="hidden" name="open" value="<?=$open?>"><input type="hidden" name="vp" value="<?=$vp?>">
           <label>Ürün alış fiyatı (KDV dahil TL) <input name="cost" required inputmode="decimal" value="<?= $p['_has_cost']?h((string)$p['cost']):'' ?>"></label><label>Alış faturası KDV oranı <select name="vat" required><option value="">Seçin</option><?php foreach([1,10,20] as $v):?><option value="<?=$v?>" <?= $p['_has_cost']&&(float)$p['cost_vat']===(float)$v?'selected':'' ?>>%<?=$v?></option><?php endforeach;?></select></label>
           <label>Geçerlilik <select name="scope" required><option value="">Seçin</option><option value="today">Bugünden itibaren</option><option value="first_sale">İlk satıştan itibaren</option></select></label><button class="btn-primary">Maliyeti kaydet</button></form><p><a class="btn-ghost" href="perde-maliyeti.php?pid=<?=(int)$p['id']?>">Perde maliyeti gir</a></p></details><?php else: ?><?= $p['_has_cost']?tl((float)$p['cost']):'—' ?><?php endif; ?></td>
         <td class="<?= $p['_profit'] < 0 ? 'neg' : 'pos' ?>"><?= $p['_has_cost'] ? tl($p['_profit']) : '—' ?></td>
@@ -295,6 +298,8 @@ require __DIR__ . '/../includes/header.php';
         </td>
       </tr>
       <?php endforeach; ?>
+      <?php if($grouped&&$open===$gid&&$variantPages>1):?><tr><td colspan="10"><nav aria-label="Varyant sayfaları" style="display:flex;gap:12px;align-items:center"><?php if($vp>1):?><a class="btn-ghost" href="<?=h($url($page,$gid,$vp-1))?>">Önceki varyantlar</a><?php endif;?><span>Varyant sayfası <?=$vp?> / <?=$variantPages?></span><?php if($vp<$variantPages):?><a class="btn-ghost" href="<?=h($url($page,$gid,$vp+1))?>">Sonraki varyantlar</a><?php endif;?></nav></td></tr><?php endif;?>
+      <?php endforeach; ?>
     </table>
   </div>
 
@@ -303,7 +308,7 @@ require __DIR__ . '/../includes/header.php';
     <?php if ($page > 1): ?>
       <a class="btn-ghost" style="text-decoration:none" href="urunler.php?q=<?= urlencode($q) ?>&page=<?= $page - 1 ?>">← Önceki</a>
     <?php endif; ?>
-    <span class="hint">Sayfa <?= $page ?> / <?= $totalPages ?> (<?= $totals['count'] ?> ürün)</span>
+    <span class="hint">Sayfa <?= $page ?> / <?= $totalPages ?> (<?=$modelCount?> ana ürün / <?=$totalCount?> barkod kaydı)</span>
     <?php if ($page < $totalPages): ?>
       <a class="btn-ghost" style="text-decoration:none" href="urunler.php?q=<?= urlencode($q) ?>&page=<?= $page + 1 ?>">Sonraki →</a>
     <?php endif; ?>
