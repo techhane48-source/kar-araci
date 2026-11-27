@@ -281,6 +281,7 @@ require __DIR__ . '/../includes/header.php';
               <small><?=h($cl['state'])?><?=$cl['assumed']?' · Operasyonel varsayım':''?></small><?php if(!$cancel):?><br><a href="iade-kontrol.php?q=<?=urlencode((string)$o['order_number'])?>">İade / satılamaz işareti</a><?php endif;?>
               <?php endif;?>
             <?php elseif ($pr['ok']): ?><span class="<?= $pr['profit'] < 0 ? 'neg' : 'pos' ?>"><?= tl($pr['profit']) ?></span><br><small><?=h((string)$pr['cargo_source'])?> · <?=h((string)$pr['commission_source'])?></small>
+              <?php if(isset($o['partial_units'])):?><br><small><?= (int)$o['partial_units']?> adet <?=h($o['partial_kind'])?> · kalan satış <?=tl((float)$o['total_price'])?><?php if($o['partial_kind']==='iade'):?> · <a href="iade-kontrol.php?q=<?=urlencode((string)$o['order_number'])?>">Satılamaz işareti</a><?php endif;?></small><?php endif;?>
             <?php else: ?><span class="hint"><?= h($pr['reason'] ?? 'Veri eksik') ?></span><?php endif; ?>
           </td>
           <td style="font-size:12px"><?= h($o['status'] ?: '—') ?></td>

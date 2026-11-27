@@ -189,6 +189,7 @@ function calc_order_profit(array $order, array $byBarcode): array
     $sale = (float)($order['total_price'] ?? 0);
     $fail = static fn(string $reason): array => ['ok'=>false,'missing'=>true,'sale'=>$sale,'profit'=>null,'reason'=>$reason];
     $lines = $order['lines'] ?? [];
+    if(isset($order['partial_error']))return $fail((string)$order['partial_error']);
     if (!order_is_domestic_try($order)) return $fail('Para birimi veya ülke doğrulanmadı; yurtiçi TL hesabına alınmadı.');
     if (!order_is_active_sale($order)) return $fail('İptal/iade: finansal kayıt bekleniyor.');
     if (!is_array($lines) || !$lines || !is_numeric($order['total_price']??null) || !is_finite($sale) || $sale <= 0) return $fail('Sipariş verisi eksik.');
@@ -247,6 +248,9 @@ function calc_order_profit(array $order, array $byBarcode): array
     if($commissionOverride)$commission=(float)$order['commission_override'];
     $service=trendyol_service_fee();
     $netVat=max(0.0,$saleVat-$costVat-($commission+$cargo+$service)/6);
+    $impairment=(float)($order['partial_inventory_loss']??0);
+    if(!is_finite($impairment)||$impairment<0)return $fail('İade stok kaybı geçersiz.');
+    $cost+=$impairment; // Gross impairment once; no new purchase VAT credit.
     $profit=$sale-$cost-$cargo-$commission-$service-$stopaj-$netVat;
     return ['ok'=>true,'estimated'=>true,'sale'=>$sale,'cost'=>$cost,'cargo'=>$cargo,'cargo_source'=>$cargoSource,'profit'=>$profit,
         'margin'=>$profit/$sale*100,'ratio'=>$profit/$cost*100,'commission'=>$commission,'commission_source'=>$commissionSource,

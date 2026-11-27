@@ -297,6 +297,90 @@ function closed_full_claim(array $o,array $claims): bool
     foreach($want as $id=>$qty)if(($got[$id]??0)!==$qty)return false;
     return true;
 }
+/** Build a read-only retained-unit estimate from exact claim units or cancelled lines.
+ * The original price may include cancelled lines or already exclude them. Never subtract twice.
+ * For partial returns, require the original package total to reconcile to original units.
+ */
+function partial_package_estimate(array $o,array $packages,array $rows,array $cargo,array $claims,array $counts,array $checks,string $seller,array $tariffs): ?array
+{
+    $fail=static fn(string $reason)=>array_replace($o,['partial_error'=>$reason]);
+    if(!order_is_active_sale($o)||!order_is_domestic_try($o))return null;
+    $lines=$o['lines']??[];if(is_string($lines))$lines=json_decode($lines,true);
+    if(!is_array($lines)||!$lines)return null;
+    $cancelled=false;foreach($lines as $l)if(is_array($l)&&in_array(strtolower((string)($l['status']??'')),['cancelled','canceled','unsupplied'],true))$cancelled=true;
+    if(!$claims&&!$cancelled)return null;
+    if($seller===''||($cancelled&&$claims))return $fail('Kısmi işlem: satıcı veya birleşik iptal/iade eşleşmesi eksik');
+    $no=(string)($o['order_number']??'');$pid=(string)($o['package_number']??'');
+    if($no===''||$pid==='')return $fail('Kısmi işlem: paket kimliği eksik');
+    $removed=[];$seenItems=[];$seenUnits=[];$knownIds=[];$inventory=0.0;
+    foreach($lines as $l){
+        if(!is_array($l))return $fail('Kısmi işlem: ürün satırı eksik');
+        $id=(string)($l['line_id']??'');$q=$l['quantity']??null;
+        if($id===''||isset($knownIds[$id])||!is_numeric($q)||!is_finite((float)$q)||(float)$q!==(float)(int)$q||$q<1)return $fail('Kısmi işlem: satır kimliği/adedi geçersiz');
+        $knownIds[$id]=(int)$q;
+    }
+    foreach($claims as $c){
+        $item=(string)($c['item_id']??'');$unit=(string)($c['line_id']??'');
+        if(($c['status']??'')!=='Accepted'||$item===''||$unit===''||isset($seenItems[$item])||isset($seenUnits[$unit])||(string)($c['order_number']??'')!==$no||(string)($c['outbound_package']??'')!==$pid)return $fail('Kısmi iade: iade kalemi doğrulanamadı');
+        $match=claim_matching_lines($c,$lines);if(count($match)!==1)return $fail('Kısmi iade: ürün eşleşmedi');
+        $lid=(string)$match[0]['line_id'];$removed[$lid][$unit]=true;$seenItems[$item]=true;$seenUnits[$unit]=true;
+        if(count($removed[$lid])>$knownIds[$lid])return $fail('Kısmi iade: iade adedi fazla');
+        if(isset($checks[$item])){
+            $a=return_inventory_evidence($c,$o,$counts[return_inventory_key($c)]??0,$checks[$item]);
+            if(!$a['ready'])return $fail('Kısmi iade: satılamaz ürün maliyeti doğrulanmalı');
+            $inventory+=(float)$a['inventory_loss'];
+        }
+    }
+    $original=0.0;$retained=0.0;$kept=[];$removedQty=0;
+    foreach($lines as $l){
+        $id=(string)$l['line_id'];$qty=(int)$l['quantity'];$details=$l['discount_details']??[];
+        $allCancel=in_array(strtolower((string)($l['status']??'')),['cancelled','canceled','unsupplied'],true);
+        if(!$allCancel&&!order_is_active_sale($l))return $fail('Kısmi işlem: ürün durumu doğrulanmalı');
+        if(!is_numeric($l['price']??null)||!is_finite((float)$l['price'])||$l['price']<0||abs((float)($l['platform_discount']??0))>0.005||!is_array($details))return $fail('Kısmi işlem: indirimli ürün fiyatı doğrulanmalı');
+        $drop=$allCancel?$qty:count($removed[$id]??[]);$left=$qty-$drop;$lineAll=0.0;$lineLeft=0.0;$keepDetails=[];
+        if($details){
+            if(count($details)!==$qty)return $fail('Kısmi işlem: adet indirimi eksik');
+            $ids=[];$matched=0;
+            foreach($details as $d){
+                $uid=is_array($d)?(string)($d['lineItemId']??''):'';
+                if($uid===''||isset($ids[$uid])||!is_numeric($d['lineItemPrice']??null)||!is_finite((float)$d['lineItemPrice'])||$d['lineItemPrice']<0||abs((float)($d['lineItemTyDiscount']??0))>0.005)return $fail('Kısmi işlem: birim indirim eşleşmedi');
+                $ids[$uid]=true;$v=(float)$d['lineItemPrice'];$lineAll+=$v;
+                if($allCancel||isset($removed[$id][$uid])){$matched++;continue;}
+                $lineLeft+=$v;$keepDetails[]=$d;
+            }
+            if($matched!==$drop)return $fail('Kısmi iade: indirimli birim kimliği eşleşmedi');
+        }else{$lineAll=(float)$l['price']*$qty;$lineLeft=(float)$l['price']*$left;}
+        $original+=$lineAll;$retained+=$lineLeft;$removedQty+=$drop;
+        if($left){$l['quantity']=$left;$l['discount_details']=$keepDetails;$kept[]=$l;}
+    }
+    if(!$removedQty||!$kept||$retained<=0)return $fail('Kısmi işlem: kalan satış yok veya doğrulanamadı');
+    if(!is_numeric($o['total_price']??null)||!is_finite((float)$o['total_price']))return $fail('Kısmi işlem: paket toplamı eksik');
+    $total=(float)$o['total_price'];
+    if(abs($total-$original)>0.05&&(!$cancelled||abs($total-$retained)>0.05))return $fail('Kısmi işlem: paket ve ürün toplamı uyuşmuyor');
+    // For a return use the full package freight once, including both legs. A
+    // partial cancellation does not create a return freight charge by itself.
+    if($claims){
+        if(count($packages)!==1)return $fail('Kısmi iade: çoklu paket kargosu eşleşmeli');
+        $copy=$o;$copy['status']='Returned';
+        $cl=closed_package_loss($copy,$packages,$rows,$cargo,$claims,$counts,$checks,$seller,$tariffs);
+        $freight=$cl['cargo'];
+        if($freight===null&&!$cargo&&is_numeric($o['cargo_override']??null)&&is_finite((float)$o['cargo_override'])&&$o['cargo_override']>0)$freight=2*(float)$o['cargo_override'];
+        if($freight===null)return $fail('Kısmi iade: gidiş/dönüş kargosu eksik');
+        $o['cargo_override']=$freight;$o['cargo_source']=$cl['estimated_cargo']||$cl['cargo']===null?'Gidiş/dönüş kargo tahmini':'Gidiş/dönüş fatura tutarı';
+    }
+    // A partial sale commission is estimated only from recorded line rates; no
+    // original full-sale commission or refund movement is applied a second time.
+    foreach($kept as $l)if(!is_numeric($l['commission_rate']??null)||!is_finite((float)$l['commission_rate'])||$l['commission_rate']<0||$l['commission_rate']>100)return $fail('Kısmi işlem: kalan ürün komisyon oranı eksik');
+    // Unrelated or unsupported financial evidence cannot be silently ignored.
+    $seen=[];foreach($rows as $r){
+        $raw=json_decode((string)($r['raw_json']??''),true);$id=(string)($r['external_id']??'');$type=(string)($r['query_type']??'');
+        if($id===''||isset($seen[$id])||!is_array($raw)||!finance_is_domestic($raw)||(string)($raw['sellerId']??'')!==$seller||(string)($raw['id']??'')!==$id||(string)($raw['orderNumber']??'')!==$no||(string)($r['order_number']??'')!==$no||(string)($raw['shipmentPackageId']??'')!==(string)($r['shipment_package_id']??'')||!in_array($type,['Sale','Return','Discount','Coupon','DiscountCancel','CouponCancel'],true)||($type==='Return'&&!$claims))return $fail('Kısmi işlem: finans hareketi doğrulanmalı');
+        $seen[$id]=true;
+    }
+    unset($o['commission_override']);$o['commission_source']='Kalan ürünlerin kayıtlı komisyon oranı / tahmin';
+    $o['original_total_price']=$total;$o['total_price']=$retained;$o['lines']=$kept;$o['partial_units']=$removedQty;$o['partial_inventory_loss']=$inventory;$o['partial_kind']=$claims?'iade':'iptal';
+    return $o;
+}
 /** Batch closed orders, including all packages, claim units and invoice rows. */
 function closed_package_loss_overlay(PDO $db,int $uid,array $orders): array
 {
@@ -304,11 +388,15 @@ function closed_package_loss_overlay(PDO $db,int $uid,array $orders): array
     foreach($orders as $i=>$o)if(($o['marketplace']??'')==='trendyol'&&!empty($o['order_number'])){
         $no=(string)$o['order_number'];
         if(in_array(strtolower((string)($o['status']??'')),['cancelled','canceled','unsupplied','returned','undelivered'],true))$by[$no][]=$i;
-        elseif(order_is_active_sale($o))$active[$no][]=$i;
+        elseif(order_is_active_sale($o)){
+            $active[$no][]=$i;
+            $lines=$o['lines']??[];if(is_string($lines))$lines=json_decode($lines,true);
+            if(is_array($lines))foreach($lines as $l)if(is_array($l)&&in_array(strtolower((string)($l['status']??'')),['cancelled','canceled','unsupplied'],true)){$by[$no][]=$i;break;}
+        }
     }
     foreach(array_chunk(array_keys($active),200) as $chunk){
         $in=implode(',',array_fill(0,count($chunk),'?'));$q=$db->prepare("SELECT DISTINCT order_number FROM trendyol_claim_items WHERE user_id=? AND status='Accepted' AND order_number IN ($in)");$q->execute(array_merge([$uid],$chunk));
-        while($r=$q->fetch()){$no=(string)$r['order_number'];foreach($active[$no] as $i)$by[$no][]=$i;}
+        while($r=$q->fetch()){$no=(string)$r['order_number'];foreach($active[$no] as $i)if(!in_array($i,$by[$no]??[],true))$by[$no][]=$i;}
     }
     if(!$by)return $orders;
     $tariffs=cargo_tariffs();
@@ -329,7 +417,12 @@ function closed_package_loss_overlay(PDO $db,int $uid,array $orders): array
             foreach($by[$no] as $i){
                 $o=$orders[$i];
                 if(order_is_active_sale($o)){
-                    if(count($g['packages']??[])!==1||!closed_full_claim($o,$g['claims']??[]))continue;
+                    $ownClaims=array_values(array_filter($g['claims']??[],static fn($c)=>(string)$c['outbound_package']===(string)$o['package_number']));
+                    if(count($g['packages']??[])!==1||!closed_full_claim($o,$ownClaims)){
+                        $partial=partial_package_estimate($o,$g['packages']??[],$g['rows']??[],$cargo,$ownClaims,$counts,$checks,$seller,$tariffs);
+                        if($partial!==null)$orders[$i]=$partial;
+                        continue;
+                    }
                     $o['status']='Returned';
                 }
                 $orders[$i]['closed_loss']=closed_package_loss($o,$g['packages']??[],$g['rows']??[],$cargo,$g['claims']??[],$counts,$checks,$seller,$tariffs);

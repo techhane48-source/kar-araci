@@ -87,4 +87,23 @@ $cancelled=array_replace($closed,['status'=>'Cancelled']);$second=array_replace(
 $t['all cancelled split no evidence provisional zero']=closed_package_loss($cancelled,[$cancelled,$second],[],[],[],[],[],'123')['loss']===0.0;
 $t['split with actual charges still no allocation']=closed_package_loss($cancelled,[$cancelled,$second],[],$freight,[],[],[],'123')['loss']===null;
 $t['mixed status split no zero assumption']=closed_package_loss($cancelled,[$cancelled,array_replace($second,['status'=>'Delivered'])],[],[],[],[],[],'123')['loss']===null;
+$partial=array_replace($delivered,['total_price'=>230,'lines'=>[
+ ['line_id'=>'L1','barcode'=>'001','quantity'=>2,'price'=>80,'commission_rate'=>20,'vat_rate'=>20,'cost_snapshot'=>50,'cost_vat_snapshot'=>20,'discount_details'=>[['lineItemId'=>'U1','lineItemPrice'=>70],['lineItemId'=>'U2','lineItemPrice'=>90]]],
+ ['line_id'=>'L2','barcode'=>'002','quantity'=>1,'price'=>70,'commission_rate'=>20,'vat_rate'=>20,'cost_snapshot'=>30,'cost_vat_snapshot'=>20]
+]]);
+$unit=array_replace($c,['line_id'=>'U1','group_line_id'=>'L1']);
+$counts=[return_inventory_key($unit)=>1];
+$a=partial_package_estimate($partial,[$partial],[],$freight,[$unit],$counts,[],'123',[]);
+$t['partial return exact discounted unit removed']=$a['total_price']===160.0&&$a['lines'][0]['quantity']===1&&$a['lines'][0]['discount_details'][0]['lineItemId']==='U2'&&$a['cargo_override']===100.0&&$a['partial_inventory_loss']===0.0;
+$prod=['001'=>['cost'=>50,'kdv'=>20,'rate'=>20],'002'=>['cost'=>30,'kdv'=>20,'rate'=>20]];
+$pr=calc_order_profit($a,$prod);$t['remaining sale commission and freight once']=$pr['ok']&&$pr['commission']===32.0&&$pr['cargo']===100.0&&$pr['cost']===80.0;
+$badCheck=array_replace($exception,['line_id'=>'U1','group_line_id'=>'L1']);
+$a=partial_package_estimate($partial,[$partial],[],$freight,[$unit],$counts,['I1'=>$badCheck],'123',[]);
+$damaged=calc_order_profit($a,$prod);$t['partial damaged unit cost only once']=$damaged['ok']&&$damaged['cost']===130.0&&abs($damaged['profit']-$pr['profit']+50)<0.001;
+$cancelPart=$partial;$cancelPart['lines'][1]['status']='Cancelled';$cancelPart['cargo_override']=60;$cancelPart['total_price']=160;
+$a=partial_package_estimate($cancelPart,[$cancelPart],[],[],[],[],[],'123',[]);
+$t['already net partial cancel not double deducted']=$a['total_price']===160.0&&count($a['lines'])===1&&$a['cargo_override']===60;
+$t['partial cancel originally gross also supported']=partial_package_estimate(array_replace($cancelPart,['total_price'=>230]),[$cancelPart],[],[],[],[],[],'123',[])['total_price']===160.0;
+$t['partial duplicate claim rejected']=isset(partial_package_estimate($partial,[$partial],[],$freight,[$unit,array_replace($unit,['item_id'=>'I2'])],$counts,[],'123',[])['partial_error']);
+$t['partial different unit discount not guessed']=isset(partial_package_estimate($partial,[$partial],[],$freight,[array_replace($unit,['line_id'=>'L1'])],$counts,[],'123',[])['partial_error']);
 foreach($t as $n=>$ok)echo ($ok?'PASS':'FAIL')." $n\n";exit(in_array(false,$t,true)?1:0);
