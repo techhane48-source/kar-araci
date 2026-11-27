@@ -85,7 +85,7 @@ with tempfile.TemporaryDirectory(prefix="karfiyat-http-") as tmp:
             assert status == 200 and csv.startswith("\ufeff") and "Uyarılar" in csv
             print("PASS alert CSV")
             status, page = request("dashboard.php")
-            assert status == 200 and "Tahmini Sipariş Kârı" in page and "717,74" in page, "Populated dashboard missing data"
+            assert status == 200 and "Tahmini Sipariş Kârı" in page and "717,74" in page and "İadeler ve stok değer kaybı" in page and 'id="main-content"' in page, "Populated dashboard missing data"
             status, csv = request("raporlar.php?r=order_finance&export=1")
             assert status == 200 and "CI-ORDER" in csv and "116.37" in csv, "Populated financial report missing known subtotal"
             status, csv = request("raporlar.php?r=product_cost_evidence&export=1")

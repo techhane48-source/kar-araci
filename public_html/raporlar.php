@@ -98,13 +98,10 @@ if($rapor==='order'){
 }elseif($rapor==='return'||$rapor==='campaign'){
     $types=$rapor==='return'?['Return','ManualRefund','ManualRefundCancel']:['Discount','DiscountCancel','Coupon','CouponCancel','TyDiscount','TyDiscountCancel','TyCoupon','TyCouponCancel'];
     $reportCols=['Barkod','Ürün','İşlem türü','İşlem kaydı adedi','Alacak','Borç','Borç − alacak'];
-    $q=db()->prepare("SELECT barcode,query_type,COUNT(*) AS n,SUM(credit) AS credit,SUM(debt) AS debt FROM settlements
-        WHERE user_id=? AND marketplace=? AND external_id IS NOT NULL AND finance_scope='domestic' AND transaction_date>=? AND query_type IN (".implode(',',array_fill(0,count($types),'?')).") GROUP BY barcode,query_type ORDER BY barcode,query_type");
-    $q->execute(array_merge([$u['id'],$mp,$fromTs],$types));
-    $credit=0.0;$debt=0.0;$n=0;
-    foreach($q->fetchAll() as $row){$bc=(string)$row['barcode'];$c=(float)$row['credit'];$d=(float)$row['debt'];$count=(int)$row['n'];
-        $reportRows[]=[$bc,$byBarcode[$bc]['name']??$bc,(string)$row['query_type'],$count,$c,$d,$d-$c];$credit+=$c;$debt+=$d;$n+=$count;}
-    $summary=['Finansal işlem kaydı'=>$n,'Alacak'=>$money($credit),'Borç'=>$money($debt),'Borç − alacak'=>$money($debt-$credit)];
+    $data=$mp==='trendyol'?product_movement_period(db(),(int)$u['id'],$fromTs,time()+1,$types):['groups'=>[],'count'=>0,'credit'=>0,'debt'=>0,'excluded'=>0];
+    foreach($data['groups'] as $row){$bc=$row['barcode'];$c=$row['credit']/10000.0;$d=$row['debt']/10000.0;
+        $reportRows[]=[$bc,$byBarcode[$bc]['name']??$bc,$row['type'],$row['count'],$c,$d,$d-$c];}
+    $summary=['Finansal işlem kaydı'=>$data['count'],'Alacak'=>$data['count']?$money($data['credit']/10000.0):'—','Borç'=>$data['count']?$money($data['debt']/10000.0):'—','Borç − alacak'=>$data['count']?$money(($data['debt']-$data['credit'])/10000.0):'—','Doğrulanamayan kayıt'=>$data['excluded']];
     $reportNote=$rapor==='return'?'Finansal işlem adedi ürün iade adedi değildir. İade tutarı, yeniden satılabilirlik ve gerçek kargo maliyeti eşleşmeden iade zararı hesaplanmaz.':'Satıcı ve Trendyol kaynaklı indirim/kuponlar ayrı işlem türleridir; iptaller dahil. Tarih finansal işlem tarihidir; kampanya kârlılığı değildir.';
 }elseif($rapor==='cargo_effective'){
     $reportCols=['Sipariş','Kargo firması','Güncel API desisi','İlk tahmin','Güncel tarife tahmini (KDV dahil)','Faturalanan desi toplamı','Fatura gönderi tutarı (API)','Seçilen kargo tutarı','Kâr hesabına uygun brüt tutar','Fatura kalemi','Durum','Brüt fatura - tarife tahmini','Fatura desisi - API desisi'];

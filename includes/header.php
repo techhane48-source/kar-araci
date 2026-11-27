@@ -18,9 +18,10 @@ $flash = flash_get();
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="assets/style.css?v=11">
+<link rel="stylesheet" href="assets/style.css?v=12">
 </head>
 <body>
+<a href="#main-content" class="skip-link">Ana içeriğe geç</a>
 <header class="site-header<?= $u ? ' signed-in-header' : '' ?>">
   <div class="header-inner">
     <a href="index.php" class="logo"><span class="logo-mark">K</span>Kâr<span>&</span>Fiyat</a>
@@ -59,4 +60,4 @@ $flash = flash_get();
 <?php if ($flash): ?>
 <div class="flash flash-<?= h($flash['type']) ?>"><?= h($flash['msg']) ?></div>
 <?php endif; ?>
-<main class="site-main">
+<main class="site-main" id="main-content" tabindex="-1">

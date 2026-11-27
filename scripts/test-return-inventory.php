@@ -31,6 +31,8 @@ $changed=$p;$changed['lines'][0]['cost_snapshot']=51;$t['changed cost blocks los
 try{return_inventory_save($db,2,'I1','unusable','');$t['tenant isolation']=false;}catch(InvalidArgumentException $e){$t['tenant isolation']=true;}
 try{return_inventory_save($db,1,'I1','partial','55');$t['invalid recovery rejected']=false;}catch(InvalidArgumentException $e){$t['invalid recovery rejected']=true;}
 return_inventory_save($db,1,'I1','unusable','');$exception=return_inventory_checks($db,1,[$c])['I1'];
+$period=return_inventory_period($db,1,$now-3600,$now+1);
+$t['period includes exception once']=$period['unusable']===1&&$period['loss']===50.0;
 $t['unsellable exception full cost']=return_inventory_evidence($c,$p,1,$exception)['inventory_loss']===50.0&&!return_inventory_evidence($c,$p,1,$exception)['assumed'];
 $t['unsellable exception survives ordinary refresh']=return_inventory_evidence(array_replace($c,['modified_ms'=>$c['modified_ms']+1]),$changed,1,$exception)['inventory_loss']===51.0;
 return_inventory_clear($db,2,'I1');

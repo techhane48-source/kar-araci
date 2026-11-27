@@ -36,6 +36,7 @@ foreach ($catalogProducts as $p) {
 $q = db()->prepare("SELECT * FROM orders WHERE user_id = ? AND marketplace = ? AND order_date >= ? ORDER BY order_date DESC");
 $q->execute([$u['id'], $mp, $fromTs]);
 $expenseEvidence=$mp==='trendyol'?period_expense_evidence(db(),(int)$u['id'],$fromTs,time()):null;
+$returnOverview=$mp==='trendyol'?return_inventory_period(db(),(int)$u['id'],$fromTs,time()+1):null;
 $tariffState=$mp==='trendyol'?cargo_tariff_status(cargo_tariffs(),(new DateTimeImmutable('now',new DateTimeZone('Europe/Istanbul')))->format('Y-m-d')):null;
 $orders = commission_profit_overlay(db(),(int)$u['id'],cargo_profit_overlay(db(),(int)$u['id'],cost_history_overlay(db(),(int)$u['id'],$q->fetchAll())));
 
@@ -53,7 +54,7 @@ foreach ($orders as $o) {
     $sale = (float)$o['total_price'];
     $ciro += $sale;
     $siparis++;
-    foreach ($o['lines'] as $l) $urunAdet += max(1, (int)($l['quantity'] ?? 1));
+    foreach ($o['lines'] as $l) if(is_array($l)&&is_numeric($l['quantity']??null)&&(float)$l['quantity']===(float)(int)$l['quantity']&&(int)$l['quantity']>0) $urunAdet += (int)$l['quantity'];
 
     $pr = calc_order_profit($o, $byBarcode);
     if ($pr['ok']) {
@@ -129,6 +130,19 @@ require __DIR__ . '/../includes/header.php';
     <a href="raporlar.php?r=cargo_effective">Kargo tahminleri ve faturalar</a>
   </section>
   <?php endif; ?>
+  <?php if($returnOverview!==null): ?>
+  <section class="card" style="margin:12px 0" aria-labelledby="returns-overview">
+    <h2 id="returns-overview">İadeler ve stok değer kaybı</h2>
+    <div class="overview-grid">
+      <div><span>Kabul edilmiş</span><strong><?=$returnOverview['accepted']?></strong></div>
+      <div><span>Otomatik satışa uygun</span><strong><?=$returnOverview['assumed']?></strong></div>
+      <div><span>Satılamaz işaretli</span><strong><?=$returnOverview['unusable']?></strong></div>
+      <div><span>Stok değer kaybı (kapsam içi)</span><strong><?=$returnOverview['loss']===null?'—':tl($returnOverview['loss'])?></strong></div>
+    </div>
+    <p class="hint">Son güncelleme tarihine göre. <?=$returnOverview['unknown']?> kalem hesaplanamadı; normal iadeler fiziksel teslim doğrulaması olmadan satışa uygun varsayılır. Bu tutar toplam iade zararı değildir ve sipariş tahmini kârından tekrar düşülmez.</p>
+    <a href="iade-kontrol.php">Yalnız satılamaz ürünleri işaretle</a> · <a href="raporlar.php?r=claims">İade raporu</a>
+  </section>
+  <?php endif; ?>
   <?php if (!$orders): ?>
     <div class="card" style="padding:32px;text-align:center">
       <h2>Henüz veri yok</h2>
@@ -189,14 +203,14 @@ require __DIR__ . '/../includes/header.php';
         ['Ürün Maliyeti Düşülmüş Tutar (Kâr)', $funnel['kar']],
       ];
       foreach ($funnelRows as $row):
-        $pct = max(0.0, $row[1] / $maxW * 100);
+        $pct = min(100.0,max(0.0, $row[1] / $maxW * 100));
       ?>
-        <div style="display:flex;align-items:center;gap:12px;margin:6px 0">
-          <div style="width:200px;font-size:13px;color:var(--muted)"><?= $row[0] ?></div>
+        <div class="funnel-row">
+          <div class="funnel-label"><?= $row[0] ?></div>
           <div style="flex:1;background:var(--border);border-radius:6px;height:22px;position:relative">
             <div style="position:absolute;left:0;top:0;bottom:0;border-radius:6px;background:var(--accent);width:<?= $pct ?>%"></div>
           </div>
-          <div style="width:110px;text-align:right;font-weight:600;font-size:14px"><?= tl($row[1]) ?></div>
+          <div class="funnel-value"><?= tl($row[1]) ?></div>
         </div>
       <?php endforeach; ?>
     </div>

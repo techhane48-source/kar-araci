@@ -13,7 +13,7 @@ function product_finance_row(array $row,string $seller): ?array
        (string)($row['external_id']??'')===''||(string)($raw['id']??'')!==(string)$row['external_id'])return null;
     try{
         $credit=finance_units($raw['credit']??null);$debt=finance_units($raw['debt']??null);
-        if($credit<0||$debt<0)throw new InvalidArgumentException('Borç/alacak işareti');
+        if($credit<0||$debt<0||($credit>0&&$debt>0))throw new InvalidArgumentException('Borç/alacak işareti');
         $parts=settlement_signed_components($raw,$type);
         if($type==='Sale'&&($credit<=0||$debt!==0||abs($credit-$parts['revenue']+$parts['commission'])>100))throw new InvalidArgumentException('Satış tutarı');
         if($type==='Return'&&($debt<=0||$credit!==0||abs($debt+$parts['revenue']-$parts['commission'])>100))throw new InvalidArgumentException('İade tutarı');
@@ -42,4 +42,21 @@ function product_finance_period(PDO $db,int $uid,int $start,int $end): array
     }
     ksort($groups,SORT_STRING);
     return ['groups'=>$groups,'excluded'=>$excluded,'gaps'=>sync_range_gaps(sync_read_ranges($db,$uid,'trendyol','settlements_transaction'),$start,$end)];
+}
+
+// Shared evidence parser for transaction-date return and campaign reports. No inference from cached totals.
+function product_movement_period(PDO $db,int $uid,int $start,int $end,array $types): array
+{
+    if(!$types||$start<0||$end<=$start)throw new InvalidArgumentException('Geçersiz rapor kapsamı.');
+    $binding=$db->prepare("SELECT seller_id FROM integration_bindings WHERE user_id=? AND marketplace='trendyol'");$binding->execute([$uid]);$seller=(string)($binding->fetchColumn()?:'');
+    $q=$db->prepare("SELECT external_id,barcode,query_type,raw_json FROM settlements WHERE user_id=? AND marketplace='trendyol' AND transaction_date>=? AND transaction_date<? AND query_type IN (".implode(',',array_fill(0,count($types),'?')).") ORDER BY barcode,query_type");
+    $q->execute(array_merge([$uid,$start,$end],$types));$groups=[];$excluded=0;$credit=0;$debt=0;$count=0;
+    while($row=$q->fetch()){
+        $r=product_finance_row($row,$seller);if($r===null){$excluded++;continue;}
+        $key=json_encode([$r['barcode'],$r['type']],JSON_THROW_ON_ERROR);
+        if(!isset($groups[$key]))$groups[$key]=['barcode'=>$r['barcode'],'type'=>$r['type'],'count'=>0,'credit'=>0,'debt'=>0];
+        $groups[$key]['count']++;$groups[$key]['credit']+=$r['credit'];$groups[$key]['debt']+=$r['debt'];
+        $count++;$credit+=$r['credit'];$debt+=$r['debt'];
+    }
+    return ['groups'=>array_values($groups),'excluded'=>$excluded,'count'=>$count,'credit'=>$credit,'debt'=>$debt];
 }

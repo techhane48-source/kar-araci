@@ -244,8 +244,8 @@ function cargo_profit_overlay(PDO $db,int $uid,array $orders): array
             if(is_numeric($amount)&&(float)$amount>0){
             $o['cargo_override']=(float)$amount;$meta=json_decode((string)($pq['meta']??''),true);$o['cargo_source']=($meta['desi_source']??'')==='shipment_api'?'Güncel API desisi / tarife tahmini':'İlk desi / tarife tahmini';if(($meta['kind']??'')==='barem_scenario')$o['cargo_source'].=' (standart barem varsayımı)';if(($meta['confidence']??'')==='secondary_partial')$o['cargo_source'].=' (ikincil kaynak)';
             if(empty($pq['context_known']))$o['cargo_source'].=' (eski kayıt; yeniden senkron gerekli)';
-            }elseif(cargo_has_shipped($o)||!empty($pq['context_known'])){$o['cargo_override']=null;$o['cargo_source']='Gönderi desisi veya geçerli tarife eksik';}
-            // Only pre-shipment legacy records without observed inputs may use an explicit catalog estimate.
+            }elseif(cargo_has_shipped($o)||!empty($pq['context_known'])||(int)($o['last_modified_ms']??0)>0){$o['cargo_override']=null;$o['cargo_source']='Gönderi desisi veya geçerli tarife eksik';}
+            // Only genuinely legacy pre-shipment records (no API modification marker) may use a catalog estimate.
         }
     }unset($o);
     return $orders;

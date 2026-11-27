@@ -123,3 +123,21 @@ function return_inventory_save(PDO $db,int $uid,string $itemId,string $condition
         $db->commit();
     }catch(Throwable $e){if($db->inTransaction())$db->rollBack();throw $e;}
 }
+
+/** Current accepted items last modified in the selected period; not a ledger of physical receipts. */
+function return_inventory_period(PDO $db,int $uid,int $from,int $through): array
+{
+    $q=$db->prepare("SELECT * FROM trendyol_claim_items WHERE user_id=? AND status='Accepted' AND modified_ms>=? AND modified_ms<?");
+    $q->execute([$uid,$from*1000,$through*1000]);$claims=$q->fetchAll();
+    $orders=return_inventory_orders($db,$uid,$claims);$counts=return_accepted_counts($db,$uid,$claims);$checks=return_inventory_checks($db,$uid,$claims);
+    $out=['accepted'=>count($claims),'assumed'=>0,'observed'=>0,'unusable'=>0,'unknown'=>0,'loss'=>null];$loss=0;
+    foreach($claims as $row){
+        $a=return_inventory_evidence($row,$orders[$row['outbound_package']]??null,$counts[return_inventory_key($row)]??0,$checks[$row['item_id']]??null);
+        if(!$a['ready']){$out['unknown']++;continue;}
+        $out[$a['assumed']?'assumed':'observed']++;
+        if($a['condition']==='unusable')$out['unusable']++;
+        $loss+=finance_units($a['inventory_loss']);
+    }
+    if($out['assumed']+$out['observed'])$out['loss']=$loss/10000.0;
+    return $out;
+}

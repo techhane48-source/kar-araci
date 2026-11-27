@@ -20,4 +20,8 @@ $a=cargo_effective_report($db,1,['O1'],[$new])['O1'];
 $t['report reflects new rate']=$a['estimate']===140.0&&$a['initial_estimate']===100.0&&$a['package_quotes']['P1']['amount']===140.0;
 $t['stored observation unchanged']=(float)$db->query("SELECT cargo_estimate FROM orders WHERE user_id=1")->fetchColumn()===120.0;
 $t['no tenant leak']=cargo_effective_report($db,3,['O1'],[$new])===[];
+$db->prepare("UPDATE orders SET status='Created',cargo_quote_context=NULL,cargo_estimate=NULL WHERE user_id=1 AND package_number='P1'")->execute();
+$row=$db->query("SELECT * FROM orders WHERE user_id=1 AND package_number='P1'")->fetch();
+$over=cargo_profit_overlay($db,1,[$row])[0];
+$t['fresh pre-shipment missing context blocks stale catalog']=array_key_exists('cargo_override',$over)&&$over['cargo_override']===null;
 foreach($t as $name=>$ok)echo ($ok?'PASS':'FAIL')." $name\n";exit(in_array(false,$t,true)?1:0);

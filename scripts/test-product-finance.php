@@ -20,4 +20,8 @@ $t['wrong seller barcode arithmetic excluded']=$r['excluded']===3;
 $t['tenant isolation']=$g['rows']===4;
 $t['missing coverage visible']=count($r['gaps'])===1;
 $t['empty period not zero profit']=product_finance_period($db,1,$now+1,$now+2)['groups']===[];
+$put(1,'BAD','Discount',['credit'=>5,'debt'=>10,'sellerRevenue'=>8.1,'commissionAmount'=>1.9]);
+$m=product_movement_period($db,1,$now-10,$now,['Discount','DiscountCancel','Return']);
+$t['validated return campaign amounts']=$m['count']===3&&$m['excluded']===1&&$m['credit']===100000&&$m['debt']===600000;
+$t['no foreign tenant movement']=product_movement_period($db,2,$now-10,$now,['Sale'])['count']===0;
 foreach($t as $n=>$ok)echo ($ok?'PASS':'FAIL')." $n\n";exit(in_array(false,$t,true)?1:0);
