@@ -3,6 +3,7 @@ declare(strict_types=1);
 require_once __DIR__.'/profit.php';
 require_once __DIR__.'/profit_targets.php';
 require_once __DIR__.'/xlsx.php';
+require_once __DIR__.'/tariff_apply.php';
 
 const ANALYSIS_MAX_ROWS=20000;
 const ANALYSIS_MAX_COLS=128;
@@ -59,7 +60,7 @@ function analysis_period_tariff_schema(array $headers): ?array
         $key='period'.$days.'_tier'.$i;$rates[$key]=$indices[$days===3?0:1];
         $prices[$key]=['index'=>$upper[$i]??$lower[$i],'lower_index'=>$lower[$i]??null,'upper_index'=>$upper[$i]??null,'period_index'=>$dateIndex,'label'=>$days.' Gün / '.$i.'. Kademe'];
     }
-    return ['barcode'=>$barcode,'name'=>$name===false?null:$name,'prices'=>$prices,'rates'=>$rates,'period_tariff'=>true];
+    return ['barcode'=>$barcode,'name'=>$name===false?null:$name,'prices'=>$prices,'rates'=>$rates,'period_tariff'=>true,'apply_columns'=>tariff_apply_columns($headers)];
 }
 function analysis_period_price(array $def,array $row): ?array
 {
@@ -144,6 +145,7 @@ function analysis_row(array $schema,array $row,array $products,string $module,ar
     $p=$products[$barcode]??null;
     $name=$p['name']??($schema['name']===null?'':(string)($row[$schema['name']]??''));
     $cost=$p&&is_numeric($p['cost']??null)&&(float)$p['cost']>0?(float)$p['cost']:null;
+    $source=null;if(!empty($schema['apply_columns'])){$c=$schema['apply_columns'];$source=['base'=>parse_money_input((string)($row[$c['base']]??'')),'tsf'=>parse_money_input((string)($row[$c['tsf']]??'')),'promo'=>(string)($row[$c['promo']]??'')];}
     $best=null;$tiers=[];$rule=$p?target_for_product($rules,$p):null;$meets=null;
     $baseline=null;$baselinePrice=null;$baselineRate=null;
     if($cost!==null&&is_numeric($p['price']??null)&&(float)$p['price']>0&&is_numeric($p['rate']??null)){
@@ -173,13 +175,19 @@ function analysis_row(array $schema,array $row,array $products,string $module,ar
                 if(!$price['range']&&($module==='bulk'||in_array($module,['komisyon','plus'],true))&&($best===null||$calc['profit']>$best))$best=$calc['profit'];
             }catch(InvalidArgumentException $e){$t['reason']='Ürün hesap ayarları geçersiz';}
         }
+        if($source!==null&&$t['profit']!==null){
+            $candidate=tariff_candidate($source,$t);
+            if($candidate!==null){
+                try{$calc=product_profit($p,$candidate['effective'],$rate);$t['application']=$candidate;$t['profit']=$calc['profit'];$t['margin']=$calc['margin'];$t['application_target']=$rule?target_pass($rule,$calc,$cost,$candidate['effective']):null;}catch(InvalidArgumentException $e){}
+            }
+        }
         $tiers[$key]=$t;
     }
     return ['barcode'=>$barcode,'name'=>$name,'cost'=>$cost,'matched'=>$p!==null,'tiers'=>$tiers,'best'=>$best,'rule'=>$rule?target_label($rule):null,'meets_target'=>$meets,'baseline_price'=>$baselinePrice,'baseline_rate'=>$baselineRate,'baseline_profit'=>$baseline['profit']??null];
 }
 
 /** Store one analysis per module/account. A bad upload preserves the prior analysis. */
-function analysis_save(PDO $db,int $uid,string $kind,string $module,array $schema,iterable $rows,array $products,array $rules=[]): array
+function analysis_save(PDO $db,int $uid,string $kind,string $module,array $schema,iterable $rows,array $products,array $rules=[],?string $sourceHash=null): array
 {
     $db->beginTransaction();
     try{
@@ -199,6 +207,7 @@ function analysis_save(PDO $db,int $uid,string $kind,string $module,array $schem
             $insert->execute(array_merge($args,[$stats['rows'],json_encode($r,JSON_THROW_ON_ERROR|JSON_UNESCAPED_UNICODE),$r['best'],$r['meets_target']===null?null:(int)$r['meets_target']]));
         }
         if(!$stats['rows'])throw new RuntimeException('Geçerli barkod satırı bulunamadı.');
+        if($sourceHash!==null)$stats['tariff_source']=$sourceHash;
         $db->prepare("INSERT INTO analysis_jobs(user_id,kind,module,headers_json,stats_json,created_at) VALUES(?,?,?,?,?,?)
             ON CONFLICT(user_id,kind,module) DO UPDATE SET headers_json=excluded.headers_json,stats_json=excluded.stats_json,created_at=excluded.created_at")
             ->execute(array_merge($args,[json_encode($schema['prices'],JSON_THROW_ON_ERROR|JSON_UNESCAPED_UNICODE),json_encode($stats,JSON_THROW_ON_ERROR),time()]));

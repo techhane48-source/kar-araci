@@ -20,9 +20,38 @@ if($_SERVER['REQUEST_METHOD']==='POST'){
             $q->execute([$u['id']]);$products=[];$duplicates=[];
             foreach($q->fetchAll() as $p){$bc=$p['barcode'];if(isset($products[$bc]))$duplicates[$bc]=true;$products[$bc]=$p;}
             foreach($duplicates as $bc=>$unused)unset($products[$bc]);
-            analysis_save($db,(int)$u['id'],$kind,$module,$schema,$rows,$products,target_rules($db,(int)$u['id']));
+            $sourceHash=null;
+            if($module==='komisyon'&&!empty($schema['apply_columns'])&&strtolower(pathinfo((string)$_FILES['csv']['name'],PATHINFO_EXTENSION))==='xlsx')
+                $sourceHash=tariff_source_save((int)$u['id'],(string)$_FILES['csv']['tmp_name']);
+            $saved=analysis_save($db,(int)$u['id'],$kind,$module,$schema,$rows,$products,target_rules($db,(int)$u['id']),$sourceHash);
             flash_set('success','Analiz kaydedildi.');e_redirect($url);
         }catch(Throwable $e){$error=$e instanceof RuntimeException?$e->getMessage():'Dosya analiz edilemedi.';}
+    }elseif(($_POST['action']??'')==='download'&&in_array($_POST['scope']??null,['tariff_selected','tariff_best3','tariff_best4'],true)){
+        $tmp=null;
+        try{
+            if($module!=='komisyon'||($_POST['tariff_confirm']??'')!=='1')throw new RuntimeException('Önce fiyat ve dönemleri kontrol edip Excel hazırlamayı onaylayın.');
+            $q=$db->prepare("SELECT stats_json FROM analysis_jobs WHERE user_id=? AND kind=? AND module=?");$q->execute($args);$meta=json_decode((string)$q->fetchColumn(),true);
+            $hash=$meta['tariff_source']??'';if(!is_string($hash)||!preg_match('/^[a-f0-9]{64}$/D',$hash)||!hash_equals($hash,(string)($_POST['tariff_hash']??'')))throw new RuntimeException('Tarife değişti veya orijinal XLSX yok. Dosyayı yeniden yükleyin.');
+            $source=tariff_source_path((int)$u['id'],$hash);if(!is_file($source)||hash_file('sha256',$source)!==$hash)throw new RuntimeException('Orijinal Excel bulunamadı.');
+            $auto=$_POST['scope']!=='tariff_selected';$days=$_POST['scope']==='tariff_best3'?3:4;$picks=$_POST['tariff']??[];$promoOk=($_POST['promo_confirm']??'')==='1';
+            if(!is_array($picks)||count($picks)>100)throw new RuntimeException('Bu sayfadan en fazla 100 seçim yapılabilir.');
+            $picks=array_filter($picks,static fn($v)=>is_string($v)&&$v!=='');
+            if(!$auto&&!$picks)throw new RuntimeException('Bu sayfadan kademe seçin.');
+            $q=$db->prepare("SELECT row_no,payload_json FROM analysis_rows WHERE user_id=? AND kind=? AND module=? ORDER BY row_no");$q->execute($args);
+            $selected=[];$used=[];$seen=[];$now=time();
+            while($row=$q->fetch()){
+                $r=json_decode($row['payload_json'],true);$id=(int)$row['row_no'];$bc='b:'.$r['barcode'];
+                if(isset($seen[$bc]))throw new RuntimeException('Dosyada tekrarlayan barkod var; aktarım yapılmadı.');$seen[$bc]=true;
+                $choice=null;
+                if($auto){foreach(array_keys($r['tiers']) as $key){if(!str_starts_with($key,'period'.$days.'_'))continue;$c=tariff_apply_select($r,$key,true,false,$now);if($c!==null&&($choice===null||$c['profit']>$choice['profit']))$choice=$c;}}
+                elseif(isset($picks[$id])){$used[$id]=true;$choice=tariff_apply_select($r,$picks[$id],false,$promoOk,$now);if($choice===null)throw new RuntimeException('Seçilen kademe uygulanamıyor: dönem, maliyet veya promosyon onayını kontrol edin.');}
+                if($choice!==null)$selected[$bc]=$choice;
+            }
+            if(!$auto&&count($used)!==count($picks))throw new RuntimeException('Seçimler analizle eşleşmedi.');
+            $tmp=tempnam(sys_get_temp_dir(),'tariff-');if(!$tmp)throw new RuntimeException('Excel hazırlanamadı.');
+            tariff_export_xlsx($source,$tmp,$selected);
+            header('Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');header('Content-Disposition: attachment; filename="trendyol-tarife-secimleri.xlsx"');header('Content-Length: '.filesize($tmp));readfile($tmp);unlink($tmp);exit;
+        }catch(Throwable $e){if($tmp&&is_file($tmp))unlink($tmp);$error=$e instanceof RuntimeException?$e->getMessage():'Tarife Excel dosyası hazırlanamadı.';}
     }elseif(($_POST['action']??'')==='download'){
         $q=$db->prepare("SELECT * FROM analysis_jobs WHERE user_id=? AND kind=? AND module=?");$q->execute($args);$job=$q->fetch();
         if(!$job)$error='Önce analiz oluşturun.';
@@ -81,6 +110,7 @@ require __DIR__.'/header.php';
 <p class="hint">Analiz tarihi: <?= date('d.m.Y H:i',(int)$job['created_at']) ?>. Ürün ayarları veya <a href="kar-hedefleri.php">kâr kuralları</a> değiştiğinde tekrar analiz edin. Hedef değerlendirmesi yükleme anındaki kurallara dayanır; kampanya katılım garantisi değildir. Barkodlar Excel'de metin olarak içe aktarılmalıdır.</p>
 <form method="post"><input type="hidden" name="csrf" value="<?= h(csrf_token()) ?>"><input type="hidden" name="action" value="download">
 <div style="display:flex;gap:8px;flex-wrap:wrap"><button name="scope" value="all">Tüm raporu indir</button><button name="scope" value="profitable">Pozitif senaryoları indir</button><button name="scope" value="target">Hedefi karşılayanları indir</button><button name="scope" value="selected">Bu sayfanın seçilenlerini indir</button></div>
+<?php if(!empty($stats['tariff_source'])):?><div class="note" style="margin:12px 0"><h3>Tarife uygula — Trendyol Excel</h3><p>Her ürün için bir kademe seçin. Yeni TSF ve dönem orijinal Excel'e yazılır; mağazada fiyat değişmez. Toplu en kârlı seçim, seçilen dönemde pozitif ve varsa hedefi karşılayan promosyonu olmayan ürünleri kapsar. Açık uçlarda yalnız sınır senaryosu değerlendirilir.</p><p>Promosyonlu ürünlerde mevcut komisyona esas fiyat / TSF oranının değişmediği varsayılır; otomatik toplu seçime dahil edilmez. Trendyol panelinde fiyatı ve komisyonu doğrulayın.</p><input type="hidden" name="tariff_hash" value="<?=h($stats['tariff_source'])?>"><label><input type="checkbox" name="tariff_confirm" value="1"> Seçilen fiyatları ve dönemleri kontrol ettim; Excel hazırla.</label><br><label><input type="checkbox" name="promo_confirm" value="1"> Promosyon oranı varsayımını ve değişme riskini kabul ediyorum.</label><div style="display:flex;gap:8px;flex-wrap:wrap"><button name="scope" value="tariff_selected">Seçilen tarifeleri Excel'e yaz</button><button name="scope" value="tariff_best3">3 gün: en kârlı uygunlar</button><button name="scope" value="tariff_best4">4 gün: en kârlı uygunlar</button></div></div><?php endif;?>
 <table><tr><th>Seçim</th><th>Barkod</th><th>Ürün</th><th>Maliyet</th><th>Kayıtlı fiyat / tahmini kâr</th><?php foreach($columns as $def): ?><th><?= h($def['label']) ?></th><?php endforeach; ?></tr>
 <?php foreach($rows as $row):$r=json_decode($row['payload_json'],true); ?><tr>
 <td><input type="checkbox" name="sel[]" value="<?= (int)$row['row_no'] ?>"></td><td><?= h($r['barcode']) ?></td><td><?= h($r['name']) ?></td><td><?= $r['cost']===null?'—':tl((float)$r['cost']) ?></td><td><?= isset($r['baseline_price'])?tl((float)$r['baseline_price']):'—' ?><br><?= isset($r['baseline_profit'])?tl((float)$r['baseline_profit']):'—' ?></td>
@@ -92,6 +122,7 @@ require __DIR__.'/header.php';
 <?php if(isset($t['min_price'])): ?><br><small>Alt uç <?= tl((float)$t['min_price']) ?> / kâr <?= isset($t['min_endpoint_profit'])?tl((float)$t['min_endpoint_profit']):'—' ?></small><?php endif; ?>
 <?php if(isset($t['profit_delta'])): ?><br><small>Mevcut kâra fark: <?= tl((float)$t['profit_delta']) ?></small><?php endif; ?>
 <?php if(isset($t['rate_source'])): ?><br><small>Komisyon: <?= $t['rate_source']==='file'?'dosya':'kayıtlı ürün' ?></small><?php endif; ?>
+<?php if(!empty($stats['tariff_source'])&&!empty($t['application'])): $app=$t['application'];?><br><small>Yeni TSF: <?=tl((float)$app['tsf'])?> · esas fiyat <?=tl((float)$app['effective'])?><?=$app['promotion_assumption']?' (promosyon varsayımı)':''?></small><?php if(tariff_period_open((string)$t['period'],time())):?><br><label><input type="radio" name="tariff[<?=(int)$row['row_no']?>]" value="<?=h($key)?>">Bu tarifeyi seç</label><?php else:?><br><small>Dönem geçmiş veya doğrulanamadı</small><?php endif;?><?php endif;?>
 <br><small><?= h($t['reason']) ?></small><?php if(isset($t['target_met'])): ?><br><small><?= $t['target_met']?'Hedef karşılanıyor':'Hedef altında' ?></small><?php endif; ?></td><?php endforeach; ?></tr><?php endforeach; ?>
 </table></form>
 <p>Sayfa <?= $page ?> / <?= $pages ?>
