@@ -161,6 +161,7 @@ with tempfile.TemporaryDirectory(prefix="karfiyat-http-") as tmp:
             assert re.search(r'data-profit-count="0"[^>]*>—</td>',page)
             status, page=request("canli-performans.php?days=30&page=2")
             assert status==200 and "CI-OLDER-UNKNOWN" in page and "Önceki sayfa" in page and "Son 30 Gün" in page
+            assert "İptal: kayıtlı kesinti yok; gönderim ve finans kesinleşmedi" in page and 'id="closed-loss-summary"' in page
             print("PASS performance daily profit, unknown coverage and 30-day pagination")
             print("PASS direct cost entry without file and explicit history scope")
             print("PASS explicit current catalog update preserves selling price")

@@ -72,11 +72,12 @@ $q = db()->prepare("SELECT * FROM orders WHERE user_id = ? AND marketplace = ? A
 $q->execute([$u['id'], $mp, $weekStart,$rangeEnd]);
 $orders = commission_profit_overlay(db(),(int)$u['id'],cargo_profit_overlay(db(),(int)$u['id'],cost_history_overlay(db(),(int)$u['id'],$q->fetchAll())));
 
+$orders=closed_package_loss_overlay(db(),(int)$u['id'],$orders);
 $todayStart = strtotime('today');
 $yesterdayStart = $todayStart - 86400;
 $now = time();
 $perPage=50;$orderTotal=count($orders);$pages=max(1,(int)ceil($orderTotal/$perPage));$page=min($page,$pages);
-$blank=['sale'=>0.0,'profit'=>0.0,'count'=>0,'profitCount'=>0,'profitSale'=>0.0];$period=$blank;
+$blank=['sale'=>0.0,'profit'=>0.0,'count'=>0,'profitCount'=>0,'profitSale'=>0.0];$period=$blank;$closed=['count'=>0,'known'=>0,'loss'=>0.0];
 
 $today = ['sale' => 0.0, 'profit' => 0.0, 'count' => 0, 'profitCount' => 0, 'profitSale'=>0.0];
 $yesterday = ['sale' => 0.0, 'profit' => 0.0, 'count' => 0];
@@ -84,7 +85,10 @@ $hourly = array_fill(0,24,$blank);
 $week = []; // dayKey (Y-m-d) => [sale, profit, count]
 
 foreach ($orders as $o) {
-    if (!order_is_active_sale($o)) continue;
+    if (!order_is_active_sale($o)) {
+        if(isset($o['closed_loss'])){$closed['count']++;if($o['closed_loss']['loss']!==null){$closed['known']++;$closed['loss']+=(float)$o['closed_loss']['loss'];}}
+        continue;
+    }
     $o['lines'] = is_array($o['lines'])?$o['lines']:(json_decode($o['lines']??'[]',true)?:[]);
     $day = strtotime(date('Y-m-d', (int)$o['order_date']));
     $dayKey = date('Y-m-d', (int)$o['order_date']);
@@ -201,7 +205,8 @@ require __DIR__ . '/../includes/header.php';
   <div class="card table-card" style="margin:16px 0" id="period-summary">
     <h2>Son <?=$days?> Gün</h2>
     <p>Satış: <b><?=tl($period['sale'])?></b> · Hesaplanabilen tahmini kâr: <b id="period-profit"><?=$period['profitCount']?tl($period['profit']):'—'?></b> · Kâr kapsamı: <?=$period['profitCount']?>/<?=$period['count']?> aktif paket.</p>
-    <p class="hint">Eksik verili paketler kâr toplamına alınmaz. Hesaplanamayan kâr sıfır değildir. İptal/iade paketleri aşağıdaki sipariş listesinde ayrıca görünür.</p>
+    <p class="hint">Eksik verili paketler kâr toplamına alınmaz. Hesaplanamayan kâr sıfır değildir.</p>
+    <p id="closed-loss-summary">İptal/iade: <?=$closed['count']?> paket · Bilinen brüt gider: <b><?=$closed['known']?tl($closed['loss']):'—'?></b> (<?=$closed['known']?> pakette gider verisi). Bu tutar aktif satış kârından ayrı gösterilir; eksik kargo/hizmet/vergiler ve kısmi iadeler nedeniyle kesin net zarar değildir.</p>
     <table>
       <tr><th>Gün</th><th>Satış</th><th>Tahmini Kâr</th><th>Kâr kapsamı</th><th>Aktif paket</th></tr>
       <?php foreach ($week as $day => $d): ?>
@@ -267,7 +272,10 @@ require __DIR__ . '/../includes/header.php';
           <td style="font-size:12px"><?= date('d.m H:i', (int)$o['order_date']) ?></td>
           <td><?= order_is_domestic_try($o) ? tl((float)$o['total_price']) : h((string)($o['currency_code'] ?? 'Belirsiz')) . ' ' . number_format((float)$o['total_price'],2,',','.') ?></td>
           <td>
-            <?php if ($pr['ok']): ?><span class="<?= $pr['profit'] < 0 ? 'neg' : 'pos' ?>"><?= tl($pr['profit']) ?></span><br><small><?=h((string)$pr['cargo_source'])?> · <?=h((string)$pr['commission_source'])?></small>
+            <?php if(isset($o['closed_loss'])):$cl=$o['closed_loss'];?>
+              <?php if($cl['loss']!==null):?><span class="neg">Bilinen gider: <?=tl($cl['loss'])?></span><br><small>Kargo: <?=$cl['cargo']!==null?tl($cl['cargo']):'bekleniyor'?> · Stok kaybı: <?=$cl['inventory']!==null?tl($cl['inventory']):'belirsiz'?> · Ekstre kaybı: <?=$cl['settlement_loss']!==null?tl($cl['settlement_loss']):'bekleniyor'?></small><br><?php endif;?>
+              <small><?=h($cl['state'])?><?=$cl['assumed']?' · İade ürünü satışa uygun varsayımı':''?></small>
+            <?php elseif ($pr['ok']): ?><span class="<?= $pr['profit'] < 0 ? 'neg' : 'pos' ?>"><?= tl($pr['profit']) ?></span><br><small><?=h((string)$pr['cargo_source'])?> · <?=h((string)$pr['commission_source'])?></small>
             <?php else: ?><span class="hint"><?= h($pr['reason'] ?? 'Veri eksik') ?></span><?php endif; ?>
           </td>
           <td style="font-size:12px"><?= h($o['status'] ?: '—') ?></td>
