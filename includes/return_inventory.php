@@ -214,7 +214,13 @@ function closed_package_loss(array $o,array $packages,array $rows,array $cargo,a
         $used[$item]=true;$lid=(string)$match[0]['line_id'];$perLine[$lid]=($perLine[$lid]??0)+1;
         if($perLine[$lid]>$lineIds[$lid]){$claimOk=false;continue;}
         $a=return_inventory_evidence($c,$o,$counts[return_inventory_key($c)]??0,$checks[$item]??null);
-        if(!$a['ready']){$claimOk=false;continue;}
+        if(!$a['ready']){
+            // No explicit impairment means no inventory expense in this planning model.
+            // A recorded exception must still have a valid cost and identity.
+            if(isset($checks[$item])){$claimOk=false;continue;}
+            if((string)($c['outbound_package']??'')!==$pid||(string)($c['order_number']??'')!==$no){$claimOk=false;continue;}
+            $assumed=true;continue;
+        }
         $loss+=finance_units($a['inventory_loss']);$assumed=$assumed||$a['assumed'];
     }
     if($claimOk&&count($used)===$units){$out['inventory']=$loss/10000.0;$out['assumed']=$assumed;}
@@ -250,10 +256,44 @@ function closed_package_loss(array $o,array $packages,array $rows,array $cargo,a
     if($out['loss']===null)$out['state']='İptal/iade: kargo veya stok eşleşmesi eksik';
     return $out;
 }
+/** A delivered package can be a full accepted return before its order status changes.
+ * Require exact unique accepted units covering every original line. Partial returns
+ * are not treated as a full reversal.
+ */
+function closed_full_claim(array $o,array $claims): bool
+{
+    if(!order_is_domestic_try($o)||!order_is_active_sale($o)||!$claims)return false;
+    $lines=$o['lines']??[];if(is_string($lines))$lines=json_decode($lines,true);
+    if(!is_array($lines)||!$lines)return false;
+    $want=[];$got=[];$seen=[];$units=[];
+    foreach($lines as $l){
+        if(!is_array($l))return false;
+        $id=(string)($l['line_id']??'');$q=$l['quantity']??null;
+        if($id===''||isset($want[$id])||!is_numeric($q)||!is_finite((float)$q)||(float)$q!==(float)(int)$q||$q<1)return false;
+        $want[$id]=(int)$q;
+    }
+    foreach($claims as $c){
+        $item=(string)($c['item_id']??'');$unit=(string)($c['line_id']??'');
+        if(($c['status']??'')!=='Accepted'||$item===''||$unit===''||isset($seen[$item],$units[$unit])||isset($seen[$item])||isset($units[$unit])||(string)($c['order_number']??'')!==(string)$o['order_number']||(string)($c['outbound_package']??'')!==(string)$o['package_number'])return false;
+        $match=claim_matching_lines($c,$lines);if(count($match)!==1)return false;
+        $seen[$item]=true;$units[$unit]=true;$lid=(string)$match[0]['line_id'];$got[$lid]=($got[$lid]??0)+1;
+    }
+    foreach($want as $id=>$qty)if(($got[$id]??0)!==$qty)return false;
+    return true;
+}
 /** Batch closed orders, including all packages, claim units and invoice rows. */
 function closed_package_loss_overlay(PDO $db,int $uid,array $orders): array
 {
-    $by=[];foreach($orders as $i=>$o)if(($o['marketplace']??'')==='trendyol'&&in_array(strtolower((string)($o['status']??'')),['cancelled','canceled','unsupplied','returned','undelivered'],true)&&!empty($o['order_number']))$by[(string)$o['order_number']][]=$i;
+    $by=[];$active=[];
+    foreach($orders as $i=>$o)if(($o['marketplace']??'')==='trendyol'&&!empty($o['order_number'])){
+        $no=(string)$o['order_number'];
+        if(in_array(strtolower((string)($o['status']??'')),['cancelled','canceled','unsupplied','returned','undelivered'],true))$by[$no][]=$i;
+        elseif(order_is_active_sale($o))$active[$no][]=$i;
+    }
+    foreach(array_chunk(array_keys($active),200) as $chunk){
+        $in=implode(',',array_fill(0,count($chunk),'?'));$q=$db->prepare("SELECT DISTINCT order_number FROM trendyol_claim_items WHERE user_id=? AND status='Accepted' AND order_number IN ($in)");$q->execute(array_merge([$uid],$chunk));
+        while($r=$q->fetch()){$no=(string)$r['order_number'];foreach($active[$no] as $i)$by[$no][]=$i;}
+    }
     if(!$by)return $orders;
     $tariffs=cargo_tariffs();
     $q=$db->prepare("SELECT seller_id FROM integration_bindings WHERE user_id=? AND marketplace='trendyol'");$q->execute([$uid]);$seller=(string)($q->fetchColumn()?:'');
@@ -270,7 +310,14 @@ function closed_package_loss_overlay(PDO $db,int $uid,array $orders): array
         $basis=cargo_invoice_basis_map($db,$uid,$seller,$serials);$counts=return_accepted_counts($db,$uid,$claims);$checks=return_inventory_checks($db,$uid,$claims);
         foreach($chunk as $no){
             $g=$groups[$no]??[];$cargo=$g['cargo']??[];foreach($cargo as &$r)$r['invoice_basis']=$basis[$r['invoice_serial']]??null;unset($r);
-            foreach($by[$no] as $i)$orders[$i]['closed_loss']=closed_package_loss($orders[$i],$g['packages']??[],$g['rows']??[],$cargo,$g['claims']??[],$counts,$checks,$seller,$tariffs);
+            foreach($by[$no] as $i){
+                $o=$orders[$i];
+                if(order_is_active_sale($o)){
+                    if(count($g['packages']??[])!==1||!closed_full_claim($o,$g['claims']??[]))continue;
+                    $o['status']='Returned';
+                }
+                $orders[$i]['closed_loss']=closed_package_loss($o,$g['packages']??[],$g['rows']??[],$cargo,$g['claims']??[],$counts,$checks,$seller,$tariffs);
+            }
         }
     }
     return $orders;

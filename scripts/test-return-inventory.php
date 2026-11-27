@@ -76,4 +76,11 @@ $a=closed_package_loss($estimate,[$estimate],[],[$freight[1]],[],[],[],'123',[])
 $t['one actual leg replaces only that leg']=$a['loss']===100.0&&$a['outbound']===60.0&&$a['return_cargo']===40.0;
 $a=closed_package_loss($closed,[$closed],[],$freight,[],[],[],'123',[]);
 $t['actual freight both legs without claims']=$a['loss']===100.0&&!$a['estimated_cargo'];
+$delivered=array_replace($closed,['status'=>'Delivered']);
+$t['full accepted return even if status delivered']=closed_full_claim($delivered,[$c]);
+$t['partial claim does not reverse whole sale']=!closed_full_claim(array_replace($delivered,['lines'=>[['line_id'=>'L1','barcode'=>'001','quantity'=>2]]]),[$c]);
+$t['duplicate returned unit not accepted']=!closed_full_claim($delivered,[$c,array_replace($c,['item_id'=>'I9'])]);
+$noCost=$closed;unset($noCost['lines'][0]['cost_snapshot']);
+$t['normal return needs no cost if not impaired']=closed_package_loss($noCost,[$noCost],[],$freight,[$c],[return_inventory_key($c)=>1],[],'123')['loss']===100.0;
+$t['explicit exception needs cost']=closed_package_loss($noCost,[$noCost],[],$freight,[$c],[return_inventory_key($c)=>1],['I1'=>$exception],'123')['loss']===null;
 foreach($t as $n=>$ok)echo ($ok?'PASS':'FAIL')." $n\n";exit(in_array(false,$t,true)?1:0);
