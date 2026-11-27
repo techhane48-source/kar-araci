@@ -24,4 +24,11 @@ $db->prepare("UPDATE orders SET status='Created',cargo_quote_context=NULL,cargo_
 $row=$db->query("SELECT * FROM orders WHERE user_id=1 AND package_number='P1'")->fetch();
 $over=cargo_profit_overlay($db,1,[$row])[0];
 $t['fresh pre-shipment missing context blocks stale catalog']=array_key_exists('cargo_override',$over)&&$over['cargo_override']===null;
+// Prior invoice sample can replace a 1-desi fallback only for identical package contents.
+$h=$p;$h['lines']=[['barcode'=>'001','quantity'=>3]];$h['cargo_api_desi']=null;$h['cargo_estimate']=80;
+$ctx=$context;$ctx['barem_candidate']=true;$ctx['desi_source']='default_one_desi';$ctx['desi']=1;$h['cargo_quote_context']=json_encode($ctx);
+$key=cargo_history_key($h,[$new]);$samples=[$key=>[['amount'=>125.0,'desi'=>4.0,'order_date'=>$ts-3600,'billed_at'=>$ts-1]]];
+$t['same quantity historical estimate']=cargo_history_apply($h,$samples,[$new])['cargo_estimate']===125.0;
+$other=$h;$other['lines'][0]['quantity']=2;$t['different quantity not reused']=cargo_history_apply($other,$samples,[$new])['cargo_estimate']===80;
+$other=$h;$other['cargo_api_desi']=3;$t['API desi wins over history']=cargo_history_apply($other,$samples,[$new])['cargo_estimate']===80;
 foreach($t as $name=>$ok)echo ($ok?'PASS':'FAIL')." $name\n";exit(in_array(false,$t,true)?1:0);

@@ -103,17 +103,21 @@ function cargo_quote_context(array $order,array $products): ?array
     $carrier=cargo_carrier((string)($order['cargoCompany']??''));if($carrier===null)return null;
     $lines=$order['lines']??[];$desi=null;$source=null;
     $apiDesi=cargo_positive_desi($order['cargoDeci']??null);
-    if(cargo_has_shipped($order)){
-        // After shipment the latest package observation wins; missing is not the old estimate.
-        $desi=$apiDesi;$source='shipment_api';
-    }elseif(is_array($lines)&&count($lines)===1&&($lines[0]['quantity']??null)==1){
-        $p=$products[(string)($lines[0]['barcode']??'')]??[];
-        $desi=cargo_positive_desi($p['expected_desi']??null);
-        if($desi===null&&($p['en']??0)>0&&($p['boy']??0)>0&&($p['yukseklik']??0)>0)$desi=cargo_positive_desi((float)$p['en']*(float)$p['boy']*(float)$p['yukseklik']/3000);
-        if($desi!==null)$source='declared_product';
+    if(cargo_has_shipped($order)&&$apiDesi!==null){$desi=$apiDesi;$source='shipment_api';}
+    elseif(is_array($lines)&&$lines){
+        $sum=0.0;$known=true;
+        foreach($lines as $l){
+            $qty=$l['quantity']??null;
+            if(!is_numeric($qty)||!is_finite((float)$qty)||(float)$qty!==(float)(int)$qty||$qty<1){$known=false;break;}
+            $p=$products[(string)($l['barcode']??'')]??[];
+            $d=cargo_positive_desi($p['expected_desi']??null);
+            if($d===null&&($p['en']??0)>0&&($p['boy']??0)>0&&($p['yukseklik']??0)>0)$d=cargo_positive_desi((float)$p['en']*(float)$p['boy']*(float)$p['yukseklik']/3000);
+            if($d===null){$known=false;break;}$sum+=$d*(int)$qty;
+        }
+        if($known){$desi=cargo_positive_desi($sum);if($desi===null)return null;$source='declared_product';}
     }
-    if($desi===null&&!cargo_has_shipped($order)&&$apiDesi!==null){$desi=$apiDesi;$source='pre_shipment_api';}
-    if($desi===null)return null;
+    if($desi===null&&$apiDesi!==null){$desi=$apiDesi;$source='pre_shipment_api';}
+    if($desi===null){$desi=1.0;$source='default_one_desi';}
     $ts=(int)($order['orderDate']??0);if($ts>100000000000)$ts=intdiv($ts,1000);if($ts<=0)return null;
     $day=date('Y-m-d',$ts);$sale=$order['totalPrice']??null;
     if(!is_numeric($sale)||!is_finite((float)$sale)||(float)$sale<=0)return null;
@@ -127,7 +131,7 @@ function cargo_quote_from_context(array $context,array $tariffs): ?array
     $day=$context['day']??null;$sale=$context['sale']??null;
     if(!in_array($carrier,['TEX','PTT','ARAS','DHL','SURAT','KG','YK','CEVA','HOROZ'],true)||$desi===null||
        !is_string($day)||!preg_match('/^\d{4}-\d{2}-\d{2}$/D',$day)||!is_numeric($sale)||!is_finite((float)$sale)||(float)$sale<=0||
-       !in_array($context['desi_source']??null,['shipment_api','declared_product','pre_shipment_api'],true))return null;
+       !in_array($context['desi_source']??null,['shipment_api','declared_product','pre_shipment_api','default_one_desi'],true))return null;
     // Operator table wins only for its own effective dates; never fill a missing official row from secondary data.
     $primary=array_values(array_filter($tariffs,static fn($t)=>!in_array($t['confidence']??'',['secondary_partial','document_reference'],true)&&$day>=($t['from']??'9999')&&$day<=($t['through']??'0000')));
     if(count($primary)>1)return null; // Ambiguous date coverage is not resolved by a coincidental matching row.
@@ -167,7 +171,7 @@ function cargo_reprice_stored(array $p,array $tariffs): array
        ($context['day']??null)===date('Y-m-d',(int)($p['order_date']??0))&&
        is_numeric($context['sale']??null)&&abs((float)$context['sale']-(float)($p['total_price']??0))<0.005&&
        (int)($context['order_modified_ms']??-1)===(int)($p['last_modified_ms']??0)&&
-       (!cargo_has_shipped($p)||(($context['desi_source']??null)==='shipment_api'&&cargo_positive_desi($context['desi']??null)===cargo_positive_desi($p['cargo_api_desi']??null)))){
+       (!cargo_has_shipped($p)|| (cargo_positive_desi($p['cargo_api_desi']??null)===null?in_array($context['desi_source']??null,['declared_product','default_one_desi'],true):(($context['desi_source']??null)==='shipment_api'&&cargo_positive_desi($context['desi']??null)===cargo_positive_desi($p['cargo_api_desi']??null))))){
         $quote=cargo_quote_from_context($context,$tariffs);
     }
     $p['cargo_estimate']=$quote['amount']??null;
@@ -214,7 +218,7 @@ function cargo_effective(array $packages,array $rows,string $seller): array
     $grossDifference=$comparison?($gross-$est)/10000.0:null;
     $apiDesi=$complete?cargo_positive_desi($packages[0]['cargo_api_desi']??null):null;
     $desiDifference=$comparison&&$billedDesiOk&&$apiDesi!==null?$billedDesi-$apiDesi:null;
-    return ['fast_scenario'=>$fastScenario,'gross_difference'=>$grossDifference,'desi_difference'=>$desiDifference,'package_quotes'=>$packageQuotes,'initial_estimate'=>$packages&&$firstOk?$first/10000.0:null,'estimate'=>$estimate,'api_desi'=>count($packages)===1?cargo_positive_desi($packages[0]['cargo_api_desi']??null):null,'carrier'=>count($packages)===1?($packages[0]['cargo_provider']??null):null,'billed_desi'=>$n&&!$bad&&$billedDesiOk?$billedDesi:null,'invoiced'=>$invoiced,'selected'=>$bad?null:($invoiced!==null?($complete?$invoiced:null):$estimate),'state'=>$bad?'Fatura çelişkili':($invoiced!==null?($complete?'Faturalanmış gönderi tutarı':'Çoklu paket: fatura kapsamı doğrulanmalı'):($estimate!==null?'Tahmini (KDV dahil tarife)':'Tarife/desi eksik')),'invoice_rows'=>$n,'gross_for_profit'=>$bad||$returnSeen?null:($n?($complete&&$grossOk?$gross/10000.0:null):($complete?$estimate:null)),'invoice_present'=>$n>0||$bad,'other_cargo_present'=>$returnSeen,'gross_basis'=>$n&&$grossOk&&!$bad?'invoice_total_match':null];
+    return ['fast_scenario'=>$fastScenario,'gross_difference'=>$grossDifference,'desi_difference'=>$desiDifference,'package_quotes'=>$packageQuotes,'initial_estimate'=>$packages&&$firstOk?$first/10000.0:null,'estimate'=>$estimate,'api_desi'=>count($packages)===1?cargo_positive_desi($packages[0]['cargo_api_desi']??null):null,'carrier'=>count($packages)===1?($packages[0]['cargo_provider']??null):null,'billed_desi'=>$n&&!$bad&&$billedDesiOk?$billedDesi:null,'invoiced'=>$invoiced,'selected'=>$bad?null:($invoiced!==null?($complete?$invoiced:null):$estimate),'state'=>$bad?'Fatura çelişkili':($invoiced!==null?($complete?'Faturalanmış gönderi tutarı':'Çoklu paket: fatura kapsamı doğrulanmalı'):($estimate!==null?'Tahmini kargo (KDV dahil)':'Tarife/desi eksik')),'invoice_rows'=>$n,'gross_for_profit'=>$bad||$returnSeen?null:($n?($complete&&$grossOk?$gross/10000.0:null):($complete?$estimate:null)),'invoice_present'=>$n>0||$bad,'other_cargo_present'=>$returnSeen,'gross_basis'=>$n&&$grossOk&&!$bad?'invoice_total_match':null];
 }
 /** Infer VAT basis only if ALL unique nonnegative invoice detail rows reconcile to the domestic invoice debt.
  * This is an arithmetic consistency check, not independent proof of tax treatment. */
@@ -265,7 +269,7 @@ function cargo_profit_overlay(PDO $db,int $uid,array $orders): array
             $pq=$a['package_quotes'][(string)($o['package_number']??'')]??null;
             $amount=$pq['amount']??null;
             if(is_numeric($amount)&&(float)$amount>0){
-            $o['cargo_override']=(float)$amount;$meta=json_decode((string)($pq['meta']??''),true);$o['cargo_source']=($meta['desi_source']??'')==='shipment_api'?'Güncel API desisi / tarife tahmini':'İlk desi / tarife tahmini';if(($meta['kind']??'')==='barem_scenario')$o['cargo_source'].=' (standart barem varsayımı; avantaj doğrulanmadı)';if(($meta['confidence']??'')==='secondary_partial')$o['cargo_source'].=' (ikincil kaynak)';if(($meta['confidence']??'')==='document_reference')$o['cargo_source'].=' (5 Ekim son bilinen liste)';if(($meta['heavy_net_tl']??0)>0)$o['cargo_source'].=' (ağır taşıma dahil)';
+            $o['cargo_override']=(float)$amount;$meta=json_decode((string)($pq['meta']??''),true);$o['cargo_source']=match($meta['desi_source']??''){ 'shipment_api'=>'Güncel API desisi / tarife tahmini','historical_invoice'=>'Aynı barkod ve adet / geçmiş fatura tahmini','declared_product'=>'Ürün desisi / tarife tahmini','default_one_desi'=>'Varsayılan 1 desi / tarife tahmini','pre_shipment_api'=>'Gönderim öncesi API desisi / tarife tahmini',default=>'İlk desi / tarife tahmini'};if(($meta['kind']??'')==='barem_scenario')$o['cargo_source'].=' (standart barem varsayımı; avantaj doğrulanmadı)';if(($meta['confidence']??'')==='secondary_partial')$o['cargo_source'].=' (ikincil kaynak)';if(($meta['confidence']??'')==='document_reference')$o['cargo_source'].=' (5 Ekim son bilinen liste)';if(($meta['heavy_net_tl']??0)>0)$o['cargo_source'].=' (ağır taşıma dahil)';
             if(empty($pq['context_known']))$o['cargo_source'].=' (eski kayıt; yeniden senkron gerekli)';
             }elseif(cargo_has_shipped($o)||!empty($pq['context_known'])||(int)($o['last_modified_ms']??0)>0){$o['cargo_override']=null;$o['cargo_source']='Gönderi desisi veya geçerli tarife eksik';}
             // Only genuinely legacy pre-shipment records (no API modification marker) may use a catalog estimate.
@@ -273,10 +277,60 @@ function cargo_profit_overlay(PDO $db,int $uid,array $orders): array
     }unset($o);
     return $orders;
 }
+/** Exact package contents and customer-paid total, carrier and dated tariff regime. */
+function cargo_history_key(array $p,array $tariffs): ?string
+{
+    if(!order_is_domestic_try($p))return null;
+    $ctx=json_decode((string)($p['cargo_quote_context']??''),true);
+    $day=date('Y-m-d',(int)($p['order_date']??0));$carrier=cargo_carrier((string)($p['cargo_provider']??''));
+    if(!$carrier||!is_array($ctx)||($ctx['carrier']??null)!==$carrier||($ctx['day']??null)!==$day||
+       (int)($ctx['order_modified_ms']??-1)!==(int)($p['last_modified_ms']??0)||($ctx['barem_candidate']??false)!==true)return null;
+    try{$sale=finance_units($p['total_price']??null);if($sale<=0||finance_units($ctx['sale']??null)!==$sale)return null;}catch(InvalidArgumentException $e){return null;}
+    $lines=$p['lines']??null;if(is_string($lines))$lines=json_decode($lines,true);
+    if(!is_array($lines)||!$lines)return null;$items=[];
+    foreach($lines as $l){
+        $bc=(string)($l['barcode']??'');$n=$l['quantity']??null;
+        if($bc===''||!is_numeric($n)||(float)$n!==(float)(int)$n||$n<1||$n>100000||in_array(strtolower((string)($l['status']??'')),['cancelled','canceled','unsupplied','returned'],true))return null;
+        $items['b:'.$bc]=($items['b:'.$bc]??0)+(int)$n;
+    }
+    ksort($items,SORT_STRING);
+    // Do not reuse a billed amount across a changed or ambiguous tariff period.
+    $active=[];foreach($tariffs as $t)if($day>=($t['from']??'9999')&&$day<=($t['through']??'0000'))$active[]=[$t['from'],$t['through'],$t['source']??'',$t['confidence']??''];
+    if(!$active)return null;
+    sort($active);
+    return hash('sha256',json_encode([$carrier,$sale,$items,$active],JSON_THROW_ON_ERROR));
+}
+function cargo_history_samples(PDO $db,int $uid,string $seller,array $tariffs):array
+{
+    if($seller==='')return [];
+    // Bounded tenant-local scan. A prior single delivered package and exactly one validated outbound invoice row.
+    $q=$db->prepare("SELECT o.*,c.invoice_serial,c.parcel_id,c.shipment_type,c.amount,c.desi,d.raw_json AS invoice_raw,d.transaction_date AS billed_at FROM orders o JOIN trendyol_cargo_items c ON c.user_id=o.user_id AND c.order_number=o.order_number JOIN trendyol_financial_documents d ON d.user_id=c.user_id AND d.external_id=c.invoice_serial AND d.query_type='DeductionInvoices' WHERE o.user_id=? AND o.marketplace='trendyol' AND o.status='Delivered' AND o.order_date>=? AND c.shipment_type='Gönderi Kargo Bedeli' AND (SELECT COUNT(*) FROM orders x WHERE x.user_id=o.user_id AND x.marketplace='trendyol' AND x.order_number=o.order_number)=1 AND (SELECT COUNT(*) FROM trendyol_cargo_items x WHERE x.user_id=o.user_id AND x.order_number=o.order_number)=1 AND NOT EXISTS(SELECT 1 FROM trendyol_claim_items x WHERE x.user_id=o.user_id AND x.order_number=o.order_number) ORDER BY o.order_date DESC LIMIT 5000");
+    $q->execute([$uid,time()-90*86400]);$rows=$q->fetchAll();
+    $basis=cargo_invoice_basis_map($db,$uid,$seller,array_column($rows,'invoice_serial'));$out=[];
+    foreach($rows as $r){
+        $key=cargo_history_key($r,$tariffs);$desi=cargo_positive_desi($r['desi']);if($key===null||$desi===null)continue;
+        $r['invoice_basis']=$basis[$r['invoice_serial']]??null;$v=cargo_effective([$r],[$r],$seller)['gross_for_profit'];
+        if($v===null||$v<=0)continue;
+        $out[$key][]=['amount'=>$v,'desi'=>$desi,'order_date'=>(int)$r['order_date'],'billed_at'=>(int)$r['billed_at']];
+    }
+    return $out;
+}
+function cargo_history_apply(array $p,array $samples,array $tariffs):array
+{
+    if(cargo_positive_desi($p['cargo_api_desi']??null)!==null||!order_is_active_sale($p))return $p;
+    $key=cargo_history_key($p,$tariffs);if($key===null)return $p;
+    foreach($samples[$key]??[] as $r){
+        if($r['order_date']>=(int)$p['order_date']||$r['billed_at']>time())continue;
+        $p['cargo_estimate']=$r['amount'];$p['cargo_estimate_json']=json_encode(['amount'=>$r['amount'],'desi'=>$r['desi'],'desi_source'=>'historical_invoice','kind'=>'historical_invoice','sample_order_date'=>$r['order_date']],JSON_THROW_ON_ERROR);
+        break;
+    }
+    return $p;
+}
+
 function cargo_effective_report(PDO $db,int $uid,array $numbers,?array $tariffs=null): array
 {
     $q=$db->prepare("SELECT seller_id FROM integration_bindings WHERE user_id=? AND marketplace='trendyol'");$q->execute([$uid]);$seller=(string)($q->fetchColumn()?:'');
-    $tariffs=$tariffs??cargo_tariffs();$out=[];$basisCache=[];$numbers=array_values(array_unique(array_filter(array_map('strval',$numbers),static fn($s)=>$s!=='')));
+    $tariffs=$tariffs??cargo_tariffs();$out=[];$basisCache=[];$samples=null;$numbers=array_values(array_unique(array_filter(array_map('strval',$numbers),static fn($s)=>$s!=='')));
     foreach(array_chunk($numbers,200) as $chunk){
         $in=implode(',',array_fill(0,count($chunk),'?'));$args=array_merge([$uid],$chunk);$p=[];$c=[];
         $q=$db->prepare("SELECT * FROM orders WHERE user_id=? AND marketplace='trendyol' AND order_number IN ($in)");$q->execute($args);while($r=$q->fetch())$p[$r['order_number']][]=cargo_reprice_stored($r,$tariffs);
@@ -284,7 +338,13 @@ function cargo_effective_report(PDO $db,int $uid,array $numbers,?array $tariffs=
         $serials=[];foreach($c as $group)foreach($group as $row)if(!array_key_exists($row['invoice_serial'],$basisCache))$serials[]=(string)$row['invoice_serial'];
         $basisCache+=cargo_invoice_basis_map($db,$uid,$seller,$serials);
         foreach($c as &$group)foreach($group as &$row)$row['invoice_basis']=$basisCache[$row['invoice_serial']]??null;unset($row,$group);
-        foreach($chunk as $no)if(isset($p[$no]))$out[$no]=cargo_effective($p[$no],$c[$no]??[],$seller);
+        foreach($chunk as $no)if(isset($p[$no])){
+            if(count($p[$no])===1&&!isset($c[$no])&&cargo_positive_desi($p[$no][0]['cargo_api_desi']??null)===null&&cargo_history_key($p[$no][0],$tariffs)!==null){
+                if($samples===null)$samples=cargo_history_samples($db,$uid,$seller,$tariffs);
+                $p[$no][0]=cargo_history_apply($p[$no][0],$samples,$tariffs);
+            }
+            $out[$no]=cargo_effective($p[$no],$c[$no]??[],$seller);
+        }
     }
     return $out;
 }

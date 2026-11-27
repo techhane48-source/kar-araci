@@ -29,7 +29,9 @@ function normalize_claim(array $claim): array
                 'platform_reason'=>(string)($item['trendyolClaimItemReason']['name']??''),
                 'auto_accepted'=>is_bool($item['autoAccepted']??null)?(int)$item['autoAccepted']:null,
                 'seller_accepted'=>is_bool($item['acceptedBySeller']??null)?(int)$item['acceptedBySeller']:null,
-                'created_ms'=>(int)$created,'modified_ms'=>(int)$modified];
+                'created_ms'=>(int)$created,'modified_ms'=>(int)$modified,
+                'return_carrier'=>is_string($claim['cargoProviderName']??null)?$claim['cargoProviderName']:null,
+                'return_desi'=>is_numeric($claim['cargoDeci']??null)&&is_finite((float)$claim['cargoDeci'])&&$claim['cargoDeci']>0&&$claim['cargoDeci']<=500?(float)$claim['cargoDeci']:null];
         }
     }
     return $out;
@@ -73,15 +75,15 @@ function claim_order_match(array $claim,?array $order): array
 }
 function persist_claims(PDO $db,int $uid,array $rows): int
 {
-    $q=$db->prepare("INSERT INTO trendyol_claim_items(user_id,claim_id,item_id,order_number,outbound_package,return_package,line_id,barcode,product_name,status,reason,platform_reason,auto_accepted,seller_accepted,created_ms,modified_ms,group_line_id)
-      VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(user_id,item_id) DO UPDATE SET
+    $q=$db->prepare("INSERT INTO trendyol_claim_items(user_id,claim_id,item_id,order_number,outbound_package,return_package,line_id,barcode,product_name,status,reason,platform_reason,auto_accepted,seller_accepted,created_ms,modified_ms,group_line_id,return_carrier,return_desi)
+      VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(user_id,item_id) DO UPDATE SET
       claim_id=excluded.claim_id,order_number=excluded.order_number,outbound_package=excluded.outbound_package,return_package=excluded.return_package,
       line_id=excluded.line_id,group_line_id=excluded.group_line_id,barcode=excluded.barcode,product_name=excluded.product_name,status=excluded.status,reason=excluded.reason,
       platform_reason=excluded.platform_reason,auto_accepted=excluded.auto_accepted,seller_accepted=excluded.seller_accepted,
-      created_ms=excluded.created_ms,modified_ms=excluded.modified_ms WHERE excluded.modified_ms>=trendyol_claim_items.modified_ms");
+      created_ms=excluded.created_ms,modified_ms=excluded.modified_ms,return_carrier=excluded.return_carrier,return_desi=excluded.return_desi WHERE excluded.modified_ms>=trendyol_claim_items.modified_ms");
     $n=0;
     foreach($rows as $r){
-        $q->execute([$uid,$r['claim_id'],$r['item_id'],$r['order_number'],$r['outbound_package'],$r['return_package'],$r['line_id'],$r['barcode'],$r['product_name'],$r['status'],$r['reason'],$r['platform_reason'],$r['auto_accepted'],$r['seller_accepted'],$r['created_ms'],$r['modified_ms'],$r['group_line_id']??'']);
+        $q->execute([$uid,$r['claim_id'],$r['item_id'],$r['order_number'],$r['outbound_package'],$r['return_package'],$r['line_id'],$r['barcode'],$r['product_name'],$r['status'],$r['reason'],$r['platform_reason'],$r['auto_accepted'],$r['seller_accepted'],$r['created_ms'],$r['modified_ms'],$r['group_line_id']??'',$r['return_carrier']??null,$r['return_desi']??null]);
         $n+=$q->rowCount();
     }
     return $n;

@@ -217,7 +217,26 @@ function closed_package_loss(array $o,array $packages,array $rows,array $cargo,a
         // Return freight is provisionally estimated at the outbound rate;
         // actual invoice for either leg replaces only that leg.
         if($out['outbound']===null&&($base!==null||$out['return_cargo']!==null)){$out['outbound']=(float)($base??$out['return_cargo']);$out['estimated_cargo']=true;}
-        if($out['return_cargo']===null&&$out['outbound']!==null){$out['return_cargo']=$out['outbound'];$out['estimated_cargo']=true;}
+        if($out['return_cargo']===null){
+            // A claim's return carrier may differ from the outbound carrier. Deduplicate per claim package.
+            $returnQuotes=[];$unresolved=false;$seenClaims=[];
+            foreach($claims as $c){
+                if((string)($c['outbound_package']??'')!==$pid||!in_array($c['status']??'',['Accepted','WaitingInAction','InAnalysis'],true))continue;
+                $id=(string)($c['claim_id']??'');if($id===''){$unresolved=true;continue;}
+                $carrier=cargo_carrier((string)($c['return_carrier']??''));
+                $d=cargo_positive_desi($c['return_desi']??null);
+                $ts=(int)($c['created_ms']??0);
+                $data=[$carrier,$d,$ts];
+                if(isset($seenClaims[$id])){if($seenClaims[$id]!==$data)$unresolved=true;continue;}$seenClaims[$id]=$data;
+                if($carrier===null||$ts<=0){$unresolved=true;continue;}
+                $d=$d??cargo_positive_desi($o['cargo_api_desi']??null)??cargo_positive_desi($context['desi']??null)??1.0;
+                // Standard return freight scenario; no outbound sale barem applied to the return.
+                $rq=cargo_quote_from_context(['carrier'=>$carrier,'desi'=>$d,'day'=>date('Y-m-d',intdiv($ts,1000)),'sale'=>max(350.0,(float)($o['total_price']??0)),'desi_source'=>cargo_positive_desi($c['return_desi']??null)!==null?'shipment_api':'declared_product','barem_candidate'=>false],$tariffs??cargo_tariffs());
+                if(!$rq){$unresolved=true;continue;}$returnQuotes[]=$rq['amount'];
+            }
+            if($returnQuotes&&!$unresolved){$out['return_cargo']=array_sum($returnQuotes);$out['estimated_cargo']=true;}
+            elseif(!$returnQuotes&&$out['outbound']!==null&&!array_filter($claims,static fn($c)=>!empty($c['return_carrier']))){$out['return_cargo']=$out['outbound'];$out['estimated_cargo']=true;}
+        }
         if($out['outbound']!==null&&$out['return_cargo']!==null)$out['cargo']=$out['outbound']+$out['return_cargo'];
     }
     // For a fully accepted return, count each unit exactly once and default only
