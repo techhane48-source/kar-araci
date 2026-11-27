@@ -87,7 +87,7 @@ function cargo_tariff_status(array $tariffs,string $day): array
         if($t['through']<$day&&($latest===null||$t['through']>$latest))$latest=$t['through'];
     }
     return ['state'=>$primary>1?'conflict':($primary===1?'operator_reference':($document===1?'document_reference':($document>1?'conflict':($secondary===1?'secondary_partial':($secondary>1?'conflict':'missing'))))),
-        'last_expired_through'=>$latest,'official_verified'=>false];
+        'last_expired_through'=>$latest,'official_verified'=>false,'secondary_barem_available'=>$secondary===1];
 }
 function cargo_has_shipped(array $order): bool
 {
@@ -199,11 +199,22 @@ function cargo_effective(array $packages,array $rows,string $seller): array
     }
     $estimate=$packages&&$estOk?$est/10000.0:null;$invoiced=$n&&!$bad?$actual/10000.0:null;
     $complete=count($packages)===1&&order_is_domestic_try($packages[0])&&order_is_active_sale($packages[0]);
+    // Fast rate is a comparison scenario only, never the selected freight or verified savings.
+    $fastScenario=null;
+    if($complete&&$estimate!==null&&!$rows){
+        $meta=json_decode((string)($packages[0]['cargo_estimate_json']??''),true);
+        if(is_array($meta)&&($meta['kind']??'')==='barem_scenario'){
+            try{
+                $v=finance_units($meta['fast_scenario']??null);
+                if($v>0&&$v<=$est&&finance_units($meta['amount']??null)===$est)$fastScenario=$v/10000.0;
+            }catch(InvalidArgumentException $ex){}
+        }
+    }
     $comparison=$complete&&$n===1&&!$bad&&!$returnSeen&&$grossOk&&$estimate!==null;
     $grossDifference=$comparison?($gross-$est)/10000.0:null;
     $apiDesi=$complete?cargo_positive_desi($packages[0]['cargo_api_desi']??null):null;
     $desiDifference=$comparison&&$billedDesiOk&&$apiDesi!==null?$billedDesi-$apiDesi:null;
-    return ['gross_difference'=>$grossDifference,'desi_difference'=>$desiDifference,'package_quotes'=>$packageQuotes,'initial_estimate'=>$packages&&$firstOk?$first/10000.0:null,'estimate'=>$estimate,'api_desi'=>count($packages)===1?cargo_positive_desi($packages[0]['cargo_api_desi']??null):null,'carrier'=>count($packages)===1?($packages[0]['cargo_provider']??null):null,'billed_desi'=>$n&&!$bad&&$billedDesiOk?$billedDesi:null,'invoiced'=>$invoiced,'selected'=>$bad?null:($invoiced!==null?($complete?$invoiced:null):$estimate),'state'=>$bad?'Fatura çelişkili':($invoiced!==null?($complete?'Faturalanmış gönderi tutarı':'Çoklu paket: fatura kapsamı doğrulanmalı'):($estimate!==null?'Tahmini (KDV dahil tarife)':'Tarife/desi eksik')),'invoice_rows'=>$n,'gross_for_profit'=>$bad||$returnSeen?null:($n?($complete&&$grossOk?$gross/10000.0:null):($complete?$estimate:null)),'invoice_present'=>$n>0||$bad,'other_cargo_present'=>$returnSeen,'gross_basis'=>$n&&$grossOk&&!$bad?'invoice_total_match':null];
+    return ['fast_scenario'=>$fastScenario,'gross_difference'=>$grossDifference,'desi_difference'=>$desiDifference,'package_quotes'=>$packageQuotes,'initial_estimate'=>$packages&&$firstOk?$first/10000.0:null,'estimate'=>$estimate,'api_desi'=>count($packages)===1?cargo_positive_desi($packages[0]['cargo_api_desi']??null):null,'carrier'=>count($packages)===1?($packages[0]['cargo_provider']??null):null,'billed_desi'=>$n&&!$bad&&$billedDesiOk?$billedDesi:null,'invoiced'=>$invoiced,'selected'=>$bad?null:($invoiced!==null?($complete?$invoiced:null):$estimate),'state'=>$bad?'Fatura çelişkili':($invoiced!==null?($complete?'Faturalanmış gönderi tutarı':'Çoklu paket: fatura kapsamı doğrulanmalı'):($estimate!==null?'Tahmini (KDV dahil tarife)':'Tarife/desi eksik')),'invoice_rows'=>$n,'gross_for_profit'=>$bad||$returnSeen?null:($n?($complete&&$grossOk?$gross/10000.0:null):($complete?$estimate:null)),'invoice_present'=>$n>0||$bad,'other_cargo_present'=>$returnSeen,'gross_basis'=>$n&&$grossOk&&!$bad?'invoice_total_match':null];
 }
 /** Infer VAT basis only if ALL unique nonnegative invoice detail rows reconcile to the domestic invoice debt.
  * This is an arithmetic consistency check, not independent proof of tax treatment. */
@@ -254,7 +265,7 @@ function cargo_profit_overlay(PDO $db,int $uid,array $orders): array
             $pq=$a['package_quotes'][(string)($o['package_number']??'')]??null;
             $amount=$pq['amount']??null;
             if(is_numeric($amount)&&(float)$amount>0){
-            $o['cargo_override']=(float)$amount;$meta=json_decode((string)($pq['meta']??''),true);$o['cargo_source']=($meta['desi_source']??'')==='shipment_api'?'Güncel API desisi / tarife tahmini':'İlk desi / tarife tahmini';if(($meta['kind']??'')==='barem_scenario')$o['cargo_source'].=' (standart barem varsayımı)';if(($meta['confidence']??'')==='secondary_partial')$o['cargo_source'].=' (ikincil kaynak)';if(($meta['confidence']??'')==='document_reference')$o['cargo_source'].=' (5 Ekim son bilinen liste)';if(($meta['heavy_net_tl']??0)>0)$o['cargo_source'].=' (ağır taşıma dahil)';
+            $o['cargo_override']=(float)$amount;$meta=json_decode((string)($pq['meta']??''),true);$o['cargo_source']=($meta['desi_source']??'')==='shipment_api'?'Güncel API desisi / tarife tahmini':'İlk desi / tarife tahmini';if(($meta['kind']??'')==='barem_scenario')$o['cargo_source'].=' (standart barem varsayımı; avantaj doğrulanmadı)';if(($meta['confidence']??'')==='secondary_partial')$o['cargo_source'].=' (ikincil kaynak)';if(($meta['confidence']??'')==='document_reference')$o['cargo_source'].=' (5 Ekim son bilinen liste)';if(($meta['heavy_net_tl']??0)>0)$o['cargo_source'].=' (ağır taşıma dahil)';
             if(empty($pq['context_known']))$o['cargo_source'].=' (eski kayıt; yeniden senkron gerekli)';
             }elseif(cargo_has_shipped($o)||!empty($pq['context_known'])||(int)($o['last_modified_ms']??0)>0){$o['cargo_override']=null;$o['cargo_source']='Gönderi desisi veya geçerli tarife eksik';}
             // Only genuinely legacy pre-shipment records (no API modification marker) may use a catalog estimate.

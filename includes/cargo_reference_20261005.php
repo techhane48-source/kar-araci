@@ -17,7 +17,7 @@ $net=[
   50=>[623.10,1050.27,606.95,1319.79,702.52,618.44,819.70],
 ];
 $rows=[];foreach($net as $desi=>$values)foreach($carriers as $i=>$carrier)$rows[]=['carrier'=>$carrier,'desi'=>$desi,'min_sale'=>$desi<=10?350:0,'max_sale'=>null,'gross_tl'=>round($values[$i]*1.2,2)];
-// Published barem rates are already gross. Standard is a provisional scenario, not a verified eligibility result.
+// Rechecked 2026-11-27 against Ecomiro and Merytics (10 August barem reference). Published gross figures are rounded; standard is a provisional scenario, not verified eligibility. See https://merytics.com/araclar/trendyol-kargo-ucretleri .
 $fastLow=[46.49,46.49,58.00,68.50,65.50,67.00,100.00];
 $fastHigh=[84.49,84.49,94.99,105.49,102.49,103.99,136.00];
 $standardLow=[88.00,88.00,97.00,107.50,104.50,106.00,136.99];
@@ -29,4 +29,4 @@ foreach($carriers as $i=>$carrier)for($desi=1;$desi<=10;$desi++){
 // One independently published additional discrete row (no interpolation).
 $rows[]=['carrier'=>'TEX','desi'=>4,'min_sale'=>350,'max_sale'=>null,'gross_tl'=>128.64];
 $rows[]=['carrier'=>'DHL','desi'=>4,'min_sale'=>350,'max_sale'=>null,'gross_tl'=>149.99];
-return ['from'=>'2026-10-05','through'=>'2026-11-25','source'=>'https://ecomiro.com/tr/trendyol-kargo-ucreti-hesaplama','confidence'=>'secondary_partial','rows'=>$rows];
+return ['from'=>'2026-10-05','through'=>'2026-11-27','source'=>'https://ecomiro.com/tr/trendyol-kargo-ucreti-hesaplama','confidence'=>'secondary_partial','rows'=>$rows];
