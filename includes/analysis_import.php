@@ -4,6 +4,7 @@ require_once __DIR__.'/profit.php';
 require_once __DIR__.'/profit_targets.php';
 require_once __DIR__.'/xlsx.php';
 require_once __DIR__.'/tariff_apply.php';
+require_once __DIR__.'/campaign_rules.php';
 
 const ANALYSIS_MAX_ROWS=20000;
 const ANALYSIS_MAX_COLS=128;
@@ -73,6 +74,7 @@ function analysis_period_price(array $def,array $row): ?array
 function analysis_schema(array $headers,string $module): array
 {
     if(count($headers)>ANALYSIS_MAX_COLS)throw new RuntimeException('Kolon sınırı aşıldı.');
+    $campaign=campaign_schema($headers,$module);if($campaign!==null)return $campaign;
     if(in_array($module,['komisyon','plus'],true)){
         $period=analysis_period_tariff_schema($headers);if($period!==null)return $period;
     }
@@ -146,6 +148,7 @@ function analysis_row(array $schema,array $row,array $products,string $module,ar
     $name=$p['name']??($schema['name']===null?'':(string)($row[$schema['name']]??''));
     $cost=$p&&is_numeric($p['cost']??null)&&(float)$p['cost']>0?(float)$p['cost']:null;
     $source=null;if(!empty($schema['apply_columns'])){$c=$schema['apply_columns'];$source=['base'=>parse_money_input((string)($row[$c['base']]??'')),'tsf'=>parse_money_input((string)($row[$c['tsf']]??'')),'promo'=>(string)($row[$c['promo']]??'')];}
+    $meta=[];foreach($schema['campaign_meta']??[] as $k=>$i)$meta[$k]=trim((string)($row[$i]??''));
     $best=null;$tiers=[];$rule=$p?target_for_product($rules,$p):null;$meets=null;
     $baseline=null;$baselinePrice=null;$baselineRate=null;
     if($cost!==null&&is_numeric($p['price']??null)&&(float)$p['price']>0&&is_numeric($p['rate']??null)){
@@ -153,10 +156,20 @@ function analysis_row(array $schema,array $row,array $products,string $module,ar
     }
     foreach($schema['prices'] as $key=>$def){
         $period=isset($def['period_index'])?trim((string)($row[$def['period_index']]??'')):null;
-        $price=isset($def['period_index'])?($period!==''?analysis_period_price($def,$row):null):analysis_price((string)($row[$def['index']]??''));
+        $slot=null;
+        if(isset($def['start_index'])){
+            $slot=campaign_slot(trim((string)($row[$def['start_index']]??'')),trim((string)($row[$def['end_index']]??'')),$key==='flash24'?24:3);
+            $period=$slot['label']??null;
+        }
+        $price=array_key_exists('upper_index',$def)?((isset($def['period_index'])&&$period==='')?null:analysis_period_price($def,$row)):analysis_price((string)($row[$def['index']]??''));
+        if(isset($def['start_index'])&&!$slot)$price=null;
+        if(($schema['campaign_kind']??null)==='plus'&&$price!==null){
+            $tsf=parse_money_input($meta['tsf']??'');if($tsf===null||$tsf<=0)$price=null;else $price['price']=min($price['price'],$tsf);
+        }
         $explicit=isset($schema['rates'][$key]);
         $rate=$explicit?analysis_rate((string)($row[$schema['rates'][$key]]??'')):($module==='bulk'&&$p? (float)$p['rate']:null);
         $t=['price'=>$price['price']??null,'range'=>$price['range']??false,'rate'=>$rate,'profit'=>null,'margin'=>null,'reason'=>'','target_met'=>null,'min_price'=>($price['boundary']??null)==='lower'?null:($price['min']??null),'period'=>$period,'boundary'=>$price['boundary']??null,'min_endpoint_profit'=>null,'profit_delta'=>null,'rate_source'=>$explicit?'file':($module==='bulk'&&$p?'catalog':null)];
+        if($slot!==null)$t['slot']=$slot;
         if($cost===null)$t['reason']=$p?'Maliyet eksik':'Barkod eşleşmedi';
         elseif($price===null)$t['reason']='Fiyat veya kapalı aralık okunamadı';
         elseif($rate===null||$rate<0||$rate>100)$t['reason']='Kademe komisyonu eksik';
@@ -175,15 +188,28 @@ function analysis_row(array $schema,array $row,array $products,string $module,ar
                 if(!$price['range']&&($module==='bulk'||in_array($module,['komisyon','plus'],true))&&($best===null||$calc['profit']>$best))$best=$calc['profit'];
             }catch(InvalidArgumentException $e){$t['reason']='Ürün hesap ayarları geçersiz';}
         }
+        // A promotion's displayed discount is not proof of its future funding or eligibility.
+        if(isset($schema['campaign_kind'])){
+            $t['target_met']=null;$best=null;$meets=null;
+            if($schema['campaign_kind']==='plus'){
+                $n=parse_money_input($meta['tsf']??'');$basis=parse_money_input($meta['basis']??'');$customer=parse_money_input($meta['customer']??'');
+                $clean=campaign_empty_promo($meta['promo']??'')&&$n!==null&&$basis!==null&&$customer!==null&&abs($n-$basis)<0.005&&abs($n-$customer)<0.005&&($meta['plus_customer']??'')===''&&($meta['plus_basis']??'')==='';
+                if(!$clean){$t['profit']=null;$t['margin']=null;$t['profit_delta']=null;$t['reason']='Plus fiyatı üst sınırı gösteriliyor; promosyon finansmanı veya mevcut Plus fiyatı doğrulanmadan kâr hesaplanmaz.';}
+                elseif($t['profit']!==null)$t['reason']='Promosyonsuz Plus teklif senaryosu; dönem ve katılım doğrulanmalı.';
+            }elseif($schema['campaign_kind']==='flash'||$schema['campaign_kind']==='etiket'){
+                $t['profit']=null;$t['margin']=null;$t['profit_delta']=null;$t['reason']=$price===null?'Bu zaman diliminde teklif yok veya aralık geçersiz.':'Komisyon ve promosyon bilgisi doğrulanmalı; güncel komisyon yeni fiyata taşınmaz.';
+            }
+        }
         if($source!==null&&$t['profit']!==null){
             $candidate=tariff_candidate($source,$t);
+            if($candidate===null){$t['profit']=null;$t['margin']=null;$t['profit_delta']=null;$t['min_endpoint_profit']=null;$t['reason']='Mevcut promosyon / fiyat farkı var; yeni fiyatın matrahı doğrulanmadan kâr hesaplanmaz.';}
             if($candidate!==null){
                 try{$calc=product_profit($p,$candidate['effective'],$rate);$t['application']=$candidate;$t['profit']=$calc['profit'];$t['margin']=$calc['margin'];$t['profit_delta']=$baseline!==null?$calc['profit']-$baseline['profit']:null;$t['application_target']=$rule?target_pass($rule,$calc,$cost,$candidate['effective']):null;}catch(InvalidArgumentException $e){}
             }
         }
         $tiers[$key]=$t;
     }
-    return ['barcode'=>$barcode,'name'=>$name,'cost'=>$cost,'matched'=>$p!==null,'tiers'=>$tiers,'best'=>$best,'rule'=>$rule?target_label($rule):null,'meets_target'=>$meets,'baseline_price'=>$baselinePrice,'baseline_rate'=>$baselineRate,'baseline_profit'=>$baseline['profit']??null];
+    return ['barcode'=>$barcode,'name'=>$name,'cost'=>$cost,'matched'=>$p!==null,'tiers'=>$tiers,'best'=>$best,'rule'=>$rule?target_label($rule):null,'meets_target'=>$meets,'baseline_price'=>$baselinePrice,'baseline_rate'=>$baselineRate,'baseline_profit'=>$baseline['profit']??null,'campaign_meta'=>$meta];
 }
 
 /** Store one analysis per module/account. A bad upload preserves the prior analysis. */

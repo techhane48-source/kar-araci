@@ -16,8 +16,9 @@ function tariff_candidate(array $source,array $tier): ?array
     $base=$source['base']??null;$tsf=$source['tsf']??null;$target=$tier['price']??null;
     if(!is_numeric($base)||!is_numeric($tsf)||!is_numeric($target)||$base<=0||$tsf<=0||$base>$tsf||$target<=0||$target>100000000)return null;
     $promo=trim((string)($source['promo']??''))!==''||abs($base-$tsf)>0.005;
-    // The observed effective/TSF ratio is only a scenario, never a verified promotion rule.
-    $ratio=$promo?(float)$base/(float)$tsf:1.0;
+    // The current ratio does not establish future discount funding or eligibility.
+    if($promo)return null;
+    $ratio=1.0;
     if($ratio<0.001)return null;
     $c=(int)floor((float)$target*100/$ratio+0.000001);
     $lower=($tier['boundary']??null)==='lower';
@@ -63,7 +64,7 @@ function tariff_apply_select(array $r,string $key,bool $auto,bool $promoOk,int $
     $t=$r['tiers'][$key]??null;
     if(!$t||!is_numeric($t['profit']??null)||!tariff_period_open((string)($t['period']??''),$now))return null;
     $c=$t['application']??null;
-    if(!$c||($c['promotion_assumption']&&!$promoOk)||($auto&&($c['promotion_assumption']||$t['profit']<=0||($t['application_target']??null)===false)))return null;
+    if(!$c||!empty($c['promotion_assumption'])||($auto&&($t['profit']<=0||($t['application_target']??null)===false)))return null;
     return ['tsf'=>$c['tsf'],'choice'=>$m[1].' Günlük Fiyat','key'=>$key,'profit'=>$t['profit']];
 }
 /** Patch only target cells in the original sheet; preserve validations, styling, identifiers and remaining ZIP parts. */

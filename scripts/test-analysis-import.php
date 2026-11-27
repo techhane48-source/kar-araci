@@ -30,7 +30,7 @@ $tests['open limits illustrative only']=$r['tiers']['period3_tier1']['price']===
 $source=['base'=>80.0,'tsf'=>100.0,'promo'=>'Synthetic discount'];
 $target=['price'=>72.35,'boundary'=>'bounded','min_price'=>64.0];
 $c=tariff_candidate($source,$target);
-$tests['promotion TSF differs from target']=$c['tsf']===90.43&&$c['effective']===72.34&&$c['promotion_assumption'];
+$tests['unknown promotion ratio refused']=$c===null;
 $c=tariff_candidate(['base'=>100.0,'tsf'=>100.0,'promo'=>''],$target);
 $tests['no promotion target same']=$c['tsf']===72.35&&!$c['promotion_assumption'];
 $now=strtotime('2026-11-27 12:00:00');
@@ -40,7 +40,45 @@ $tests['expired period refused']=!tariff_period_open('19 Kasım 08.00-22 Kasım 
 $rr=['tiers'=>['period3_tier3'=>['profit'=>20,'period'=>'26 Kasım 08.00-29 Kasım 07.59','application'=>['tsf'=>90,'promotion_assumption'=>true]]]];
 $tests['auto skips promotion']=tariff_apply_select($rr,'period3_tier3',true,true,$now)===null;
 $tests['manual requires promotion acknowledgement']=tariff_apply_select($rr,'period3_tier3',false,false,$now)===null;
-$tests['manual period selection']=tariff_apply_select($rr,'period3_tier3',false,true,$now)['choice']==='3 Günlük Fiyat';
+$tests['manual acknowledgement cannot establish unknown funding']=tariff_apply_select($rr,'period3_tier3',false,true,$now)===null;
+$rr['tiers']['period3_tier3']['application']['promotion_assumption']=false;
+$tests['manual clean period selection']=tariff_apply_select($rr,'period3_tier3',false,false,$now)['choice']==='3 Günlük Fiyat';
+$nt=[['min'=>8701,'max'=>9500,'rate'=>19],['min'=>7301,'max'=>8700,'rate'=>17],['max'=>7300,'rate'=>11]];
+$pt=[['max'=>7000,'rate'=>9]];
+$D=static fn(int $seller,int $platform=0):array=>[['seller'=>$seller,'platform'=>$platform]];
+$cases=[
+[7000,[],[],10000,20,7000,9],
+[7000,$D(2000),[],8000,17,5000,9],
+[7000,$D(1000,1000),[],9000,19,6000,9],
+[7000,[],$D(2000),10000,20,7000,9],
+[null,[],$D(2000),10000,20,8000,17],
+[7000,[],$D(1000,1000),10000,20,7000,9],
+[null,[],$D(1000,1000),10000,20,9000,19],
+[7000,$D(1000),$D(2000),9000,19,6000,9],
+[null,$D(1000),$D(2000),9000,19,7000,9],
+[7000,$D(500,500),$D(1000,1000),9500,19,6500,9],
+[null,$D(500,500),$D(1000,1000),9500,19,8500,17]
+];
+foreach($cases as $i=>[$sp,$general,$only,$nb,$nr,$pb,$pr]){
+    $q=campaign_plus_quote(10000,$sp,7000,$general,$general,$only,$nt,$pt,20.0);
+    $tests['Akademi Plus scenario '.($i+1)]=$q!==null&&$q['normal']['basis']===$nb&&$q['normal']['rate']===(float)$nr&&$q['plus']['basis']===$pb&&$q['plus']['rate']===(float)$pr;
+}
+$q=campaign_plus_quote(10000,null,7000,$D(1000,1000),[],[],$nt,$pt,20.0);
+$tests['customer and seller basis distinct']=$q['normal']['customer']===8000&&$q['normal']['basis']===9000&&$q['normal']['commission']===1710;
+$tests['Plus price cap enforced']=campaign_plus_quote(4800,4900,4900,[],[],[],$nt,$pt,20.0)===null;
+$tests['no unsupported tie break']=campaign_plus_quote(10000,7000,7000,[],[],$D(2000,1000),$nt,$pt,20.0)===null;
+$tests['flash full day and invalid slot']=campaign_slot('28/11/2026 00:00','28/11/2026 23:59',24)!==null&&campaign_slot('28/11/2026 04:00','28/11/2026 07:00',3)===null;
+$plusHeaders=['Ürün İsmi','Ürün Id','Barkod','Güncel TSF','Komisyona Esas Fiyat','Güncel Komisyon','Plus Fiyat Üst Limiti','Tarih Aralığı (3 Gün)','Plus Komisyon Teklifi','Tarih Aralığı (4 Gün)','Plus Komisyon Teklifi','Plus Komisyona Esas Fiyatı','Müşterinin Gördüğü Güncel Fiyat','Plus Müşterinin Gördüğü Fiyat','Güncel Uygulanan Promosyonlar','Stok'];
+$ps=analysis_schema($plusHeaders,'plus');$pr=analysis_row($ps,['Synthetic','SYN-ID','001','200','200','20','150','26 Kasım 08.00-29 Kasım 07.59','9','29 Kasım 08.00-3 Aralık 07.59','15','','200','','','10'],$products,'plus');
+$tests['Plus two periods different rates']=$pr['tiers']['period3_plus']['rate']===9.0&&$pr['tiers']['period4_plus']['rate']===15.0&&$pr['tiers']['period3_plus']['profit']!==null;
+$fr=analysis_schema(['Barkod','Ürün Adı','Ürün Id','Mevcut Fiyat','Müşterinin Gördüğü Fiyat','Plus Müşterinin Gördüğü Fiyat','Güncel Uygulanan Promosyonlar','Stok','Ürün Komisyon Tarife Seçeneği','Kampanyalı Ürün','Mevcut Komisyon','24 Saat Fiyat','3 Saat Fiyat','24 Saat Flaş Başlangıç Tarihi','24 Saat Flaş Bitiş Tarihi','3 Saat Flaş Başlangıç Tarihi','3 Saat Flaş Bitiş Tarihi'],'flash');
+$frow=['001','Synthetic','SYN-ID','200','200','','','5','Var','-','20','140','','28/11/2026 00:00','28/11/2026 23:59','',''];$frow2=$frow;$frow2[13]='29/11/2026 00:00';$frow2[14]='29/11/2026 23:59';
+$st=analysis_save(db(),1,'promotion','flash',$fr,[$frow,$frow2],$products);
+$tests['flash duplicate barcode different offers']=$st['rows']===2&&$st['profitable']===0;
+$star=analysis_schema(['Ürün İsmi','Barkod','1 YILDIZ ÜST FİYAT','1 YILDIZ ALT FİYAT','2 YILDIZ ÜST FİYAT','2 YILDIZ ALT FİYAT','3 YILDIZ ÜST FİYAT','TRENDYOL SATIŞ FİYATI','Müşterinin Gördüğü Güncel Fiyat','Plus Müşterinin Gördüğü Fiyat','Güncel Uygulanan Promosyonlar','Stok','KOMİSYON TARİFESİ','EXTERNAL ID'],'etiket');
+$sr=analysis_row($star,['Synthetic','001','180','160.01','160','140.01','140','200','200','','','5','Var','SYN-ID'],$products,'etiket');
+$tests['star bounds and unknown commission']=$sr['tiers']['star1']['price']===180.0&&$sr['tiers']['star2']['min_price']===140.01&&$sr['tiers']['star3']['profit']===null;
+db()->exec("DELETE FROM analysis_rows WHERE module='flash'");
 // A synthetic workbook with original sheet metadata, style IDs and two rows.
 $headers=['ÜRÜN İSMİ','BARKOD','1.Fiyat Alt Limit','2.Fiyat Üst Limiti','2.Fiyat Alt Limit','3.Fiyat Üst Limiti','3.Fiyat Alt Limit','4.Fiyat Üst Limiti','Tarih aralığı (3 Gün)','1.KOMİSYON','2.KOMİSYON','3.KOMİSYON','4.KOMİSYON','Tarih aralığı (4 Gün)','1.KOMİSYON','2.KOMİSYON','3.KOMİSYON','4.KOMİSYON','KOMİSYONA ESAS FİYAT','GÜNCEL TSF','Güncel Uygulanan Promosyonlar','YENİ TSF (FİYAT GÜNCELLE)','Tarife Seçimi','FULL EXTERNAL ID'];
 $vals=['Synthetic','001','500.01','500','400.01','400','300.01','300','26 Kasım 08.00-29 Kasım 07.59','21','13.1','8.4','6.1','29 Kasım 08.00-3 Aralık 07.59','21','17.6','15.8','13.6','500','500','','','7 Günlük Fiyat','SYNTHETIC-EXTERNAL-ID'];
