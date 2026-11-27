@@ -1,0 +1,34 @@
+<?php
+declare(strict_types=1);
+$dir=sys_get_temp_dir().'/karfiyat-cargo-reprice-'.bin2hex(random_bytes(8));mkdir($dir,0700);define('DB_PATH',$dir.'/test.sqlite');
+register_shutdown_function(static function()use($dir){foreach(glob($dir.'/*')as$f)unlink($f);rmdir($dir);});
+require_once __DIR__.'/../includes/functions.php';
+$db=db();$day='2026-11-25';$ts=strtotime($day.' 12:00:00');$now=$ts*1000;$t=[];
+$old=['from'=>$day,'through'=>$day,'source'=>'synthetic old','rows'=>[['carrier'=>'TEX','desi'=>3,'min_sale'=>350,'max_sale'=>null,'gross_tl'=>120]]];
+$new=$old;$new['source']='synthetic revised';$new['rows'][0]['gross_tl']=140;
+$raw=['status'=>'Shipped','currencyCode'=>'TRY','orderCountryCode'=>'TR','cargoCompany'=>'Trendyol Express','cargoDeci'=>3,'orderDate'=>$now,'lastModifiedDate'=>$now,'totalPrice'=>500,'lines'=>[]];
+$context=cargo_quote_context($raw,[]);$t['context independent of tariff']=is_array($context)&&cargo_quote_from_context($context,[])===null;
+$p=['marketplace'=>'trendyol','status'=>'Shipped','currency_code'=>'TRY','country_code'=>'TR','order_number'=>'O1','package_number'=>'P1','total_price'=>500,'order_date'=>$ts,'last_modified_ms'=>$now,'cargo_api_desi'=>3,'cargo_provider'=>'Trendyol Express','cargo_first_estimate'=>100,'cargo_estimate'=>120,'cargo_quote_context'=>json_encode($context)];
+$a=cargo_reprice_stored($p,[$new]);$t['new rate without order update']=$a['cargo_estimate']===140.0&&$a['cargo_first_estimate']===100;
+$t['removed tariff no stale quote']=cargo_reprice_stored($p,[])['cargo_estimate']===null;
+$t['context mismatch fails']=cargo_reprice_stored(array_replace($p,['cargo_api_desi'=>4]),[$new])['cargo_estimate']===null;
+$t['legacy row remains labeled']=!cargo_reprice_stored(array_replace($p,['cargo_quote_context'=>null]),[$new])['cargo_context_known'];
+$t['indexed tariff same quote']=cargo_quote_from_context($context,[cargo_tariff_index($new)])['amount']===140.0;
+$ins=$db->prepare("INSERT INTO orders(user_id,marketplace,status,currency_code,country_code,order_number,package_number,total_price,order_date,last_modified_ms,cargo_api_desi,cargo_provider,cargo_first_estimate,cargo_estimate,cargo_quote_context) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)");
+$ins->execute(array_merge([1],array_values($p)));$ins->execute(array_merge([2],array_values($p)));
+$a=cargo_effective_report($db,1,['O1'],[$new])['O1'];
+$t['report reflects new rate']=$a['estimate']===140.0&&$a['initial_estimate']===100.0&&$a['package_quotes']['P1']['amount']===140.0;
+$t['stored observation unchanged']=(float)$db->query("SELECT cargo_estimate FROM orders WHERE user_id=1")->fetchColumn()===120.0;
+$t['no tenant leak']=cargo_effective_report($db,3,['O1'],[$new])===[];
+$db->prepare("UPDATE orders SET status='Created',cargo_quote_context=NULL,cargo_estimate=NULL WHERE user_id=1 AND package_number='P1'")->execute();
+$row=$db->query("SELECT * FROM orders WHERE user_id=1 AND package_number='P1'")->fetch();
+$over=cargo_profit_overlay($db,1,[$row])[0];
+$t['fresh pre-shipment missing context blocks stale catalog']=array_key_exists('cargo_override',$over)&&$over['cargo_override']===null;
+// Prior invoice sample can replace a 1-desi fallback only for identical package contents.
+$h=$p;$h['lines']=[['barcode'=>'001','quantity'=>3]];$h['cargo_api_desi']=null;$h['cargo_estimate']=80;
+$ctx=$context;$ctx['barem_candidate']=true;$ctx['desi_source']='default_one_desi';$ctx['desi']=1;$h['cargo_quote_context']=json_encode($ctx);
+$key=cargo_history_key($h,[$new]);$samples=[$key=>[['amount'=>125.0,'desi'=>4.0,'order_date'=>$ts-3600,'billed_at'=>$ts-1]]];
+$t['same quantity historical estimate']=cargo_history_apply($h,$samples,[$new])['cargo_estimate']===125.0;
+$other=$h;$other['lines'][0]['quantity']=2;$t['different quantity not reused']=cargo_history_apply($other,$samples,[$new])['cargo_estimate']===80;
+$other=$h;$other['cargo_api_desi']=3;$t['API desi wins over history']=cargo_history_apply($other,$samples,[$new])['cargo_estimate']===80;
+foreach($t as $name=>$ok)echo ($ok?'PASS':'FAIL')." $name\n";exit(in_array(false,$t,true)?1:0);

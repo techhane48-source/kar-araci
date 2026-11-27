@@ -2,6 +2,7 @@
 // Kâr&Fiyat — toplu-analiz.php uçtan uca testi (cURL ile)
 declare(strict_types=1);
 require_once __DIR__ . '/../includes/functions.php';
+if(PHP_SAPI!=='cli'||!defined('DB_PATH')||!is_file(dirname(DB_PATH).'/.isolated-http-test')||getenv('KAR_TEST_ISOLATED')!=='1')exit(2);
 
 $base = 'http://127.0.0.1:8090';
 $fail = 0;
@@ -39,11 +40,12 @@ $resp = curl_exec($ch);
 check(str_contains($resp, '302'), "Giriş başarılı (302)");
 
 // 3. Test ürünleri ekle (barkodlu + maliyetsiz)
-db()->prepare("DELETE FROM products WHERE user_id = 2 AND barcode IN ('TEST-BARKOD-123','TEST-COST-0')")->execute();
+$uid=(int)db()->query("SELECT id FROM users WHERE email='test@example.com'")->fetchColumn();if($uid<1)exit(2);
+db()->prepare("DELETE FROM products WHERE user_id = $uid AND barcode IN ('TEST-BARKOD-123','TEST-COST-0')")->execute();
 db()->prepare("INSERT INTO products (user_id, name, barcode, marketplace, category, rate, cost, price, cargo, service_fee, stopaj, return_rate)
-               VALUES (2, 'Test Perde', 'TEST-BARKOD-123', 'trendyol', 'Ev Tekstili', 20.34, 200, 400, 50, 13.19, 0, 0)")->execute();
+               VALUES ($uid, 'Test Perde', 'TEST-BARKOD-123', 'trendyol', 'Ev Tekstili', 20.34, 200, 400, 50, 13.19, 0, 0)")->execute();
 db()->prepare("INSERT INTO products (user_id, name, barcode, marketplace, category, rate, cost, price, cargo, service_fee, stopaj, return_rate)
-               VALUES (2, 'Maliyetsiz Ürün', 'TEST-COST-0', 'trendyol', 'Diğer', 20, 0, 0, 0, 13.19, 0, 0)")->execute();
+               VALUES ($uid, 'Maliyetsiz Ürün', 'TEST-COST-0', 'trendyol', 'Diğer', 20, 0, 0, 0, 13.19, 0, 0)")->execute();
 
 // 4. CSV oluştur
 $csv = tempnam(sys_get_temp_dir(), 'kfcsv');
@@ -81,24 +83,25 @@ $resp = curl_exec($ch);
 check(str_contains($resp, 'TEST-BARKOD-123'), "Eşleşen barkod görünüyor");
 check(str_contains($resp, 'Test Perde'), "Ürün adı görünüyor");
 check(str_contains($resp, 'BILINMEYEN-999'), "Eşleşmeyen barkod görünüyor");
-check(str_contains($resp, 'bulunamadı'), "Eşleşmeyen üründe 'bulunamadı' uyarısı");
-check(str_contains($resp, 'maliyet yok'), "Maliyetsiz üründe 'maliyet yok' uyarısı");
+check(str_contains($resp, 'Barkod eşleşmedi'), "Eşleşmeyen ürün uyarısı");
+check(str_contains($resp, 'Maliyet eksik'), "Maliyetsiz ürün uyarısı");
 // Net kâr: cost=200, price=400, cargo=50, rate=20.34, service=13.19 -> hesapla
-$r = calc_profit(200, 400, 50, 20.34, 20, 0, 13.19, 0, 0);
+$p=db()->query("SELECT * FROM products WHERE user_id=$uid AND barcode='TEST-BARKOD-123'")->fetch();
+$r = product_profit($p);
 $expect = number_format($r['profit'], 2, ',', '.');
 check(str_contains($resp, $expect), "Net kâr $expect görünüyor");
 
 // 8. Download (seçimle)
 curl_setopt($ch, CURLOPT_URL, "$base/toplu-analiz.php");
 curl_setopt($ch, CURLOPT_POST, true);
-curl_setopt($ch, CURLOPT_POSTFIELDS, http_build_query(['csrf'=>$csrf,'action'=>'download','sel'=>['TEST-BARKOD-123']]));
+curl_setopt($ch, CURLOPT_POSTFIELDS, http_build_query(['csrf'=>$csrf,'action'=>'download','scope'=>'selected','sel'=>[1]]));
 $resp = curl_exec($ch);
-check(str_contains($resp, 'karfiyat-secimler.csv') || str_contains($resp, 'secim'), "Download CSV başlığı");
+check(str_contains($resp, 'karfiyat-analiz.csv') && str_contains($resp, 'TEST-BARKOD-123'), "Download CSV başlığı");
 
 curl_close($ch);
 
 // Temizlik
-db()->prepare("DELETE FROM products WHERE user_id = 2 AND barcode IN ('TEST-BARKOD-123','TEST-COST-0')")->execute();
+db()->prepare("DELETE FROM products WHERE user_id = $uid AND barcode IN ('TEST-BARKOD-123','TEST-COST-0')")->execute();
 @unlink($jar); @unlink($csv);
 
 echo "\n" . ($fail === 0 ? "TÜM TESTLER GEÇTİ" : "$fail TEST BAŞARISIZ") . "\n";

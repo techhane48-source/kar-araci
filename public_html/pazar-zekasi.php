@@ -9,6 +9,53 @@ if (!$pro) {
     e_redirect('odeme.php');
 }
 
+// Official Buybox: read-only requests, restricted to products owned by the current user.
+$bbIntegration=get_integration((int)$u['id'],'trendyol');
+$bbPage=max(1,(int)($_POST['bb_page']??$_GET['bb_page']??1));
+$bbSearch=trim((string)($_GET['bb_q']??$_POST['bb_q']??''));
+$bbRows=[];$bbMessage=null;$bbTotal=0;
+if ($bbIntegration) {
+    $filter="user_id=? AND marketplace='trendyol' AND barcode!=''";
+    $args=[$u['id']];
+    if ($bbSearch!=='') {$filter.=" AND (barcode LIKE ? OR name LIKE ?)";$args[]='%'.$bbSearch.'%';$args[]='%'.$bbSearch.'%';}
+    $q=db()->prepare("SELECT COUNT(*) FROM products WHERE ".$filter);$q->execute($args);$bbTotal=(int)$q->fetchColumn();
+    $bbPage=min($bbPage,max(1,(int)ceil($bbTotal/50)));$offset=($bbPage-1)*50;
+    $q=db()->prepare("SELECT * FROM products WHERE ".$filter." ORDER BY id LIMIT 50 OFFSET ".$offset);
+    $q->execute($args);$bbRows=$q->fetchAll();
+    if ($_SERVER['REQUEST_METHOD']==='POST' && ($_POST['action']??'')==='buybox_refresh') {
+        if (!csrf_verify($_POST['csrf']??'')) $bbMessage='Oturum süresi doldu.';
+        else {
+            $res=with_marketplace_lock((int)$u['id'],'trendyol',static function()use($u,$bbRows,$bbIntegration){
+                $current=get_integration((int)$u['id'],'trendyol');
+                if(!$current||$current['seller_id']!==$bbIntegration['seller_id']||(int)$current['stage']!==(int)$bbIntegration['stage'])
+                    return ['ok'=>false,'error'=>'Mağaza bağlantısı değişti.'];
+                return buybox_refresh_page(db(),(int)$u['id'],(string)$current['seller_id'],array_column($bbRows,'barcode'),integration_client($current));
+            });
+            $bbMessage=$res['ok']?$res['count'].' barkod güncellendi; '.$res['missing'].' barkod için veri dönmedi.':
+                ($res['error']??'Sorgu başarısız.').' Önceki kayıtlar korunuyor.';
+        }
+    }
+    $lookup=db()->prepare("SELECT * FROM trendyol_buybox WHERE user_id=? AND seller_id=? AND barcode=?");
+    foreach($bbRows as &$row) {$lookup->execute([$u['id'],$bbIntegration['seller_id'],$row['barcode']]);$row['_buybox']=$lookup->fetch()?:null;}
+    unset($row);
+}
+
+$bbRules=target_rules(db(),(int)$u['id']);$bbNow=time();$bbStats=[];
+foreach($bbRows as &$row){
+    $row['_decision']=buybox_decision($row,$row['_buybox'],target_for_product($bbRules,$row),$bbNow);
+    $state=$row['_decision']['state'];$bbStats[$state]=($bbStats[$state]??0)+1;
+}unset($row);
+if(($_GET['bb_export']??'')==='csv'){
+    header('Content-Type: text/csv; charset=utf-8');header('Content-Disposition: attachment; filename="buybox-sayfa-analiz.csv"');
+    echo "\xEF\xBB\xBF";$out=fopen('php://output','w');
+    fputcsv($out,['Barkod','Ürün','Bizim fiyat','Buybox fiyatı (son gözlem)','Sıra','Son sorgu','Güncel','Kural','Başabaş fiyatı','Hedef taban fiyat','Eşit fiyat tahmini kâr','Eşit fiyat marj %','Önerilen eşit fiyat','Durum'],';','"','');
+    foreach($bbRows as $row){$bb=$row['_buybox'];$v=$row['_decision'];
+        fputcsv($out,[csv_safe_text($row['barcode']),csv_safe_text($row['name']),$row['price'],$bb['buybox_price']??null,$bb['buybox_rank']??null,
+            $bb?date('Y-m-d H:i:s',(int)$bb['checked_at']):null,$v['fresh']?'Evet':'Hayır',
+            $v['rule']?target_label($v['rule']):null,$v['break_even'],$v['target_floor'],$v['match_profit'],$v['match_margin'],$v['suggested_price'],$v['label']],';','"','');
+    }fclose($out);exit;
+}
+
 // --- Ekle ---
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'add') {
     if (!csrf_verify($_POST['csrf'] ?? '')) {
@@ -20,6 +67,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'add')
         $note = trim($_POST['note'] ?? '');
         if ($name === '' || $url === '') {
             flash_set('error', 'Ad ve URL zorunludur.');
+        } elseif(!tracker_url_allowed($url)) {
+            flash_set('error','Yalnızca doğrudan HTTPS Trendyol bağlantıları desteklenir.');
         } else {
             db()->prepare("INSERT INTO trackers (user_id, type, name, url, note) VALUES (?,?,?,?,?)")
                 ->execute([$u['id'], $type, $name, $url, $note]);
@@ -64,13 +113,29 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'check
 }
 
 // --- URL'den fiyat çekmeyi dene (best-effort; bot koruması olabilir) ---
+function tracker_url_allowed(string $url): bool
+{
+    $p=parse_url($url);
+    return is_array($p)&&($p['scheme']??'')==='https'&&in_array(strtolower((string)($p['host']??'')),['trendyol.com','www.trendyol.com'],true)
+        &&!isset($p['user'],$p['pass'])&&!isset($p['user'])&&!isset($p['pass'])&&!isset($p['port']);
+}
+
 function fetch_tracker_price(string $url): array
 {
-    if (!preg_match('#^https?://#i', $url)) return ['ok' => false, 'error' => 'Geçersiz URL.'];
+    $parts = parse_url($url);
+    $host = strtolower((string)($parts['host'] ?? ''));
+    if (($parts['scheme'] ?? '') !== 'https' || !in_array($host, ['www.trendyol.com','trendyol.com'], true)
+        || isset($parts['user']) || isset($parts['pass']) || isset($parts['port'])) {
+        return ['ok'=>false,'error'=>'Şimdilik yalnızca doğrudan HTTPS Trendyol ürün bağlantıları desteklenir.'];
+    }
+    $ip = gethostbyname($host);
+    if (!filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4 | FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE))
+        return ['ok'=>false,'error'=>'Güvenli ürün adresi çözümlenemedi.'];
     $ch = curl_init($url);
     curl_setopt_array($ch, [
         CURLOPT_RETURNTRANSFER => true,
-        CURLOPT_FOLLOWLOCATION => true,
+        CURLOPT_FOLLOWLOCATION => false,
+        CURLOPT_RESOLVE => [$host . ':443:' . $ip],
         CURLOPT_TIMEOUT => 15,
         CURLOPT_CONNECTTIMEOUT => 8,
         CURLOPT_SSL_VERIFYPEER => true,
@@ -117,6 +182,31 @@ require __DIR__ . '/../includes/header.php';
 ?>
 <div class="wrap">
   <div class="toolbar"><h1>Pazar Zekası</h1></div>
+<div class="card table-card" style="margin:16px 0">
+<h2>Trendyol Buybox — resmî API</h2>
+<p class="hint">Sıra ve fiyatlar son API gözlemidir. Bir saatten eski veya gelecek tarihli veride eşit fiyat önerisi verilmez (uygulama politikası). Kâr ve taban fiyat tahminidir. Fiyatı otomatik değiştirmez; Buybox kazanma garantisi vermez.</p>
+<?php if(!$bbIntegration): ?><p>Önce <a href="magaza.php">Trendyol mağazanızı bağlayın</a>.</p>
+<?php else: ?>
+<?php if($bbMessage!==null): ?><p><?= h($bbMessage) ?></p><?php endif; ?>
+<form method="get"><input name="bb_q" value="<?= h($bbSearch) ?>" placeholder="Barkod veya ürün"><button>Ara</button></form>
+<form method="post"><input type="hidden" name="csrf" value="<?= h(csrf_token()) ?>"><input type="hidden" name="action" value="buybox_refresh"><input type="hidden" name="bb_page" value="<?= $bbPage ?>"><input type="hidden" name="bb_q" value="<?= h($bbSearch) ?>"><button>Bu sayfanın Buybox verisini yenile</button></form>
+<p>Bu sayfada: <?= (int)($bbStats['match_possible']??0) ?> hedefe uygun eşit fiyat · <?= (int)($bbStats['loss']??0) ?> zarar riski · <?= (int)($bbStats['below_target']??0) ?> hedef altı · <?= (int)($bbStats['stale']??0) ?> eski veri.</p>
+<p><a href="kar-hedefleri.php">Kâr hedeflerini düzenle</a> · <a href="?bb_export=csv&amp;bb_page=<?= $bbPage ?>&amp;bb_q=<?= urlencode($bbSearch) ?>">Bu sayfanın analizini CSV indir</a></p>
+<table><tr><th>Ürün / barkod</th><th>Bizim fiyat</th><th>Sıra</th><th>Buybox fiyatı</th><th>2. / 3.</th><th>Çoklu satıcı</th><th>Eşit fiyatta tahmini kâr / marj</th><th>Başabaş / hedef tabanı</th><th>Öneri</th><th>Son sorgu</th></tr>
+<?php foreach($bbRows as $row): $bb=$row['_buybox']; $v=$row['_decision']; ?>
+<tr><td><?= h($row['name']) ?><br><?= h($row['barcode']) ?></td><td><?= tl((float)$row['price']) ?></td><td><?= $bb&&(int)$bb['buybox_rank']>0?(int)$bb['buybox_rank']:'—' ?></td>
+<td><?= $bb&&(float)$bb['buybox_price']>0?tl((float)$bb['buybox_price']):'—' ?></td>
+<td><?= $bb&&$bb['second_price']!==null?tl((float)$bb['second_price']):'—' ?> / <?= $bb&&$bb['third_price']!==null?tl((float)$bb['third_price']):'—' ?></td><td><?= $bb?((int)$bb['multiple_sellers']?'Evet':'Hayır'):'—' ?></td>
+<td><?= $v['match_profit']===null?'—':tl((float)$v['match_profit']).' / %'.number_format((float)$v['match_margin'],2,',','.') ?></td>
+<td><?= $v['break_even']===null?'—':tl((float)$v['break_even']) ?> / <?= $v['target_floor']===null?'—':tl((float)$v['target_floor']) ?><br><small><?= $v['rule']?h(target_label($v['rule'])):'Hedef yok' ?></small></td>
+<td><?= $v['suggested_price']===null?'—':tl((float)$v['suggested_price']) ?><br><small><?= h($v['label']) ?></small></td>
+<td><?= $bb?date('d.m H:i',(int)$bb['checked_at']):'Veri yok' ?><?php if($bb&&!$v['fresh']): ?><br>Eski / doğrulanmamış<?php endif; ?></td></tr>
+<?php endforeach; ?></table>
+<p>Sayfa <?= $bbPage ?> / <?= max(1,(int)ceil($bbTotal/50)) ?> · <?= $bbTotal ?> ürün
+<?php if($bbPage>1): ?><a href="?bb_page=<?= $bbPage-1 ?>&bb_q=<?= urlencode($bbSearch) ?>">Önceki</a><?php endif; ?>
+<?php if($bbPage*50<$bbTotal): ?><a href="?bb_page=<?= $bbPage+1 ?>&bb_q=<?= urlencode($bbSearch) ?>">Sonraki</a><?php endif; ?></p>
+<?php endif; ?></div>
+
 
   <?php $flash = flash_get(); if ($flash): ?><div class="alert alert-<?= $flash['type'] ?>"><?= h($flash['msg']) ?></div><?php endif; ?>
 
@@ -153,7 +243,7 @@ require __DIR__ . '/../includes/header.php';
         <tr>
           <td><?= h($t['name']) ?></td>
           <td><?= $t['type'] === 'store' ? 'Mağaza' : 'Ürün' ?></td>
-          <td style="font-size:12px"><a href="<?= h($t['url']) ?>" target="_blank" rel="noopener"><?= h(mb_strimwidth($t['url'], 0, 48, '…')) ?></a></td>
+          <td style="font-size:12px"><?php if(tracker_url_allowed($t['url'])): ?><a href="<?= h($t['url']) ?>" target="_blank" rel="noopener noreferrer"><?= h(mb_strimwidth($t['url'], 0, 48, '…')) ?></a><?php else: ?>Geçersiz bağlantı<?php endif; ?></td>
           <td><?= $t['last_price'] !== null ? tl((float)$t['last_price']) : '<span class="hint">—</span>' ?></td>
           <td style="font-size:12px">
             <?php $h3 = $history[$t['id']] ?? []; ?>

@@ -1,0 +1,112 @@
+name: Trendyol read-only connection check (redacted)
+on:
+  push:
+    branches: ['dev/profit-engine-phase-1']
+    paths: ['.github/workflows/trendyol-live-check.yml']
+permissions:
+  contents: read
+concurrency:
+  group: trendyol-live-readonly
+  cancel-in-progress: false
+jobs:
+  check:
+    if: github.repository == 'techhane48-source/kar-araci'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Check PHP runtime
+        run: |
+          php -r 'exit(extension_loaded("curl") && extension_loaded("openssl") ? 0 : 1);'
+      - name: Read-only verification (no payloads or financial data in logs)
+        env:
+          TRENDYOL_SELLER_ID: ${{ secrets.TRENDYOL_SELLER_ID }}
+          TRENDYOL_API_KEY: ${{ secrets.TRENDYOL_API_KEY }}
+          TRENDYOL_API_SECRET: ${{ secrets.TRENDYOL_API_SECRET }}
+        shell: bash
+        run: |
+          set +x
+          if [[ -z "$TRENDYOL_SELLER_ID" || -z "$TRENDYOL_API_KEY" || -z "$TRENDYOL_API_SECRET" ]]; then
+            echo "Required repository secrets are missing."
+            exit 1
+          fi
+          umask 077
+          tmp="$(mktemp -d)"
+          trap 'rm -rf -- "$tmp"' EXIT
+          rc=0
+          php -d display_errors=0 -d log_errors=0 scripts/verify-trendyol.php --environment=production --days=14 > "$tmp/report.json" 2>/dev/null || rc=$?
+          unset TRENDYOL_SELLER_ID TRENDYOL_API_KEY TRENDYOL_API_SECRET
+          python3 - "$tmp/report.json" "$rc" <<'PY'
+          import json, sys
+          try:
+              with open(sys.argv[1], encoding="utf-8") as f:
+                  report = json.load(f)
+              assert isinstance(report, dict)
+              checks = report.get("checks", {})
+              assert isinstance(checks, dict)
+          except Exception:
+              print("Verification did not produce a valid report.")
+              sys.exit(1)
+          groups = {
+              "Connection": ["connection"],
+              "Catalog": ["catalog"],
+              "Orders": ["orders"],
+              "Settlement endpoints": ["settlement_" + s for s in ("Sale","Return","Discount","DiscountCancel","Coupon","CouponCancel","TyDiscount","TyCoupon","DeliveryFee","DeliveryFeeCancel")],
+              "Financial document endpoints": ["document_" + s for s in ("Stoppage","DeductionInvoices","PaymentOrder","CommissionAgreementInvoice","FinancialItem")],
+              "Cargo invoice endpoint": ["cargo_invoice_items"],
+              "Service fee endpoint": ["platform_service_fee"],
+              "Claims endpoint": ["claims"],
+              "Payout endpoint": ["payout_page"],
+              "Buybox endpoint": ["buybox"],
+          }
+          for label, keys in groups.items():
+              flags = [checks.get(k, {}).get("ok") if isinstance(checks.get(k), dict) else None for k in keys]
+              status = "PASS" if all(v is True for v in flags) else ("FAIL" if any(v is False for v in flags) else "NOT VERIFIED")
+              print(label + ": " + status)
+          reason = checks.get("catalog", {}).get("reason")
+          allowed = {"UNKNOWN","TRANSPORT","RESPONSE_SCHEMA","HTTP_400","HTTP_401","HTTP_403","HTTP_404","HTTP_429","HTTP_OTHER","TOTAL_MISSING","TOTAL_CHANGED","DUPLICATE_CONTENT","DUPLICATE_BARCODE","VARIANTS_MISSING","BARCODE_MISSING","TOTAL_MISMATCH","PAGE_TOKEN","PAGE_LIMIT","PRICE_AND_STOCK_INVALID","PRICE_INVALID","ACTIVE_PRICE_INVALID","UNKNOWN_STATUS_PRICE_INVALID","STOCK_INVALID"}
+          if isinstance(reason, str) and reason in allowed:
+              print("Catalog diagnostic: " + reason)
+          for kind in ("Sale", "Return"):
+              result = checks.get("statement_arithmetic_" + kind, {})
+              state = result.get("state") if isinstance(result, dict) else None
+              label = {"matched":"PASS","difference":"FAIL (ARITHMETIC)","request_failed":"FAIL (REQUEST)","not_verified":"NOT VERIFIED"}
+              print(kind + " statement arithmetic: " + label.get(state, "NOT VERIFIED"))
+          payout = checks.get("payout_sample_arithmetic", {})
+          state = payout.get("state") if isinstance(payout, dict) else None
+          labels = {"matched":"PASS","difference":"FAIL (ARITHMETIC)","incomplete":"FAIL (INCOMPLETE EVIDENCE)","invalid_payment":"FAIL (INVALID PAYMENT)","request_failed":"FAIL (REQUEST)","not_verified":"NOT VERIFIED"}
+          print("Payout sample arithmetic: " + labels.get(state, "NOT VERIFIED"))
+          for label, key, field in (("Cargo invoice item evidence", "cargo_invoice_items", "nonempty_evidence"), ("Orders evidence", "orders", "provider_rows"), ("Claims evidence", "claims", "rows"), ("Service fee evidence", "platform_service_fee", "rows")):
+              result = checks.get(key, {})
+              valid = isinstance(result, dict) and result.get("ok") is True
+              evidence = result.get(field) if valid else None
+              print(label + ": " + ("PRESENT" if evidence else ("NOT VERIFIED" if valid else "FAIL")))
+          for label, key in (("Order/statement overlap", "order_statement_overlap"), ("Cargo/order reference overlap", "cargo_order_overlap"), ("Service fee statement overlap", "service_fee_statement_overlap"), ("Claim/order line overlap", "claim_order_overlap")):
+              result = checks.get(key, {})
+              state = result.get("state") if isinstance(result, dict) else None
+              labels = {"matched":"PASS","present":"PRESENT (NOT PACKAGE ALLOCATION)","incomplete":"FAIL (UNRESOLVED)","request_failed":"FAIL (REQUEST)","not_verified":"NOT VERIFIED"}
+              print(label + ": " + labels.get(state, "NOT VERIFIED"))
+          statement = checks.get("order_statement_overlap", {})
+          reason = statement.get("reason") if isinstance(statement, dict) else None
+          if reason in ("AMOUNT_OR_LINE","NO_SALE_ORDER_OVERLAP","PACKAGE_MISSING","ADJUSTMENTS_PRESENT","CLAIMS_PRESENT","STATUS_OR_SCOPE","NO_ELIGIBLE_PACKAGE"):
+              print("Order overlap diagnostic: " + reason)
+          claim = checks.get("claim_order_overlap", {})
+          reason = claim.get("reason") if isinstance(claim, dict) else None
+          if reason in ("ORDER_ID","SCOPE","LINE_ID_OR_BARCODE"):
+              print("Claim overlap diagnostic: " + reason)
+          cargo = checks.get("cargo_invoice_items", {})
+          basis = cargo.get("basis_state") if isinstance(cargo, dict) else None
+          print("Cargo invoice arithmetic basis: " + {"matched":"PASS (VAT ASSUMPTION)","incomplete":"NOT VERIFIED (UNRESOLVED)","not_verified":"NOT VERIFIED"}.get(basis,"NOT VERIFIED"))
+          adjustment = checks.get("adjustment_overlap", {})
+          state = adjustment.get("state") if isinstance(adjustment, dict) else None
+          print("Adjustment/order evidence: " + {"matched":"PASS (OBSERVED RECORDS)","incomplete":"NOT VERIFIED (UNRESOLVED)","request_failed":"FAIL (REQUEST)","not_verified":"NOT VERIFIED"}.get(state,"NOT VERIFIED"))
+          reasons = adjustment.get("reasons", []) if isinstance(adjustment, dict) else []
+          for reason in ("PACKAGE_SCOPE","TRANSACTION_ID","SELLER_SCOPE","PACKAGE_REFERENCE","MOVEMENT_TYPE","BARCODE_REFERENCE","AMOUNT"):
+              if isinstance(reasons, list) and reason in reasons:
+                  print("Adjustment diagnostic: " + reason)
+          print("Unallocated adjustment order reference: " + ("PRESENT (NO PACKAGE ALLOCATION)" if adjustment.get("unallocated_order_reference_present") is True else "NOT VERIFIED"))
+          print("Independent financial reconciliation: NOT VERIFIED")
+          sys.exit(0 if sys.argv[2] == "0" and report.get("ok") is True else 1)
+          PY

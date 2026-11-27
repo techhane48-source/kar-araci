@@ -1,0 +1,24 @@
+<?php
+declare(strict_types=1);
+$dir=sys_get_temp_dir().'/karfiyat-auto-'.bin2hex(random_bytes(8));mkdir($dir,0700);define('DB_PATH',$dir.'/test.sqlite');
+register_shutdown_function(static function()use($dir){foreach(glob($dir.'/*')as$f)unlink($f);rmdir($dir);});
+require_once __DIR__.'/../includes/functions.php';
+$db=db();$now=1800000000;$t=[];
+$ins=$db->prepare("INSERT INTO users(email,password_hash,is_demo) VALUES(?,?,?)");
+$ins->execute(['a@example.invalid','synthetic',0]);$a=(int)$db->lastInsertId();
+$ins->execute(['demo@example.invalid','synthetic',1]);$demo=(int)$db->lastInsertId();
+$ins->execute(['b@example.invalid','synthetic',0]);$b=(int)$db->lastInsertId();
+$add=$db->prepare("INSERT INTO integrations(user_id,marketplace,seller_id) VALUES(?,?,?)");$add->execute([$a,'trendyol','123']);$add->execute([$demo,'trendyol','222']);$add->execute([$b,'n11','333']);
+$statuses=auto_sync_statuses($db);$t['connected nondemo only']=count($statuses)===8&&count(array_unique(array_column($statuses,'user_id')))===1;
+$t['initial jobs due']=count(auto_sync_due($statuses,$now))===6;
+$st=[['user_id'=>$a,'job'=>'orders','last_attempt'=>$now-10,'last_success'=>$now-10,'state'=>'success'],['user_id'=>$a,'job'=>'claims','last_attempt'=>$now-60,'state'=>'failed']];
+$t['fresh and failed backoff']=auto_sync_due($st,$now)===[];
+$t['failed retries after 15 minutes']=array_column(auto_sync_due($st,$now+900),'job')===['claims','orders'];
+$t['exact backoff boundary']=array_column(auto_sync_due($st,$now+840),'job')===['claims'];
+$t['outage window']=auto_sync_days($now-10*86400,$now)===12&&auto_sync_days(0,$now)===30&&auto_sync_days($now-100*86400,$now)===90;
+$seen=[];$r=auto_sync_worker($db,2,static function($task,$now)use(&$seen){$seen[]=$task['job'];return ['ok'=>true];},$now);
+$t['bounded worker']=count($r['jobs'])===2&&count($seen)===2;
+$t['heartbeat persisted']=(int)setting('auto_sync_heartbeat')===$now&&(int)setting('auto_sync_last_finished')===$now;
+$lock=fopen($dir.'/auto-sync.lock','c');flock($lock,LOCK_EX);$r=auto_sync_worker($db,2,static fn()=>throw new RuntimeException('must not run'),$now);flock($lock,LOCK_UN);fclose($lock);
+$t['overlap blocked']=$r['busy']&&$r['jobs']===[];
+foreach($t as $name=>$ok)echo ($ok?'PASS':'FAIL')." $name\n";exit(in_array(false,$t,true)?1:0);

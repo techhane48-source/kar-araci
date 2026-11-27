@@ -76,7 +76,8 @@ final class IyzicoClient
         if ($resp === false) {
             return ['ok' => false, 'error' => 'Bağlantı hatası: ' . $err];
         }
-        return ['ok' => true, 'http' => $http, 'body' => json_decode($resp, true)];
+        if ($http<200 || $http>=300) return ['ok'=>false,'error'=>'iyzico HTTP '.$http];
+        return ['ok' => true, 'http' => $http, 'body' => json_decode($resp, true, 512, JSON_BIGINT_AS_STRING)];
     }
 
     /**
@@ -112,11 +113,11 @@ final class IyzicoClient
      * Callback'ten gelen token ile ödeme sonucunu sorgular.
      * Başarılıysa ['ok'=>true,'result'=>[...]] döner; result içinde paymentStatus, fraudStatus vb.
      */
-    public function retrieveCheckoutFormResult(string $token): array
+    public function retrieveCheckoutFormResult(string $token, string $conversationId): array
     {
         $body = [
             'locale' => 'tr',
-            'conversationId' => 'cf-' . uniqid(),
+            'conversationId' => $conversationId,
             'token' => $token,
         ];
         $res = $this->request('POST', '/payment/iyzipos/checkoutform/auth/ecom/detail', $body);

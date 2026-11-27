@@ -7,7 +7,7 @@ define('APP_NAME', 'Kâr&Fiyat');
 define('APP_TAGLINE', 'Pazaryeri net kâr hesabı ve fiyat optimizasyonu');
 
 // Veritabanı web kökü DIŞINDA tutulur (public_html'in bir üstünde data/)
-define('DB_PATH', dirname(__DIR__) . DIRECTORY_SEPARATOR . 'data' . DIRECTORY_SEPARATOR . 'app.sqlite');
+if (!defined('DB_PATH')) define('DB_PATH', dirname(__DIR__) . DIRECTORY_SEPARATOR . 'data' . DIRECTORY_SEPARATOR . 'app.sqlite');
 
 // Abonelik
 define('PRO_PRICE', 149);          // aylık Pro ücreti (TL)
@@ -15,7 +15,7 @@ define('FREE_PRODUCT_LIMIT', 5);   // ücretsiz planda kayıtlı ürün sınır�
 
 // Yönetici (ilk kurulumda oluşturulur; ilk girişte şifre değiştirmeye zorlanır)
 define('ADMIN_EMAIL', 'admin@karfiyat.local');
-define('ADMIN_DEFAULT_PASSWORD', '1234');
+// No public bootstrap password. Use scripts/reset-admin.php on the trusted server.
 
 date_default_timezone_set('Europe/Istanbul');
 ini_set('display_errors', '0');

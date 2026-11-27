@@ -1,6 +1,6 @@
 <?php
 declare(strict_types=1);
-require_once __DIR__ . '/../includes/functions.php';
+require_once __DIR__ . '/../includes/billing.php';
 
 $u = require_login();
 $pro = is_pro($u);
@@ -10,7 +10,7 @@ $price = (float) setting('pro_price');
 $iyzicoKey = setting('iyzico_api_key');
 $iyzicoSecret = setting('iyzico_secret_key');
 $iyzicoSandbox = setting('iyzico_sandbox') === '1';
-$iyzicoReady = $iyzicoKey !== '' && $iyzicoSecret !== '';
+$iyzicoReady = checkout_enabled() && $iyzicoKey !== '' && $iyzicoSecret !== '' && checkout_minor($price)>0 && empty($u['is_demo']);
 
 // Ödeme bildirimi
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'report') {
@@ -53,9 +53,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'iyzic
                 flash_set('error', 'Geçerli bir GSM numarası girin (örn. 05XX XXX XX XX).');
             } else {
                 require_once __DIR__ . '/../includes/iyzico.php';
-                $scheme = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
-                $callbackUrl = $scheme . '://' . ($_SERVER['HTTP_HOST'] ?? 'localhost') . '/iyzico-callback.php';
-                $basketId = 'KF-' . $u['id'] . '-' . date('ymdHis');
+                $callbackUrl = checkout_origin() . '/iyzico-callback.php';
+                $basketId = 'KF-' . bin2hex(random_bytes(16));
+                $conversationId = 'cf-' . bin2hex(random_bytes(16));
                 $buyer = [
                     'id' => 'U' . $u['id'],
                     'name' => mb_substr($bName, 0, 30),
@@ -78,7 +78,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'iyzic
                 ];
                 $params = [
                     'locale' => 'tr',
-                    'conversationId' => 'cf-' . uniqid(),
+                    'conversationId' => $conversationId,
                     'price' => number_format($price, 2, '.', ''),
                     'paidPrice' => number_format($price, 2, '.', ''),
                     'currency' => 'TRY',
@@ -98,9 +98,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'iyzic
                 ];
                 $client = new IyzicoClient($iyzicoKey, $iyzicoSecret, $iyzicoSandbox);
                 $res = $client->initializeCheckoutForm($params);
-                if ($res['ok'] && ($res['paymentPageUrl'] ?? '') !== '') {
-                    header('Location: ' . $res['paymentPageUrl']);
-                    exit;
+                if ($res['ok'] && checkout_valid_token($res['token']??null)) {
+                    $url=$res['paymentPageUrl']??'';$host=parse_url($url,PHP_URL_HOST);
+                    if(parse_url($url,PHP_URL_SCHEME)==='https' && in_array($host,['api.iyzipay.com','sandbox-api.iyzipay.com','checkout.iyzipay.com','sandbox-checkout.iyzipay.com'],true)){
+                        try{
+                            checkout_create(db(),(int)$u['id'],$res['token'],$basketId,$conversationId,checkout_minor($price),$iyzicoSandbox,checkout_merchant($iyzicoKey,$iyzicoSecret));
+                            header('Location: '.$url);exit;
+                        }catch(Throwable $e){flash_set('error','Ödeme oturumu kaydedilemedi.');e_redirect('odeme.php');}
+                    }
                 }
                 flash_set('error', 'Kartlı ödeme başlatılamadı: ' . ($res['error'] ?? 'Bilinmeyen hata'));
             }

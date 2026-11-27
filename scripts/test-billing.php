@@ -1,0 +1,27 @@
+<?php
+declare(strict_types=1);
+$dir=sys_get_temp_dir().'/karfiyat-billing-'.bin2hex(random_bytes(8));mkdir($dir,0700);
+define('DB_PATH',$dir.'/test.sqlite');
+register_shutdown_function(static function()use($dir){foreach(glob($dir.'/*')as$f)unlink($f);rmdir($dir);});
+require_once __DIR__.'/../includes/billing.php';
+$db=db();$tests=[];
+foreach(['a','b']as$name)$db->prepare("INSERT INTO users(email,name,password_hash) VALUES(?,?,?)")->execute([$name.'@example.invalid',$name,'test']);
+$uid=(int)$db->query("SELECT id FROM users WHERE email='a@example.invalid'")->fetchColumn();
+$other=(int)$db->query("SELECT id FROM users WHERE email='b@example.invalid'")->fetchColumn();
+$token='synthetic-token-123456';$merchant=checkout_merchant('test','secret');
+checkout_create($db,$uid,$token,'basket1','conversation1',14900,false,$merchant);
+$intent=checkout_find($db,$token);
+$r=['status'=>'success','paymentStatus'=>'SUCCESS','fraudStatus'=>1,'currency'=>'TRY','basketId'=>'basket1','conversationId'=>'conversation1','token'=>$token,'price'=>149,'paidPrice'=>149,'paymentId'=>'123'];
+$bad=$r;$bad['paidPrice']=1;$tests['underpayment rejected']=!checkout_apply($db,$intent,$bad,$token)['ok'];
+$bad=$r;$bad['basketId']='other';$tests['wrong basket rejected']=!checkout_apply($db,$intent,$bad,$token)['ok'];
+$bad=$r;$bad['fraudStatus']=0;$tests['pending fraud rejected']=!checkout_apply($db,$intent,$bad,$token)['ok'];
+$tests['correct checkout applied']=checkout_apply($db,$intent,$r,$token)['ok'];
+$tests['duplicate idempotent']=!empty(checkout_apply($db,$intent,$r,$token)['duplicate'])&&(int)$db->query("SELECT COUNT(*) FROM payments WHERE status='approved'")->fetchColumn()===1;
+$tests['other user unchanged']=$db->query("SELECT plan FROM users WHERE id=$other")->fetchColumn()!=='pro';
+$token2='synthetic-token-654321';checkout_create($db,$other,$token2,'basket2','conversation2',14900,true,$merchant);
+$r['basketId']='basket2';$r['conversationId']='conversation2';$r['token']=$token2;
+$tests['sandbox no entitlement']=checkout_apply($db,checkout_find($db,$token2),$r,$token2)['ok']&&$db->query("SELECT plan FROM users WHERE id=$other")->fetchColumn()!=='pro';
+$tests['redirect restrictions']=safe_login_next('//evil.example')==='dashboard.php'&&safe_login_next('/%2fevil.example')==='dashboard.php'&&safe_login_next('/dashboard.php')==='/dashboard.php';
+$tests['rate limit atomic']=auth_take_attempt($db,'test',2,60,100)&&auth_take_attempt($db,'test',2,60,101)&&!auth_take_attempt($db,'test',2,60,102)&&auth_take_attempt($db,'test',2,60,160);
+foreach($tests as $n=>$ok)echo ($ok?'PASS':'FAIL')." $n\n";
+exit(in_array(false,$tests,true)?1:0);

@@ -1,0 +1,452 @@
+<?php
+declare(strict_types=1);
+require_once __DIR__.'/claims.php';
+require_once __DIR__.'/finance.php';
+require_once __DIR__.'/cost_history.php';
+
+/** Accepted claim units are reconciled to the original order line, never to the return package. */
+function return_inventory_evidence(array $claim,?array $order,int $acceptedCount,?array $inspection): array
+{
+    $out=['cost'=>null,'recovery'=>null,'inventory_loss'=>null,'condition'=>null,'state'=>'İnceleme gerekli','ready'=>false,'assumed'=>false];
+    if(($claim['status']??'')!=='Accepted')return array_replace($out,['state'=>'Kabul edilmiş iade değil']);
+    $match=claim_order_match($claim,$order);
+    if($match['cost']===null||$match['scope']!=='domestic')return array_replace($out,['state'=>'Tarihli / gözlemlenen maliyet veya sipariş eşleşmesi eksik']);
+    $lines=is_array($order['lines'])?$order['lines']:json_decode((string)$order['lines'],true);
+    $matches=claim_matching_lines($claim,is_array($lines)?$lines:[]);
+    $line=count($matches)===1?$matches[0]:null;
+    $qty=$line['quantity']??null;
+    if(!is_numeric($qty)||!is_finite((float)$qty)||(float)$qty!==(float)(int)$qty||(int)$qty<1||$acceptedCount<1||$acceptedCount>(int)$qty)
+        return array_replace($out,['state'=>'Kabul edilmiş iade adedi sipariş adediyle çelişiyor']);
+    try{$cost=finance_units($match['cost']);if($cost<=0)throw new InvalidArgumentException('Maliyet');}
+    catch(InvalidArgumentException $e){return array_replace($out,['state'=>'Maliyet geçersiz']);}
+    $out['cost']=$cost/10000.0;
+    // Accepted is a financial/workflow status, not proof of physical receipt or condition.
+    // Operational default: no recorded exception => assumed fully recoverable, no manual action.
+    if(!$inspection)return array_replace($out,['state'=>'Otomatik: satışa uygun varsayımı','condition'=>'resellable',
+        'recovery'=>$cost/10000.0,'inventory_loss'=>0.0,'ready'=>true,'assumed'=>true]);
+    if(!array_key_exists('group_line_id',$inspection)||$inspection['group_line_id']===null||(string)$inspection['group_line_id']!==(string)($claim['group_line_id']??''))return array_replace($out,['state'=>'İade grup kimliği doğrulanmadı; yeniden depo kontrolü gerekli']);
+    foreach(['claim_id','item_id','order_number','outbound_package','line_id','barcode'] as $key)
+        if((string)($inspection[$key]??'')!==(string)($claim[$key]??''))return array_replace($out,['state'=>'İade kimliği değişti; yeniden kontrol gerekli']);
+    $condition=(string)($inspection['condition']??'');$recovery=(int)($inspection['recovery_units']??-1);
+    // An explicit unsellable exception survives routine refresh and a revised unit cost
+    // if the full item identity is unchanged. It must never silently become recoverable.
+    if($condition==='unusable'&&$recovery===0&&(int)($inspection['cost_units']??0)>0&&
+        (int)($inspection['claim_modified_ms']??0)>0&&(int)$claim['modified_ms']>=(int)$inspection['claim_modified_ms'])
+        return array_replace($out,['condition'=>'unusable','recovery'=>0.0,'inventory_loss'=>$cost/10000.0,
+            'state'=>'Satılamaz olarak işaretlendi; stok değer kaybı','ready'=>true]);
+    if((int)($inspection['claim_modified_ms']??0)!==(int)$claim['modified_ms']||(int)($inspection['cost_units']??0)!==$cost)
+        return array_replace($out,['state'=>'İade veya maliyet değişti; yeniden kontrol gerekli']);
+    if(!in_array($condition,['resellable','partial','unusable'],true)||$recovery<0||$recovery>$cost||
+       ($condition==='resellable'&&$recovery!==$cost)||($condition==='unusable'&&$recovery!==0)||
+       ($condition==='partial'&&($recovery<=0||$recovery>=$cost)))return array_replace($out,['state'=>'Depo değeri çelişkili']);
+    return array_replace($out,['condition'=>$condition,'recovery'=>$recovery/10000.0,'inventory_loss'=>($cost-$recovery)/10000.0,
+        'state'=>'Kullanıcı depo beyanı; toplam iade zararı değil','ready'=>true]);
+}
+function return_inventory_orders(PDO $db,int $uid,array $claims): array
+{
+    $packages=array_values(array_unique(array_filter(array_column($claims,'outbound_package'),static fn($p)=>$p!=='')));
+    $orders=[];
+    foreach(array_chunk($packages,200) as $chunk){
+        $q=$db->prepare("SELECT * FROM orders WHERE user_id=? AND marketplace='trendyol' AND package_number IN (".implode(',',array_fill(0,count($chunk),'?')).")");
+        $q->execute(array_merge([$uid],$chunk));
+        while($o=$q->fetch())$orders[(string)$o['package_number']]=$o;
+    }
+    return cost_history_overlay($db,$uid,$orders);
+}
+function return_accepted_counts(PDO $db,int $uid,array $claims): array
+{
+    $packages=array_values(array_unique(array_filter(array_column($claims,'outbound_package'),static fn($p)=>$p!=='')));
+    $out=[];
+    foreach(array_chunk($packages,200) as $chunk){
+        $q=$db->prepare("SELECT order_number,outbound_package,line_id,group_line_id,barcode FROM trendyol_claim_items WHERE user_id=? AND status='Accepted' AND outbound_package IN (".implode(',',array_fill(0,count($chunk),'?')).")");
+        $q->execute(array_merge([$uid],$chunk));$rows=$q->fetchAll();
+        // Aggregate once; avoid a quadratic scan on large return histories.
+        $baseKey=static fn(array $r)=>json_encode([(string)$r['order_number'],(string)$r['outbound_package'],(string)$r['barcode']],JSON_THROW_ON_ERROR);
+        $totals=[];$groups=[];$legacy=[];
+        foreach($rows as $r){
+            $key=$baseKey($r);$group=(string)$r['group_line_id'];
+            $totals[$key]=($totals[$key]??0)+1;
+            if($group==='')$legacy[$key]=($legacy[$key]??0)+1;
+            else $groups[$key][$group]=($groups[$key][$group]??0)+1;
+        }
+        $chunkSet=array_fill_keys($chunk,true);
+        foreach($claims as $claim){
+            if(!isset($chunkSet[(string)$claim['outbound_package']]))continue;
+            $key=$baseKey($claim);$group=(string)($claim['group_line_id']??'');
+            $out[return_inventory_key($claim)]=$group===''?($totals[$key]??0):(($groups[$key][$group]??0)+($legacy[$key]??0));
+        }
+    }
+    return $out;
+}
+function return_inventory_key(array $r): string
+{
+    return json_encode([(string)$r['order_number'],(string)$r['outbound_package'],($r['group_line_id']??'')!==''?'group':'legacy',(string)(($r['group_line_id']??'')!==''?$r['group_line_id']:$r['line_id']),(string)$r['barcode']],JSON_THROW_ON_ERROR);
+}
+/** Read inspection evidence in bounded tenant-scoped batches. */
+function return_inventory_checks(PDO $db,int $uid,array $claims): array
+{
+    $ids=array_values(array_unique(array_filter(array_map('strval',array_column($claims,'item_id')),static fn($id)=>$id!=='')));
+    $out=[];
+    foreach(array_chunk($ids,200) as $chunk){
+        $q=$db->prepare("SELECT * FROM return_inventory_checks WHERE user_id=? AND item_id IN (".implode(',',array_fill(0,count($chunk),'?')).")");
+        $q->execute(array_merge([$uid],$chunk));
+        while($r=$q->fetch())$out[(string)$r['item_id']]=$r;
+    }
+    return $out;
+}
+/** Undo only an explicit exception for this user's claim. Default remains read-time, not a physical inspection. */
+function return_inventory_clear(PDO $db,int $uid,string $itemId): void
+{
+    $db->prepare("DELETE FROM return_inventory_checks WHERE user_id=? AND item_id=? AND EXISTS (SELECT 1 FROM trendyol_claim_items c WHERE c.user_id=return_inventory_checks.user_id AND c.item_id=return_inventory_checks.item_id AND c.status='Accepted')")
+        ->execute([$uid,$itemId]);
+}
+function return_inventory_save(PDO $db,int $uid,string $itemId,string $condition,string $raw): void
+{
+    if(!in_array($condition,['resellable','partial','unusable'],true))throw new InvalidArgumentException('Depo durumu geçersiz.');
+    $db->beginTransaction();
+    try{
+        $q=$db->prepare("SELECT * FROM trendyol_claim_items WHERE user_id=? AND item_id=?");$q->execute([$uid,$itemId]);$claim=$q->fetch();
+        if(!$claim)throw new InvalidArgumentException('İade kalemi bulunamadı.');
+        $orders=return_inventory_orders($db,$uid,[$claim]);$counts=return_accepted_counts($db,$uid,[$claim]);
+        $a=return_inventory_evidence($claim,$orders[$claim['outbound_package']]??null,$counts[return_inventory_key($claim)]??0,null);
+        if($a['cost']===null)throw new InvalidArgumentException($a['state']);
+        $cost=finance_units($a['cost']);
+        $value=$condition==='resellable'?$cost:($condition==='unusable'?0:null);
+        if($condition==='partial'){
+            $v=parse_money_input($raw);if($v===null||$v<=0)throw new InvalidArgumentException('Kısmi geri kazanım tutarı geçersiz.');
+            $value=finance_units($v);
+            if($value<=0||$value>=$cost)throw new InvalidArgumentException('Kısmi geri kazanım 0 ile kayıtlı maliyet arasında olmalı.');
+        }
+        $db->prepare("INSERT INTO return_inventory_checks(user_id,item_id,claim_id,order_number,outbound_package,line_id,barcode,claim_modified_ms,cost_units,condition,recovery_units,checked_at,group_line_id)
+          VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(user_id,item_id) DO UPDATE SET claim_id=excluded.claim_id,order_number=excluded.order_number,outbound_package=excluded.outbound_package,line_id=excluded.line_id,barcode=excluded.barcode,claim_modified_ms=excluded.claim_modified_ms,cost_units=excluded.cost_units,condition=excluded.condition,recovery_units=excluded.recovery_units,checked_at=excluded.checked_at,group_line_id=excluded.group_line_id")
+          ->execute([$uid,$itemId,$claim['claim_id'],$claim['order_number'],$claim['outbound_package'],$claim['line_id'],$claim['barcode'],$claim['modified_ms'],$cost,$condition,$value,time(),(string)($claim['group_line_id']??'')]);
+        $db->commit();
+    }catch(Throwable $e){if($db->inTransaction())$db->rollBack();throw $e;}
+}
+
+/** Current accepted items last modified in the selected period; not a ledger of physical receipts. */
+function return_inventory_period(PDO $db,int $uid,int $from,int $through): array
+{
+    $q=$db->prepare("SELECT * FROM trendyol_claim_items WHERE user_id=? AND status='Accepted' AND modified_ms>=? AND modified_ms<?");
+    $q->execute([$uid,$from*1000,$through*1000]);$claims=$q->fetchAll();
+    $orders=return_inventory_orders($db,$uid,$claims);$counts=return_accepted_counts($db,$uid,$claims);$checks=return_inventory_checks($db,$uid,$claims);
+    $out=['accepted'=>count($claims),'assumed'=>0,'observed'=>0,'unusable'=>0,'unknown'=>0,'loss'=>null];$loss=0;
+    foreach($claims as $row){
+        $a=return_inventory_evidence($row,$orders[$row['outbound_package']]??null,$counts[return_inventory_key($row)]??0,$checks[$row['item_id']]??null);
+        if(!$a['ready']){$out['unknown']++;continue;}
+        $out[$a['assumed']?'assumed':'observed']++;
+        if($a['condition']==='unusable')$out['unusable']++;
+        $loss+=finance_units($a['inventory_loss']);
+    }
+    if($out['assumed']+$out['observed'])$out['loss']=$loss/10000.0;
+    return $out;
+}
+
+/** Closed package loss evidence. Never assign an order-level charge across multiple packages.
+ * Known expenses are gross cash amounts, not tax-adjusted accounting profit.
+ * A missing invoice, service fee or refund is not proof of zero expense.
+ */
+function closed_package_loss(array $o,array $packages,array $rows,array $cargo,array $claims,array $counts,array $checks,string $seller,?array $tariffs=null): array
+{
+    $out=['outbound'=>null,'return_cargo'=>null,'estimated_cargo'=>false,'loss'=>null,'cargo'=>null,'inventory'=>null,'settlement_loss'=>null,'state'=>'Finans / iade ayrıntıları bekleniyor','assumed'=>false,'pending'=>true];
+    $status=strtolower((string)($o['status']??''));
+    if(!in_array($status,['cancelled','canceled','unsupplied','returned','undelivered'],true))return $out;
+    $cancel=in_array($status,['cancelled','canceled','unsupplied'],true);
+    $no=(string)($o['order_number']??'');$pid=(string)($o['package_number']??'');
+    if($seller===''||$no===''||$pid===''||!order_is_domestic_try($o))
+        return array_replace($out,['state'=>'Satıcı veya ülke kapsamı doğrulanmalı']);
+    if(count($packages)!==1){
+        // An entirely cancelled split order without any recorded shipping or charge
+        // can use the same provisional zero as a single cancelled package. Never
+        // spread a real order-level debit across packages.
+        $allCancelled=$cancel&&$packages&&!$rows&&!$cargo&&!$claims;$found=false;$seenPackages=[];
+        foreach($packages as $p){
+            $id=(string)($p['package_number']??'');
+            $ctx=json_decode((string)($p['cargo_quote_context']??''),true);
+            if($id===''||isset($seenPackages[$id])||(string)($p['order_number']??'')!==$no||!order_is_domestic_try($p)||
+               !in_array(strtolower((string)($p['status']??'')),['cancelled','canceled','unsupplied'],true)||($ctx['desi_source']??'')==='shipment_api')$allCancelled=false;
+            $seenPackages[$id]=true;$found=$found||$id===$pid;
+        }
+        if($allCancelled&&$found)return array_replace($out,['loss'=>0.0,'cargo'=>0.0,'outbound'=>0.0,'return_cargo'=>0.0,'inventory'=>0.0,'assumed'=>true,'state'=>'İptal: 0 TL tahmin (gönderim/kesinti kaydı yok)']);
+        return array_replace($out,['state'=>'Çoklu paket: gider eşleşmesi bekleniyor']);
+    }
+    if((string)($packages[0]['package_number']??'')!==$pid)return $out;
+    $lines=$o['lines']??[];if(is_string($lines))$lines=json_decode($lines,true);
+    if(!is_array($lines)||!$lines)return $out;
+    $o['lines']=$lines;$want=[];$lineIds=[];$units=0;
+    foreach($lines as $l){
+        if(!is_array($l))return $out;
+        $id=(string)($l['line_id']??'');$bc=(string)($l['barcode']??'');$q=$l['quantity']??null;
+        if($id===''||$bc===''||isset($lineIds[$id])||!is_numeric($q)||!is_finite((float)$q)||(float)$q!==(float)(int)$q||$q<1)return $out;
+        $lineIds[$id]=(int)$q;$want[$bc]=true;$units+=(int)$q;
+    }
+    $cargoSum=0;$outSum=0;$returnSum=0;$cargoOk=true;$seen=[];$outbound=false;$return=false;
+    foreach($cargo as $r){
+        $serial=(string)($r['invoice_serial']??'');$parcel=(string)($r['parcel_id']??'');$type=(string)($r['shipment_type']??'');$key=json_encode([$serial,$parcel,$type]);
+        $raw=json_decode((string)($r['invoice_raw']??''),true);
+        if($serial===''||$parcel===''||isset($seen[$key])||(string)($r['order_number']??'')!==$no||!is_array($raw)||!finance_is_domestic($raw)||(string)($raw['sellerId']??'')!==$seller||(string)($raw['id']??'')!==$serial||!in_array($type,['Gönderi Kargo Bedeli','İade Kargo Bedeli'],true)){$cargoOk=false;break;}
+        $seen[$key]=true;
+        try{$v=finance_units($r['amount']??null);if($v<0)throw new InvalidArgumentException('Kargo');
+            if(($r['invoice_basis']??'')==='net')$v=(int)round($v*1.2,0,PHP_ROUND_HALF_UP);
+            elseif(($r['invoice_basis']??'')!=='gross')throw new InvalidArgumentException('KDV');
+            $cargoSum+=$v;if($type==='Gönderi Kargo Bedeli'){$outSum+=$v;$outbound=true;}else{$returnSum+=$v;$return=true;}
+        }catch(InvalidArgumentException $e){$cargoOk=false;break;}
+    }
+    if($cargoOk){$out['outbound']=$outbound?$outSum/10000.0:null;$out['return_cargo']=$return?$returnSum/10000.0:null;}
+    $context=json_decode((string)($o['cargo_quote_context']??''),true);
+    $shipped=!$cancel||$outbound||$return||($context['desi_source']??'')==='shipment_api'||(bool)$claims;
+    // Explicit operating assumption: a cancelled package without shipping or financial
+    // evidence is treated as zero for planning, not a confirmed no-charge cancellation.
+    if($cancel&&!$shipped&&!$rows&&!$cargo&&!$claims){
+        return array_replace($out,['loss'=>0.0,'cargo'=>0.0,'outbound'=>0.0,'return_cargo'=>0.0,'inventory'=>0.0,'assumed'=>true,'state'=>'İptal: 0 TL tahmin (gönderim/kesinti kaydı yok)']);
+    }
+    if($cargoOk&&$shipped){
+        $quote=null;
+        if(is_array($context)&&($context['carrier']??null)===cargo_carrier((string)($o['cargo_provider']??''))&&
+           ($context['day']??null)===date('Y-m-d',(int)($o['order_date']??0))&&
+           is_numeric($context['sale']??null)&&abs((float)$context['sale']-(float)($o['total_price']??0))<0.005&&
+           (int)($context['order_modified_ms']??-1)===(int)($o['last_modified_ms']??0)){
+            $quote=cargo_quote_from_context($context,$tariffs??cargo_tariffs());
+        }
+        $base=$quote['amount']??null;
+        // The original tariff estimate is a fallback, not a current invoice.
+        if($base===null){
+            $meta=json_decode((string)($o['cargo_first_estimate_json']??''),true);$first=$o['cargo_first_estimate']??null;
+            if(is_array($meta)&&is_numeric($first)&&is_finite((float)$first)&&$first>0&&is_numeric($meta['amount']??null)&&abs((float)$meta['amount']-(float)$first)<0.005)$base=(float)$first;
+        }
+        // Return freight is provisionally estimated at the outbound rate;
+        // actual invoice for either leg replaces only that leg.
+        if($out['outbound']===null&&($base!==null||$out['return_cargo']!==null)){$out['outbound']=(float)($base??$out['return_cargo']);$out['estimated_cargo']=true;}
+        if($out['return_cargo']===null){
+            // A claim's return carrier may differ from the outbound carrier. Deduplicate per claim package.
+            $returnQuotes=[];$unresolved=false;$seenClaims=[];
+            foreach($claims as $c){
+                if((string)($c['outbound_package']??'')!==$pid||!in_array($c['status']??'',['Accepted','WaitingInAction','InAnalysis'],true))continue;
+                $id=(string)($c['claim_id']??'');if($id===''){$unresolved=true;continue;}
+                $carrier=cargo_carrier((string)($c['return_carrier']??''));
+                $d=cargo_positive_desi($c['return_desi']??null);
+                $ts=(int)($c['created_ms']??0);
+                $data=[$carrier,$d,$ts];
+                if(isset($seenClaims[$id])){if($seenClaims[$id]!==$data)$unresolved=true;continue;}$seenClaims[$id]=$data;
+                if($carrier===null||$ts<=0){$unresolved=true;continue;}
+                $d=$d??cargo_positive_desi($o['cargo_api_desi']??null)??cargo_positive_desi($context['desi']??null)??1.0;
+                // Standard return freight scenario; no outbound sale barem applied to the return.
+                $rq=cargo_quote_from_context(['carrier'=>$carrier,'desi'=>$d,'day'=>date('Y-m-d',intdiv($ts,1000)),'sale'=>max(350.0,(float)($o['total_price']??0)),'desi_source'=>cargo_positive_desi($c['return_desi']??null)!==null?'shipment_api':'declared_product','barem_candidate'=>false],$tariffs??cargo_tariffs());
+                if(!$rq){$unresolved=true;continue;}$returnQuotes[]=$rq['amount'];
+            }
+            if($returnQuotes&&!$unresolved){$out['return_cargo']=array_sum($returnQuotes);$out['estimated_cargo']=true;}
+            elseif(!$returnQuotes&&$out['outbound']!==null&&!array_filter($claims,static fn($c)=>!empty($c['return_carrier']))){$out['return_cargo']=$out['outbound'];$out['estimated_cargo']=true;}
+        }
+        if($out['outbound']!==null&&$out['return_cargo']!==null)$out['cargo']=$out['outbound']+$out['return_cargo'];
+    }
+    // For a fully accepted return, count each unit exactly once and default only
+    // uninspected accepted items to recoverable. No assumption about physical receipt.
+    $loss=0;$claimOk=true;$used=[];$perLine=[];$assumed=false;
+    foreach($claims as $c){
+        if(($c['status']??'')!=='Accepted'){$claimOk=false;continue;}
+        $item=(string)($c['item_id']??'');$match=claim_matching_lines($c,$lines);
+        if($item===''||isset($used[$item])||count($match)!==1){$claimOk=false;continue;}
+        $used[$item]=true;$lid=(string)$match[0]['line_id'];$perLine[$lid]=($perLine[$lid]??0)+1;
+        if($perLine[$lid]>$lineIds[$lid]){$claimOk=false;continue;}
+        $a=return_inventory_evidence($c,$o,$counts[return_inventory_key($c)]??0,$checks[$item]??null);
+        if(!$a['ready']){
+            // No explicit impairment means no inventory expense in this planning model.
+            // A recorded exception must still have a valid cost and identity.
+            if(isset($checks[$item])){$claimOk=false;continue;}
+            if((string)($c['outbound_package']??'')!==$pid||(string)($c['order_number']??'')!==$no){$claimOk=false;continue;}
+            $assumed=true;continue;
+        }
+        $loss+=finance_units($a['inventory_loss']);$assumed=$assumed||$a['assumed'];
+    }
+    if($claimOk&&count($used)===$units){$out['inventory']=$loss/10000.0;$out['assumed']=$assumed;}
+    elseif(!$claims&&$shipped){$out['inventory']=0.0;$out['assumed']=true;}
+    // If a claim exists but the inspection is absent, use zero impairment only
+    // for identifiable, accepted units. Ambiguous or recorded exceptions stay unknown.
+    elseif($claimOk&&$shipped&&$used){$out['inventory']=$loss/10000.0;$out['assumed']=true;}
+    // Record residual seller debit only when the original sales and refund/campaign
+    // movements reconcile to zero gross by barcode. No guessed signs or allocations.
+    $gross=[];$revenue=0;$sold=[];$refunded=[];$seen=[];$financeOk=true;
+    foreach($rows as $r){
+        $raw=json_decode((string)($r['raw_json']??''),true);$id=(string)($r['external_id']??'');$type=(string)($r['query_type']??'');$bc=(string)($raw['barcode']??'');
+        if($id===''||isset($seen[$id])||!is_array($raw)||!finance_is_domestic($raw)||(string)($raw['sellerId']??'')!==$seller||(string)($raw['id']??'')!==$id||(string)($r['order_number']??'')!==$no||(string)($raw['orderNumber']??'')!==$no||(string)($r['shipment_package_id']??'')!==$pid||(string)($raw['shipmentPackageId']??'')!==$pid||!isset($want[$bc])||!in_array($type,['Sale','Return','Discount','DiscountCancel','Coupon','CouponCancel'],true)){$financeOk=false;break;}
+        $seen[$id]=true;
+        try{
+            $credit=finance_units($raw['credit']??null);$debt=finance_units($raw['debt']??null);$parts=settlement_signed_components($raw,$type);
+            if($credit<0||$debt<0||($credit>0&&$debt>0)||abs(($credit-$debt)-($parts['revenue']-$parts['commission']))>100)throw new InvalidArgumentException('Ekstre');
+            // signed commission is negative on sale, positive on refund; gross = revenue - signed commission.
+            $positive=in_array($type,['Sale','DiscountCancel','CouponCancel'],true);
+            if($positive?($credit<=0||$debt!==0):($debt<=0||$credit!==0))throw new InvalidArgumentException('İşaret');
+            $gross[$bc]=($gross[$bc]??0)+$credit-$debt;$revenue+=$parts['revenue'];
+            if($type==='Sale')$sold[$bc]=true;if($type==='Return')$refunded[$bc]=true;
+        }catch(InvalidArgumentException $e){$financeOk=false;break;}
+    }
+    if($financeOk&&$rows&&$revenue<=0&&count($sold)===count($want)&&count($refunded)===count($want)&&!array_filter($gross,static fn($v)=>abs($v)>100))
+        $out['settlement_loss']=-$revenue/10000.0;
+    // Planning rule requested by the merchant: no sale, commission or VAT on
+    // the reversed sale; gross freight and stock impairment only. Residual
+    // statement debit is displayed separately, not deducted again.
+    if($out['cargo']!==null&&$out['inventory']!==null)$out['loss']=$out['cargo']+$out['inventory'];
+    $out['state']=$cancel?'İptal: tahmini zarar':'İade/teslim edilemedi: tahmini zarar';
+    if($out['estimated_cargo'])$out['state'].=' (eksik kargo ayağı tahmini)';
+    if($out['loss']===null)$out['state']='İptal/iade: kargo veya stok eşleşmesi eksik';
+    return $out;
+}
+/** A delivered package can be a full accepted return before its order status changes.
+ * Require exact unique accepted units covering every original line. Partial returns
+ * are not treated as a full reversal.
+ */
+function closed_full_claim(array $o,array $claims): bool
+{
+    if(!order_is_domestic_try($o)||!order_is_active_sale($o)||!$claims)return false;
+    $lines=$o['lines']??[];if(is_string($lines))$lines=json_decode($lines,true);
+    if(!is_array($lines)||!$lines)return false;
+    $want=[];$got=[];$seen=[];$units=[];
+    foreach($lines as $l){
+        if(!is_array($l))return false;
+        $id=(string)($l['line_id']??'');$q=$l['quantity']??null;
+        if($id===''||isset($want[$id])||!is_numeric($q)||!is_finite((float)$q)||(float)$q!==(float)(int)$q||$q<1)return false;
+        $want[$id]=(int)$q;
+    }
+    foreach($claims as $c){
+        $item=(string)($c['item_id']??'');$unit=(string)($c['line_id']??'');
+        if(($c['status']??'')!=='Accepted'||$item===''||$unit===''||isset($seen[$item],$units[$unit])||isset($seen[$item])||isset($units[$unit])||(string)($c['order_number']??'')!==(string)$o['order_number']||(string)($c['outbound_package']??'')!==(string)$o['package_number'])return false;
+        $match=claim_matching_lines($c,$lines);if(count($match)!==1)return false;
+        $seen[$item]=true;$units[$unit]=true;$lid=(string)$match[0]['line_id'];$got[$lid]=($got[$lid]??0)+1;
+    }
+    foreach($want as $id=>$qty)if(($got[$id]??0)!==$qty)return false;
+    return true;
+}
+/** Build a read-only retained-unit estimate from exact claim units or cancelled lines.
+ * The original price may include cancelled lines or already exclude them. Never subtract twice.
+ * For partial returns, require the original package total to reconcile to original units.
+ */
+function partial_package_estimate(array $o,array $packages,array $rows,array $cargo,array $claims,array $counts,array $checks,string $seller,array $tariffs): ?array
+{
+    $fail=static fn(string $reason)=>array_replace($o,['partial_error'=>$reason]);
+    if(!order_is_active_sale($o)||!order_is_domestic_try($o))return null;
+    $lines=$o['lines']??[];if(is_string($lines))$lines=json_decode($lines,true);
+    if(!is_array($lines)||!$lines)return null;
+    $cancelled=false;foreach($lines as $l)if(is_array($l)&&in_array(strtolower((string)($l['status']??'')),['cancelled','canceled','unsupplied'],true))$cancelled=true;
+    if(!$claims&&!$cancelled)return null;
+    if($seller===''||($cancelled&&$claims))return $fail('Kısmi işlem: satıcı veya birleşik iptal/iade eşleşmesi eksik');
+    $no=(string)($o['order_number']??'');$pid=(string)($o['package_number']??'');
+    if($no===''||$pid==='')return $fail('Kısmi işlem: paket kimliği eksik');
+    $removed=[];$seenItems=[];$seenUnits=[];$knownIds=[];$inventory=0.0;
+    foreach($lines as $l){
+        if(!is_array($l))return $fail('Kısmi işlem: ürün satırı eksik');
+        $id=(string)($l['line_id']??'');$q=$l['quantity']??null;
+        if($id===''||isset($knownIds[$id])||!is_numeric($q)||!is_finite((float)$q)||(float)$q!==(float)(int)$q||$q<1)return $fail('Kısmi işlem: satır kimliği/adedi geçersiz');
+        $knownIds[$id]=(int)$q;
+    }
+    foreach($claims as $c){
+        $item=(string)($c['item_id']??'');$unit=(string)($c['line_id']??'');
+        if(($c['status']??'')!=='Accepted'||$item===''||$unit===''||isset($seenItems[$item])||isset($seenUnits[$unit])||(string)($c['order_number']??'')!==$no||(string)($c['outbound_package']??'')!==$pid)return $fail('Kısmi iade: iade kalemi doğrulanamadı');
+        $match=claim_matching_lines($c,$lines);if(count($match)!==1)return $fail('Kısmi iade: ürün eşleşmedi');
+        $lid=(string)$match[0]['line_id'];$removed[$lid][$unit]=true;$seenItems[$item]=true;$seenUnits[$unit]=true;
+        if(count($removed[$lid])>$knownIds[$lid])return $fail('Kısmi iade: iade adedi fazla');
+        if(isset($checks[$item])){
+            $a=return_inventory_evidence($c,$o,$counts[return_inventory_key($c)]??0,$checks[$item]);
+            if(!$a['ready'])return $fail('Kısmi iade: satılamaz ürün maliyeti doğrulanmalı');
+            $inventory+=(float)$a['inventory_loss'];
+        }
+    }
+    $original=0.0;$retained=0.0;$kept=[];$removedQty=0;
+    foreach($lines as $l){
+        $id=(string)$l['line_id'];$qty=(int)$l['quantity'];$details=$l['discount_details']??[];
+        $allCancel=in_array(strtolower((string)($l['status']??'')),['cancelled','canceled','unsupplied'],true);
+        if(!$allCancel&&!order_is_active_sale($l))return $fail('Kısmi işlem: ürün durumu doğrulanmalı');
+        if(!is_numeric($l['price']??null)||!is_finite((float)$l['price'])||$l['price']<0||abs((float)($l['platform_discount']??0))>0.005||!is_array($details))return $fail('Kısmi işlem: indirimli ürün fiyatı doğrulanmalı');
+        $drop=$allCancel?$qty:count($removed[$id]??[]);$left=$qty-$drop;$lineAll=0.0;$lineLeft=0.0;$keepDetails=[];
+        if($details){
+            if(count($details)!==$qty)return $fail('Kısmi işlem: adet indirimi eksik');
+            $ids=[];$matched=0;
+            foreach($details as $d){
+                $uid=is_array($d)?(string)($d['lineItemId']??''):'';
+                if($uid===''||isset($ids[$uid])||!is_numeric($d['lineItemPrice']??null)||!is_finite((float)$d['lineItemPrice'])||$d['lineItemPrice']<0||abs((float)($d['lineItemTyDiscount']??0))>0.005)return $fail('Kısmi işlem: birim indirim eşleşmedi');
+                $ids[$uid]=true;$v=(float)$d['lineItemPrice'];$lineAll+=$v;
+                if($allCancel||isset($removed[$id][$uid])){$matched++;continue;}
+                $lineLeft+=$v;$keepDetails[]=$d;
+            }
+            if($matched!==$drop)return $fail('Kısmi iade: indirimli birim kimliği eşleşmedi');
+        }else{$lineAll=(float)$l['price']*$qty;$lineLeft=(float)$l['price']*$left;}
+        $original+=$lineAll;$retained+=$lineLeft;$removedQty+=$drop;
+        if($left){$l['quantity']=$left;$l['discount_details']=$keepDetails;$kept[]=$l;}
+    }
+    if(!$removedQty||!$kept||$retained<=0)return $fail('Kısmi işlem: kalan satış yok veya doğrulanamadı');
+    if(!is_numeric($o['total_price']??null)||!is_finite((float)$o['total_price']))return $fail('Kısmi işlem: paket toplamı eksik');
+    $total=(float)$o['total_price'];
+    if(abs($total-$original)>0.05&&(!$cancelled||abs($total-$retained)>0.05))return $fail('Kısmi işlem: paket ve ürün toplamı uyuşmuyor');
+    // For a return use the full package freight once, including both legs. A
+    // partial cancellation does not create a return freight charge by itself.
+    if($claims){
+        if(count($packages)!==1)return $fail('Kısmi iade: çoklu paket kargosu eşleşmeli');
+        $copy=$o;$copy['status']='Returned';
+        $cl=closed_package_loss($copy,$packages,$rows,$cargo,$claims,$counts,$checks,$seller,$tariffs);
+        $freight=$cl['cargo'];
+        if($freight===null&&!$cargo&&is_numeric($o['cargo_override']??null)&&is_finite((float)$o['cargo_override'])&&$o['cargo_override']>0)$freight=2*(float)$o['cargo_override'];
+        if($freight===null)return $fail('Kısmi iade: gidiş/dönüş kargosu eksik');
+        $o['cargo_override']=$freight;$o['cargo_source']=$cl['estimated_cargo']||$cl['cargo']===null?'Gidiş/dönüş kargo tahmini':'Gidiş/dönüş fatura tutarı';
+    }
+    // A partial sale commission is estimated only from recorded line rates; no
+    // original full-sale commission or refund movement is applied a second time.
+    foreach($kept as $l)if(!is_numeric($l['commission_rate']??null)||!is_finite((float)$l['commission_rate'])||$l['commission_rate']<0||$l['commission_rate']>100)return $fail('Kısmi işlem: kalan ürün komisyon oranı eksik');
+    // Unrelated or unsupported financial evidence cannot be silently ignored.
+    $seen=[];foreach($rows as $r){
+        $raw=json_decode((string)($r['raw_json']??''),true);$id=(string)($r['external_id']??'');$type=(string)($r['query_type']??'');
+        if($id===''||isset($seen[$id])||!is_array($raw)||!finance_is_domestic($raw)||(string)($raw['sellerId']??'')!==$seller||(string)($raw['id']??'')!==$id||(string)($raw['orderNumber']??'')!==$no||(string)($r['order_number']??'')!==$no||(string)($raw['shipmentPackageId']??'')!==(string)($r['shipment_package_id']??'')||!in_array($type,['Sale','Return','Discount','Coupon','DiscountCancel','CouponCancel'],true)||($type==='Return'&&!$claims))return $fail('Kısmi işlem: finans hareketi doğrulanmalı');
+        $seen[$id]=true;
+    }
+    unset($o['commission_override']);$o['commission_source']='Kalan ürünlerin kayıtlı komisyon oranı / tahmin';
+    $o['original_total_price']=$total;$o['total_price']=$retained;$o['lines']=$kept;$o['partial_units']=$removedQty;$o['partial_inventory_loss']=$inventory;$o['partial_kind']=$claims?'iade':'iptal';
+    return $o;
+}
+/** Batch closed orders, including all packages, claim units and invoice rows. */
+function closed_package_loss_overlay(PDO $db,int $uid,array $orders): array
+{
+    $by=[];$active=[];
+    foreach($orders as $i=>$o)if(($o['marketplace']??'')==='trendyol'&&!empty($o['order_number'])){
+        $no=(string)$o['order_number'];
+        if(in_array(strtolower((string)($o['status']??'')),['cancelled','canceled','unsupplied','returned','undelivered'],true))$by[$no][]=$i;
+        elseif(order_is_active_sale($o)){
+            $active[$no][]=$i;
+            $lines=$o['lines']??[];if(is_string($lines))$lines=json_decode($lines,true);
+            if(is_array($lines))foreach($lines as $l)if(is_array($l)&&in_array(strtolower((string)($l['status']??'')),['cancelled','canceled','unsupplied'],true)){$by[$no][]=$i;break;}
+        }
+    }
+    foreach(array_chunk(array_keys($active),200) as $chunk){
+        $in=implode(',',array_fill(0,count($chunk),'?'));$q=$db->prepare("SELECT DISTINCT order_number FROM trendyol_claim_items WHERE user_id=? AND status='Accepted' AND order_number IN ($in)");$q->execute(array_merge([$uid],$chunk));
+        while($r=$q->fetch()){$no=(string)$r['order_number'];foreach($active[$no] as $i)if(!in_array($i,$by[$no]??[],true))$by[$no][]=$i;}
+    }
+    if(!$by)return $orders;
+    $tariffs=cargo_tariffs();
+    $q=$db->prepare("SELECT seller_id FROM integration_bindings WHERE user_id=? AND marketplace='trendyol'");$q->execute([$uid]);$seller=(string)($q->fetchColumn()?:'');
+    foreach(array_chunk(array_keys($by),200) as $chunk){
+        $in=implode(',',array_fill(0,count($chunk),'?'));$args=array_merge([$uid],$chunk);$groups=[];
+        $sqls=[
+          'packages'=>"SELECT order_number,package_number,status,currency_code,country_code,cargo_quote_context FROM orders WHERE user_id=? AND marketplace='trendyol' AND order_number IN ($in)",
+          'rows'=>"SELECT external_id,order_number,shipment_package_id,query_type,raw_json FROM settlements WHERE user_id=? AND marketplace='trendyol' AND order_number IN ($in)",
+          'cargo'=>"SELECT c.*,d.raw_json AS invoice_raw FROM trendyol_cargo_items c LEFT JOIN trendyol_financial_documents d ON d.user_id=c.user_id AND d.external_id=c.invoice_serial AND d.query_type='DeductionInvoices' WHERE c.user_id=? AND c.order_number IN ($in)",
+          'claims'=>"SELECT * FROM trendyol_claim_items WHERE user_id=? AND order_number IN ($in)"
+        ];
+        foreach($sqls as $k=>$sql){$q=$db->prepare($sql);$q->execute($args);while($r=$q->fetch())$groups[(string)$r['order_number']][$k][]=$r;}
+        $serials=[];$claims=[];foreach($groups as $g){foreach($g['cargo']??[] as $r)$serials[]=(string)$r['invoice_serial'];foreach($g['claims']??[] as $c)$claims[]=$c;}
+        $basis=cargo_invoice_basis_map($db,$uid,$seller,$serials);$counts=return_accepted_counts($db,$uid,$claims);$checks=return_inventory_checks($db,$uid,$claims);
+        foreach($chunk as $no){
+            $g=$groups[$no]??[];$cargo=$g['cargo']??[];foreach($cargo as &$r)$r['invoice_basis']=$basis[$r['invoice_serial']]??null;unset($r);
+            foreach($by[$no] as $i){
+                $o=$orders[$i];
+                if(order_is_active_sale($o)){
+                    $ownClaims=array_values(array_filter($g['claims']??[],static fn($c)=>(string)$c['outbound_package']===(string)$o['package_number']));
+                    if(count($g['packages']??[])!==1||!closed_full_claim($o,$ownClaims)){
+                        $partial=partial_package_estimate($o,$g['packages']??[],$g['rows']??[],$cargo,$ownClaims,$counts,$checks,$seller,$tariffs);
+                        if($partial!==null)$orders[$i]=$partial;
+                        continue;
+                    }
+                    $o['status']='Returned';
+                }
+                $orders[$i]['closed_loss']=closed_package_loss($o,$g['packages']??[],$g['rows']??[],$cargo,$g['claims']??[],$counts,$checks,$seller,$tariffs);
+            }
+        }
+    }
+    return $orders;
+}

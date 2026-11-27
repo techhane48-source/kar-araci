@@ -8,7 +8,7 @@ if (!$u['is_admin']) {
 }
 
 // İlk girişte şifre değiştirmeye zorla (güvenlik kilidi)
-if ($u['must_change_password'] && !($_POST['action'] ?? '')) {
+if ($u['must_change_password'] && !($_SERVER['REQUEST_METHOD']==='POST' && ($_POST['action']??'')==='password')) {
     $pageTitle = 'Şifre Değiştir — ' . APP_NAME;
     require __DIR__ . '/../includes/header.php';
     $err = '';

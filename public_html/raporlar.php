@@ -9,7 +9,7 @@ $mp = $_GET['mp'] ?? $mps[0];
 if (!in_array($mp, $mps, true)) $mp = $mps[0];
 
 $rapor = $_GET['r'] ?? 'order';
-$allowed = ['order', 'product', 'category', 'return', 'ads', 'campaign', 'buybox'];
+$allowed = ['order', 'product', 'category', 'return', 'ads', 'campaign', 'buybox', 'claims', 'order_finance', 'period_finance', 'product_finance', 'product_cost_evidence', 'cargo_effective'];
 if (!in_array($rapor, $allowed, true)) $rapor = 'order';
 
 $days = (int)($_GET['days'] ?? 30);
@@ -26,202 +26,151 @@ foreach (db()->query("SELECT * FROM products WHERE user_id = {$u['id']} AND mark
 $orders = db()->query("SELECT * FROM orders WHERE user_id = {$u['id']} AND marketplace = " . db()->quote($mp) . " AND order_date >= $fromTs ORDER BY order_date DESC")->fetchAll();
 foreach ($orders as &$o) $o['lines'] = json_decode($o['lines'] ?? '[]', true) ?: [];
 unset($o);
+$orders=cost_history_overlay(db(),(int)$u['id'],$orders);
 
-// ---- Rapor verileri ----
-$reportRows = [];
-$reportCols = [];
-$toplam = ['ciro' => 0.0, 'kar' => 0.0, 'maliyet' => 0.0];
-
-if ($rapor === 'order') {
-    $reportCols = ['Sipariş No', 'Tarih', 'Tutar', 'Kâr', 'Kâr Oranı', 'Kâr Marjı'];
-    foreach ($orders as $o) {
-        $sale = (float)$o['total_price'];
-        $pr = calc_order_profit($o, $byBarcode);
-        $reportRows[] = [
-            $o['order_number'],
-            date('d.m.Y', $o['order_date']),
-            $sale,
-            $pr['ok'] ? $pr['profit'] : null,
-            $pr['ok'] ? $pr['ratio'] : null,
-            $pr['ok'] ? $pr['margin'] : null,
-        ];
-        $toplam['ciro'] += $sale;
-        if ($pr['ok']) { $toplam['kar'] += $pr['profit']; $toplam['maliyet'] += $pr['cost']; }
+// Report semantics: only verified inputs; no fabricated advertising attribution or return loss.
+$reportRows=[];$reportCols=[];$summary=[];$reportNote='';
+$excludedCurrency=count(array_filter($orders,static fn($o)=>!order_is_domestic_try($o)));
+$money=static fn(float $n):string=>tl($n);
+if($rapor==='order'){
+    $orders=commission_profit_overlay(db(),(int)$u['id'],cargo_profit_overlay(db(),(int)$u['id'],$orders));
+    $reportCols=['Sipariş No','Tarih','Tutar','Tahmini Kâr','Kâr Oranı %','Kâr Marjı %','Kargo (KDV dahil tahmin)','Kargo kaynağı','Komisyon','Komisyon kaynağı','Durum'];
+    $sale=0.0;$knownSale=0.0;$profit=0.0;$count=0;$known=0;
+    foreach($orders as $o){
+        if(!order_is_active_sale($o))continue;
+        $pr=calc_order_profit($o,$byBarcode);$amount=(float)$o['total_price'];$sale+=$amount;$count++;
+        if($pr['ok']){$known++;$knownSale+=$amount;$profit+=$pr['profit'];}
+        $reportRows[]=[$o['order_number'],date('d.m.Y',(int)$o['order_date']),$amount,
+            $pr['ok']?$pr['profit']:null,$pr['ok']?$pr['ratio']:null,$pr['ok']?$pr['margin']:null,
+            $pr['ok']?$pr['cargo']:null,$pr['ok']?$pr['cargo_source']:($o['cargo_source']??null),$pr['ok']?$pr['commission']:null,$pr['ok']?$pr['commission_source']:($o['commission_source']??null),$pr['ok']?'Tahmini':($pr['reason']??'Veri eksik')];
     }
-} elseif ($rapor === 'product') {
-    $reportCols = ['Barkod', 'Ürün', 'Adet', 'Ciro', 'Maliyet', 'Kâr', 'Kâr Marjı'];
-    $agg = [];
-    foreach ($orders as $o) {
-        $sale = (float)$o['total_price'];
-        $pr = calc_order_profit($o, $byBarcode);
-        foreach ($o['lines'] as $l) {
-            $bc = $l['barcode'] ?? '';
-            $nm = $l['productName'] ?? ($byBarcode[$bc]['name'] ?? $bc);
-            $qty = max(1, (int)($l['quantity'] ?? 1));
-            if (!isset($agg[$bc])) $agg[$bc] = ['name' => $nm, 'adet' => 0, 'ciro' => 0.0, 'maliyet' => 0.0, 'kar' => 0.0];
-            $agg[$bc]['adet'] += $qty;
-            $agg[$bc]['ciro'] += (float)($l['price'] ?? 0) * $qty;
-            if (isset($byBarcode[$bc]) && (float)$byBarcode[$bc]['cost'] > 0) {
-                $agg[$bc]['maliyet'] += (float)$byBarcode[$bc]['cost'] * $qty;
-            }
-        }
-        if ($pr['ok']) { /* sipariş bazlı kâr ürünlere dağıtılmadı; ürün kârı aşağıda oranla */ }
+    $summary=['Ciro'=>$money($sale),'Hesaplanan ciro'=>$money($knownSale),'Tahmini kâr'=>$known?$money($profit):'—','Kapsam'=>"$known / $count",'Hesaplanamayan paket'=>$count-$known,'Hesaplanamayan ciro'=>$money($sale-$knownSale)];
+    $reportNote='Tarihli kullanıcı maliyeti veya ilk gözlem kullanılır. Ekstre yokken komisyon tahmini, eşleşen Sale ekstresi geldiğinde gerçek satış komisyonu kullanılır. İade ve düzeltme kayıtları otomatik olarak kesin kâr sayılmaz. Platform hizmet bedeli halen tahminidir; fatura mağaza düzeyinde ayrıca raporlanır. Güncel maliyet geçmişe uygulanmaz. Gerçek finansal mutabakat değildir.';
+}elseif($rapor==='order_finance'){
+    $reportCols=['Sipariş','Paket','Aktif satış tutarı','Tarihli / gözlemlenen maliyet','Tarihli maliyet adedi','İlk gözlem adedi','Satış komisyonu (ekstre)','Satış satıcı geliri (ekstre)','Finans alacak','Finans borç','Gönderi kargo (fatura)','İade kargo (fatura)','Diğer kargo','Bilinen kalemler sonrası fark (net kâr değil)','İade kalemi','Eşleşen finans','Eşleşmeyen / doğrulanmamış finans','Durum','Eksikler','Satış dışı ekstre hareketi','Satış dışı alacak eksi borç (kâr değil)','Hareket kanıtı','Pakete dağıtılamayan düzeltme adedi','Pakete dağıtılamayan alacak eksi borç (kâr değil)'];
+    $evidence=$mp==='trendyol'?load_order_evidence(db(),(int)$u['id'],array_column($orders,'order_number')):[];
+    $known=0;$matched=0;$unmatched=0;$subtotal=0.0;$subtotalN=0;
+    foreach($evidence as $e){
+        if($e['known_subtotal']!==null){$subtotal+=$e['known_subtotal'];$subtotalN++;}
+        if(!$e['issues'])$known++;
+        $matched+=$e['matched_finance'];$unmatched+=$e['unmatched_finance']+$e['unverified_finance'];
+        $reportRows[]=[$e['order_number'],$e['packages'],$e['invoice'],$e['observed_cost'],$e['dated_cost_units'],$e['first_observed_units'],$e['sale_commission'],$e['sale_revenue'],
+            $e['credit'],$e['debt'],$e['outbound_cargo'],$e['return_cargo'],$e['other_cargo'],$e['known_subtotal'],$e['claim_items'],$e['matched_finance'],
+            $e['unmatched_finance']+$e['unverified_finance'],$e['state'],implode('; ',$e['issues']),$e['adjustment_rows'],$e['adjustment_balance'],['matched'=>'Mevcut kayıtlar eşleşti','incomplete'=>'Eksik / uyuşmayan hareket','not_verified'=>'Kanıt yok'][$e['adjustment_state']]??'Kanıt yok',$e['unallocated_adjustment']['state']==='observed'?$e['unallocated_adjustment']['rows']:null,$e['unallocated_adjustment']['balance']];
     }
-    // Ürün kârını basitçe hesapla: ciro - maliyet - tahmini kesintiler yerine maliyet girdisi olanlarda oran bazlı
-    foreach ($agg as $bc => $a) {
-        $marj = $a['ciro'] > 0 && $a['maliyet'] > 0 ? (($a['ciro'] - $a['maliyet']) / $a['ciro']) * 100 : null;
-        $kar = ($a['maliyet'] > 0) ? ($a['ciro'] - $a['maliyet']) : null;
-        $reportRows[] = [$bc, $a['name'], $a['adet'], $a['ciro'], $a['maliyet'] > 0 ? $a['maliyet'] : null, $kar, $marj];
-        $toplam['ciro'] += $a['ciro']; $toplam['maliyet'] += $a['maliyet'];
-        if ($kar !== null) $toplam['kar'] += $kar;
+    $summary=['Sipariş'=>count($evidence),'Temel kalemler eşleşen'=>$known,'Eşleşen finans kaydı'=>$matched,'Eşleşmeyen / doğrulanmamış'=>$unmatched,'Bilinen kalemler sonrası fark'=>$subtotalN?$money($subtotal):'—','Fark hesabı kapsamı'=>$subtotalN.' / '.count($evidence)];
+    $reportNote='Sipariş oluşturulma tarihine göre seçilir; aynı siparişin bütün paketleri ve mevcut tüm tarihli finans/kargo kayıtları getirilir. Kargo sipariş seviyesindedir, paketlere dağıtılmaz. Satış komisyonu yalnızca tutarı doğrulanan Sale satırlarından gelir; komisyon düzeltmeleri alacak/borç içinde ayrı hareketlerdir. Satış dışı hareket farkı, yalnızca kimliği doğrulanan mevcut kayıtların alacak eksi borç toplamıdır; mevcut finans alacak/borç sütunlarına tekrar eklenmez. Paket ve barkod tutarları eşleştiğinde, iade/düzeltme yoksa satıcı gelirinden kayıtlı maliyet ve gözlemlenen gönderi kargosu çıkarılarak bilinen kalemler sonrası fark gösterilir. Komisyon yeniden düşülmez. KDV, hizmet, stopaj, reklam, diğer giderler ve henüz gelmemiş kayıtlar dahil değildir. Eksik değerler sıfır değildir. Bu rapor kesin kâr veya banka mutabakatı değildir. '.sync_coverage_label(db(),(int)$u['id'],$mp,'settlements_transaction',$fromTs,time());
+}elseif(in_array($rapor,['product','category'],true)){
+    $category=$rapor==='category';
+    $reportCols=$category?['Kategori','Adet','Ciro','Maliyeti bilinen ciro','Gözlemlenen maliyet','Kesintiler öncesi fark','Maliyeti eksik adet']:
+        ['Barkod','Ürün','Adet','Ciro','Maliyeti bilinen ciro','Gözlemlenen maliyet','Kesintiler öncesi fark','Maliyeti eksik adet'];
+    $agg=aggregate_report_lines($orders,$byBarcode,$category);$total=0.0;$covered=0.0;$cost=0.0;$missing=0;
+    foreach($agg['groups'] as $key=>$g){
+        $prefix=$category?[(string)$key]:[(string)$key,$g['name']];
+        $reportRows[]=array_merge($prefix,[$g['qty'],$g['sale'],$g['known_sale'],$g['qty']>$g['missing_qty']?$g['cost']:null,
+            $g['qty']>$g['missing_qty']?$g['known_sale']-$g['cost']:null,$g['missing_qty']]);
+        $total+=$g['sale'];$covered+=$g['known_sale'];$cost+=$g['cost'];$missing+=$g['missing_qty'];
     }
-} elseif ($rapor === 'category') {
-    $reportCols = ['Kategori', 'Adet', 'Ciro', 'Maliyet', 'Kâr'];
-    $agg = [];
-    foreach ($orders as $o) {
-        foreach ($o['lines'] as $l) {
-            $bc = $l['barcode'] ?? '';
-            $p = $byBarcode[$bc] ?? null;
-            $cat = $p['category'] ?? 'Bilinmeyen';
-            $qty = max(1, (int)($l['quantity'] ?? 1));
-            if (!isset($agg[$cat])) $agg[$cat] = ['adet' => 0, 'ciro' => 0.0, 'maliyet' => 0.0];
-            $agg[$cat]['adet'] += $qty;
-            $agg[$cat]['ciro'] += (float)($l['price'] ?? 0) * $qty;
-            if ($p && (float)$p['cost'] > 0) $agg[$cat]['maliyet'] += (float)$p['cost'] * $qty;
-        }
+    $summary=['Eşleşen ciro'=>$money($total),'Maliyeti bilinen ciro'=>$money($covered),'Gözlemlenen maliyet'=>$money($cost),'Eksik maliyet adedi'=>$missing];
+    $reportNote='Net kâr değildir; komisyon ve paket kargosu ürünlere dağıtılmadı. Tarihli kullanıcı maliyeti varsa önceliklidir; yoksa ilk gözlem kullanılır. Tutarı eşleşmeyen '.$agg['excluded'].' paket dışarıda.';
+}elseif($rapor==='claims'){
+    $reportCols=['İade talebi','Sipariş','Barkod','Ürün','Statü','İade sebebi','Son güncelleme','Eşleşme','Gözlemlenen birim maliyet','Depo kontrolü','Geri kazanılan maliyet','Stok değer kaybı (toplam iade zararı değil)'];
+    $q=db()->prepare("SELECT c.*,o.package_number AS matched_package,o.order_number AS matched_order,o.currency_code,o.country_code,o.lines,o.order_date
+        FROM trendyol_claim_items c LEFT JOIN orders o ON o.user_id=c.user_id AND o.marketplace='trendyol'
+        AND o.package_number=c.outbound_package AND o.order_number=c.order_number
+        WHERE c.user_id=? AND c.modified_ms>=? ORDER BY c.modified_ms DESC,c.item_id");
+    $q->execute([$u['id'],$fromTs*1000]);$states=[];$matched=0;$known=0;$claimRows=$q->fetchAll();
+    $claimOrders=[];foreach($claimRows as $row)if($row['matched_package']!==null)$claimOrders[$row['matched_package']]=['marketplace'=>'trendyol','package_number'=>$row['matched_package'],'order_number'=>$row['matched_order'],'currency_code'=>$row['currency_code'],'country_code'=>$row['country_code'],'lines'=>$row['lines'],'order_date'=>$row['order_date']];
+    $claimOrders=cost_history_overlay(db(),(int)$u['id'],$claimOrders);
+    $counts=return_accepted_counts(db(),(int)$u['id'],$claimRows);$checks=return_inventory_checks(db(),(int)$u['id'],$claimRows);$inventoryKnown=0;$inventoryAssumed=0;$inventoryLoss=0.0;
+    if($mp==='trendyol')foreach($claimRows as $row){
+        $order=$claimOrders[$row['matched_package']??'']??null;
+        $match=claim_order_match($row,$order);
+        $states[$row['status']]=($states[$row['status']]??0)+1;
+        if($match['state']==='Paket ve ürün satırı eşleşti')$matched++;
+        if($match['cost']!==null)$known++;
+        $inventory=return_inventory_evidence($row,$order,$counts[return_inventory_key($row)]??0,$checks[$row['item_id']]??null);
+        if($inventory['ready']){if($inventory['assumed'])$inventoryAssumed++;else $inventoryKnown++;$inventoryLoss+=$inventory['inventory_loss'];}
+        $reportRows[]=[$row['claim_id'],$row['order_number'],$row['barcode'],$row['product_name'],$row['status'],$row['reason'],date('d.m.Y H:i',intdiv((int)$row['modified_ms'],1000)),$match['state'].' / '.$match['scope'],$match['cost'],$inventory['state'],$inventory['recovery'],$inventory['inventory_loss']];
     }
-    foreach ($agg as $cat => $a) {
-        $kar = $a['maliyet'] > 0 ? ($a['ciro'] - $a['maliyet']) : null;
-        $reportRows[] = [$cat, $a['adet'], $a['ciro'], $a['maliyet'] > 0 ? $a['maliyet'] : null, $kar];
-        $toplam['ciro'] += $a['ciro']; $toplam['maliyet'] += $a['maliyet'];
-        if ($kar !== null) $toplam['kar'] += $kar;
+    $summary=['İade kalemi'=>count($reportRows),'Kabul edilmiş'=>$states['Accepted']??0,'Aksiyon bekleyen'=>$states['WaitingInAction']??0,'Eşleşen ürün satırı'=>$matched,'Maliyeti bilinen'=>$known,'Otomatik satışa uygun varsayılan'=>$inventoryAssumed,'Depo beyanı geçerli'=>$inventoryKnown,'Tahmini stok değer kaybı'=>($inventoryKnown+$inventoryAssumed)?$money($inventoryLoss):'—'];
+    $reportNote='İade kalemi durumu, finansal geri ödeme değildir. Tarih filtresi son güncelleme tarihine göre uygulanır. Tarihli maliyet önceliklidir; yoksa ilk gözlem kullanılır. Eşleşen kabul edilmiş iadelerde istisna işaretlenmediyse otomatik satışa uygun varsayılır; fiziki teslim veya durum doğrulanmış sayılmaz. Kullanıcı tarafından işaretlenen satılamaz ürünlerin maliyeti stok değer kaybı olarak gösterilir. Geri ödeme ve kargo payı dahil değildir. Toplam iade zararı hesaplanmaz. '.sync_coverage_label(db(),(int)$u['id'],$mp,'claims_query',$fromTs,time());
+}elseif($rapor==='return'||$rapor==='campaign'){
+    $types=$rapor==='return'?['Return','ManualRefund','ManualRefundCancel']:['Discount','DiscountCancel','Coupon','CouponCancel','TyDiscount','TyDiscountCancel','TyCoupon','TyCouponCancel'];
+    $reportCols=['Barkod','Ürün','İşlem türü','İşlem kaydı adedi','Alacak','Borç','Borç − alacak'];
+    $data=$mp==='trendyol'?product_movement_period(db(),(int)$u['id'],$fromTs,time()+1,$types):['groups'=>[],'count'=>0,'credit'=>0,'debt'=>0,'excluded'=>0];
+    foreach($data['groups'] as $row){$bc=$row['barcode'];$c=$row['credit']/10000.0;$d=$row['debt']/10000.0;
+        $reportRows[]=[$bc,$byBarcode[$bc]['name']??$bc,$row['type'],$row['count'],$c,$d,$d-$c];}
+    $summary=['Finansal işlem kaydı'=>$data['count'],'Alacak'=>$data['count']?$money($data['credit']/10000.0):'—','Borç'=>$data['count']?$money($data['debt']/10000.0):'—','Borç − alacak'=>$data['count']?$money(($data['debt']-$data['credit'])/10000.0):'—','Doğrulanamayan kayıt'=>$data['excluded']];
+    $reportNote=$rapor==='return'?'Finansal işlem adedi ürün iade adedi değildir. İade tutarı, yeniden satılabilirlik ve gerçek kargo maliyeti eşleşmeden iade zararı hesaplanmaz.':'Satıcı ve Trendyol kaynaklı indirim/kuponlar ayrı işlem türleridir; iptaller dahil. Tarih finansal işlem tarihidir; kampanya kârlılığı değildir.';
+}elseif($rapor==='cargo_effective'){
+    $reportCols=['Sipariş','Kargo firması','Güncel API desisi','İlk tahmin','Güncel tarife tahmini (KDV dahil)','Faturalanan desi toplamı','Fatura gönderi tutarı (API)','Seçilen kargo tutarı','Kâr hesabına uygun brüt tutar','Fatura kalemi','Durum','Brüt fatura - tarife tahmini','Fatura desisi - API desisi','Avantajlı barem senaryosu (KDV dahil)'];
+    $data=$mp==='trendyol'?cargo_effective_report(db(),(int)$u['id'],array_column($orders,'order_number')):[];$known=0;$estimated=0;
+    foreach($data as $no=>$a){$reportRows[]=[(string)$no,$a['carrier'],$a['api_desi']===null?null:number_format($a['api_desi'],2,'.',''),$a['initial_estimate'],$a['estimate'],$a['billed_desi']===null?null:number_format($a['billed_desi'],2,'.',''),$a['invoiced'],$a['selected'],$a['gross_for_profit'],$a['invoice_rows'],$a['state'],$a['gross_difference'],$a['desi_difference']===null?null:number_format($a['desi_difference'],2,'.',''),$a['fast_scenario']];if($a['invoiced']!==null)$known++;elseif($a['selected']!==null)$estimated++;}
+    $tariffState=cargo_tariff_status(cargo_tariffs(),(new DateTimeImmutable('now',new DateTimeZone('Europe/Istanbul')))->format('Y-m-d'));
+    $summary=['Sipariş'=>count($data),'Fatura kaydı olan'=>$known,'Tarife tahmini olan'=>$estimated,'Diğer'=>count($data)-$known-$estimated,'Bugünkü tarife'=>['operator_reference'=>'Yönetici referansı','document_reference'=>'5 Ekim 2026 son bilinen standart PDF','secondary_partial'=>'Sınırlı ikincil kaynak','missing'=>'Geçerli tarife yok','conflict'=>'Çakışma'][$tariffState['state']]];
+    $reportNote='İlk gönderim öncesi tahmin ayrı saklanır. Kayıtlı desi, firma ve sipariş tarihi ile tarife değişince rapor açılışında yeniden hesaplanır; eski gözlem bağlamı olmayan kayıtlar bir sonraki sipariş senkronunu bekler. Kargoya verilince API desisi ve kargo firması her senkronizasyonda yeniden değerlendirilir; sipariş tarihindeki tarife ile güncel tahmin hesaplanır. Faturalanan desi ayrı gösterilir. Sonradan ilk kez alınan gönderilmiş siparişte ilk tahmin yoktur. Tek paketli siparişte doğrulanan gönderi faturası tutarı tahminin yerini alır; ikisi toplanmaz. Çoklu paketler ayrıca incelenir. Otomatik tutar farkı sadece tek paket, tek gönderi kalemi, iadesiz ve brüt KDV temeli aritmetik olarak uyumlu kayıtlarda hesaplanır; fark fazla ücretin kesin kanıtı değildir. Fatura API tutarının KDV niteliği doğrulanmalıdır. Kâr ekranlarında faturanın tüm detayları ve toplam borç tutarıyla tek anlamlı KDV uyumu aranır; bu bir muhasebe varsayımıdır, canlı doğrulama gerekir. 5 Ekim 2026 standart desi referansı yüklenen PDF belgesinden gelir; son bilinen liste olup sonraki değişiklikler doğrulanmadı. Barem kapsamına uygun olduğu varsayılan 350 TL altı ve en fazla 10 desili, ilk oluşturulan paketlerde 27 Kasım 2026 tarihinde yeniden kontrol edilen ikincil kaynak tarifesinden standart ücret tahmin edilir. Avantajlı senaryo yalnız faturası bulunmayan tek paketli siparişte ayrı gösterilir; kâra avantaj indirimi uygulanmaz. Sipariş tarihi tarife seçimi için tahmini vekildir; barem uygulamasının taşıma tarihi ve uygunluk koşulları bağımsız doğrulanmadı. Yeni tarihli resmî tarife sunucu yöneticisi tarafından eklenebilir.';
+}elseif($rapor==='product_cost_evidence'){
+    $reportCols=['Barkod','Ürün','Eşleşen sipariş','Adet','Satış alacağı','Satış komisyonu','Satıcı geliri','Kayıtlı alış maliyeti','Kargo öncesi fark','Kargosu doğrudan eşleşen sipariş','Bu siparişlerin kargosu','Yalnız bu siparişlerin kargo sonrası farkı'];
+    $data=$mp==='trendyol'?product_cost_evidence(db(),(int)$u['id'],array_column($orders,'order_number')):['groups'=>[],'orders'=>0,'matched'=>0,'shared_orders'=>0,'shared_cargo'=>null];
+    foreach($data['groups'] as $bc=>$g)$reportRows[]=[(string)$bc,$byBarcode[$bc]['name']??'Katalogda yok',$g['orders'],$g['units'],$g['sale']/10000.0,$g['commission']/10000.0,$g['revenue']/10000.0,$g['cost']/10000.0,$g['before_shared_cargo']/10000.0,$g['cargo_orders'],$g['cargo_orders']?$g['cargo']/10000.0:null,$g['cargo_orders']?$g['after_cargo']/10000.0:null];
+    $summary=['Sipariş kapsamı'=>$data['matched'].' / '.$data['orders'],'Ortak kargolu sipariş'=>$data['shared_orders'],'Dağıtılmayan ortak kargo'=>$data['shared_cargo']===null?'—':$money($data['shared_cargo']),'Kesin ürün net kârı'=>'—'];
+    $reportNote='Sipariş oluşturulma tarihi bazında seçilen, paket/barkod/finans/maliyet ve gözlemlenen gönderi kargosu eşleşen siparişler. İade ve düzeltme içeren veya eksik siparişler dışarıda. İlk gözlem maliyeti gerçek alış tarihini kanıtlamaz. Tek barkodlu siparişte kargo bir kez düşülür; çok barkodlu siparişte ortak kargo dağıtılmaz. Kargo sonrası sütun yalnız doğrudan eşleşen alt kümeyi kapsar, tüm satışları değil. KDV, stopaj, hizmet ve reklam giderleri dahil değildir. Kesin net kâr değildir. '.sync_coverage_label(db(),(int)$u['id'],$mp,'settlements_transaction',$fromTs,time());
+}elseif($rapor==='product_finance'){
+    $reportCols=['Barkod','Ürün','Satış hareketi','Satış alacağı','Satış komisyonu','Satıcı satış geliri','İade hareketi','İade borcu','İade komisyonu','İade satıcı geliri azalması','Kampanya hareketi','Kampanya satıcı geliri farkı (işaretli)','Diğer hareket','Toplam hareket'];
+    $data=$mp==='trendyol'?product_finance_period(db(),(int)$u['id'],$fromTs,time()+1):['groups'=>[],'excluded'=>0,'gaps'=>[]];
+    $sales=0;$returns=0;$campaigns=0;
+    foreach($data['groups'] as $bc=>$g){
+        $reportRows[]=[(string)$bc,$byBarcode[$bc]['name']??'Katalogda yok',$g['sale_n'],$g['sale_n']?$g['sale_credit']/10000.0:null,
+            $g['sale_n']?$g['sale_commission']/10000.0:null,$g['sale_n']?$g['sale_revenue']/10000.0:null,
+            $g['return_n'],$g['return_n']?$g['return_debt']/10000.0:null,$g['return_n']?$g['return_commission']/10000.0:null,
+            $g['return_n']?$g['return_revenue']/10000.0:null,$g['campaign_n'],$g['campaign_n']?$g['campaign_candidate']/10000.0:null,$g['adjustments'],$g['rows']];
+        $sales+=$g['sale_n'];$returns+=$g['return_n'];$campaigns+=$g['campaign_n'];
     }
-} elseif ($rapor === 'return') {
-    $reportCols = ['Barkod', 'Ürün', 'İade Adedi', 'İade Tutarı', 'Kargo Zararı', 'Mikro İade', 'Toplam İade Zararı', 'İade/Satış %'];
-    // Satış toplamı barkod bazında (iade-satış oranı için)
-    $saleMap = [];
-    foreach ($orders as $o) {
-        foreach ($o['lines'] as $l) {
-            $bc = $l['barcode'] ?? '';
-            $saleMap[$bc] = ($saleMap[$bc] ?? 0) + (float)($l['price'] ?? 0) * max(1, (int)($l['quantity'] ?? 1));
-        }
+    $summary=['Barkod'=>count($reportRows),'Satış hareketi'=>$sales,'İade hareketi'=>$returns,'Kampanya hareketi'=>$campaigns,'Hariç tutulan'=>$data['excluded'],'Kesin ürün net kârı'=>'—'];
+    $reportNote='İşlem tarihi bazında otomatik cari ekstre kayıtları. Satış komisyonu ve iade komisyonu ayrı gösterilir, satıcı gelirinden tekrar düşülmez. Hareket adedi ürün adedi değildir. Kampanya tutarı gelecekteki teklif değil, gerçekleşmiş finans hareketidir; Trendyol katkısı ve düzeltmeler ayrı değerlendirilmelidir. Kargo, maliyet, stok geri kazanımı, KDV, hizmet ve reklam giderleri bu tabloya dağıtılmaz. Bu rapor net kâr değildir; boş değer sıfır değildir. '.sync_coverage_label(db(),(int)$u['id'],$mp,'settlements_transaction',$fromTs,time());
+}elseif($rapor==='period_finance'){
+    $reportCols=['Finans hareketi','Kayıt adedi','Alacak (TL)','Borç (TL)','Borç − alacak (TL)'];
+    $data=$mp==='trendyol'?period_finance(db(),(int)$u['id'],$fromTs,time()):['groups'=>[],'excluded'=>0,'coverage'=>[]];
+    foreach($data['groups'] as $label=>$g)$reportRows[]=[$label,$g['count'],$g['credit']/10000.0,$g['debt']/10000.0,($g['debt']-$g['credit'])/10000.0];
+    $summary=['Hareket grubu'=>count($reportRows),'Doğrulanamayan kayıt'=>$data['excluded'],'Kesin dönem net kârı'=>'—'];
+    $reportNote='İşlem tarihine göre mevcut yurtiçi finansal kayıtlar. Hizmet bedeli resmî filtre ve genel ekstre eşleşmesiyle sınıflanır; kargo faturasıyla çelişen sınıflama kabul edilmez. Stopaj iptalleri alacak olarak net kesintiyi azaltır. Bu tutarlar sipariş tahminlerine ikinci kez eklenmez. Reklam açıklamaları adaydır; gerçek reklam harcaması veya ROAS değildir. Kargo fatura detayı ayrıca toplanmaz. Stopaj nakit kesintisidir; bu tablo net kâr değildir. Kayıt yoksa sıfır gider kabul edilmez.';
+    foreach(['settlements_transaction'=>'Ekstre','documents_transaction'=>'Belgeler','service_fee_transaction'=>'Hizmet bedeli'] as $job=>$label)$reportNote.=' '.$label.': '.sync_coverage_label(db(),(int)$u['id'],$mp,$job,$fromTs,time());
+}elseif($rapor==='buybox'){
+    $reportCols=['Barkod','Ürün','Bizim Fiyat','Buybox Sırası','Buybox Fiyatı','Fiyat Farkı','Son Sorgu','Güncellik'];
+    $integration=get_integration((int)$u['id'],$mp);
+    $data=[];
+    if($mp==='trendyol'&&$integration){
+        $q=db()->prepare("SELECT * FROM trendyol_buybox WHERE user_id=? AND seller_id=?");
+        $q->execute([$u['id'],$integration['seller_id']]);foreach($q->fetchAll() as $row)$data[$row['barcode']]=$row;
     }
-    $agg = [];
-    $rows = db()->query("SELECT barcode, COUNT(*) c, SUM(debt) tutar FROM settlements WHERE user_id = {$u['id']} AND marketplace = " . db()->quote($mp) . " AND transaction_type = 'İade' AND transaction_date >= $fromTs GROUP BY barcode")->fetchAll();
-    foreach ($rows as $r) {
-        $bc = $r['barcode'];
-        $p = $byBarcode[$bc] ?? null;
-        $adet = (int)$r['c'];
-        $iade = (float)$r['tutar'];
-        $maliyet = $p ? (float)$p['cost'] * $adet : 0.0;
-        // Kargo zararı: iade başına kargo ücreti (ürün cargo * adet)
-        $kargoZarari = $p ? (float)$p['cargo'] * $adet : 0.0;
-        // Mikro iade: iade tutarının %2'si (tahmini mikro iade kaybı)
-        $mikroIade = $iade * 0.02;
-        $toplamZarar = $iade + $maliyet + $kargoZarari + $mikroIade;
-        $sale = $saleMap[$bc] ?? 0.0;
-        $oran = $sale > 0 ? $iade / $sale * 100 : null;
-        $agg[] = [$bc, $p['name'] ?? $bc, $adet, $iade, $kargoZarari, $mikroIade, $toplamZarar, $oran];
-        $toplam['ciro'] += $iade;
-        $toplam['maliyet'] += $maliyet + $kargoZarari;
-        $toplam['kar'] += $toplamZarar;
+    $known=0;$first=0;
+    foreach($byBarcode as $bc=>$product){
+        $bb=$data[$bc]??null;$price=(float)$product['price'];$bp=$bb&&(float)$bb['buybox_price']>0?(float)$bb['buybox_price']:null;
+        $rank=$bb&&(int)$bb['buybox_rank']>0?(int)$bb['buybox_rank']:null;
+        if($rank!==null){$known++;if($rank===1)$first++;}
+        $reportRows[]=[(string)$bc,$product['name'],$price,$rank,$bp,$bp===null?null:$price-$bp,$bb?date('d.m.Y H:i',(int)$bb['checked_at']):null,buybox_is_fresh($bb,time())?'Son 1 saat':'Eski / veri yok'];
     }
-    usort($agg, fn($a, $b) => $b[3] <=> $a[3]);
-    $reportRows = $agg;
-} elseif ($rapor === 'ads') {
-    $reportCols = ['Barkod', 'Ürün', 'Reklam Harcaması', 'Bakiye', 'Influencer Kesintisi', 'Reklam Satışı', 'Net Kâr', 'Reklam/Satış %'];
-    // Satış toplamı barkod bazında
-    $saleMap = [];
-    foreach ($orders as $o) {
-        foreach ($o['lines'] as $l) {
-            $bc = $l['barcode'] ?? '';
-            $saleMap[$bc] = ($saleMap[$bc] ?? 0) + (float)($l['price'] ?? 0) * max(1, (int)($l['quantity'] ?? 1));
-        }
+    $summary=['Ürün'=>count($byBarcode),'Sırası bilinen'=>$known,'Birinci sırada'=>$first];
+    $reportNote='Pazar Zekası ekranında sorgulanan resmî Buybox verilerinin son görüntüsü. Tarih filtresi uygulanmaz; sorgu zamanı gösterilir.';
+}else{
+    $reportCols=['İşlem tarihi','Belge kimliği','İşlem açıklaması','Alacak','Borç'];
+    $q=db()->prepare("SELECT transaction_date,external_id,transaction_type,raw_json FROM trendyol_financial_documents WHERE user_id=? AND transaction_date>=? ORDER BY transaction_date DESC");
+    $q->execute([$u['id'],$fromTs]);$credit=0.0;$debt=0.0;
+    if($mp==='trendyol')foreach($q->fetchAll() as $row){
+        $raw=json_decode($row['raw_json'],true)?:[];if(!finance_is_domestic($raw))continue;$label=(string)$row['transaction_type'].' '.(string)($raw['description']??'');
+        if(!preg_match('/reklam|influencer|advertis/i',$label))continue;
+        $c=is_numeric($raw['credit']??null)?(float)$raw['credit']:null;$d=is_numeric($raw['debt']??null)?(float)$raw['debt']:null;
+        $reportRows[]=[date('d.m.Y',(int)$row['transaction_date']),(string)$row['external_id'],$label,$c,$d];
+        $credit+=$c??0;$debt+=$d??0;
     }
-    // Reklam harcaması: settlements'ta reklam ile ilgili transaction_type'lar
-    $adRows = db()->query("SELECT barcode, transaction_type, SUM(debt) tutar FROM settlements WHERE user_id = {$u['id']} AND marketplace = " . db()->quote($mp) . " AND (transaction_type = 'Reklam' OR transaction_type = 'Ads' OR transaction_type LIKE '%reklam%' OR transaction_type LIKE '%influencer%') AND transaction_date >= $fromTs GROUP BY barcode, transaction_type")->fetchAll();
-    $adMap = [];
-    foreach ($adRows as $r) {
-        $bc = $r['barcode'];
-        if (!isset($adMap[$bc])) $adMap[$bc] = ['harcama' => 0.0, 'influencer' => 0.0, 'bakiye' => 0.0];
-        $tt = strtolower($r['transaction_type']);
-        if (str_contains($tt, 'influencer')) $adMap[$bc]['influencer'] += (float)$r['tutar'];
-        elseif (str_contains($tt, 'bakiye')) $adMap[$bc]['bakiye'] += (float)$r['tutar'];
-        else $adMap[$bc]['harcama'] += (float)$r['tutar'];
-    }
-    $agg = [];
-    foreach ($adMap as $bc => $d) {
-        $p = $byBarcode[$bc] ?? null;
-        $sale = $saleMap[$bc] ?? 0.0;
-        $harcama = $d['harcama'];
-        $influencer = $d['influencer'];
-        $bakiye = $d['bakiye'];
-        $toplamReklam = $harcama + $influencer;
-        $netKar = $sale - $toplamReklam;
-        $oran = $sale > 0 ? $toplamReklam / $sale * 100 : null;
-        $agg[] = [$bc, $p['name'] ?? $bc, $harcama, $bakiye, $influencer, $sale > 0 ? $sale : null, $netKar, $oran];
-        $toplam['ciro'] += $toplamReklam;
-        $toplam['maliyet'] += $sale;
-        $toplam['kar'] += $netKar;
-    }
-    usort($agg, fn($a, $b) => $b[6] <=> $a[6]);
-    $reportRows = $agg;
-} elseif ($rapor === 'buybox') {
-    $reportCols = ['Barkod', 'Ürün', 'Satış Fiyatı', 'Kategori En Düşük', 'Fiyat Farkı'];
-    // Buybox durumu: barkodunda "buybox" işareti olan ürünler buybox sahibi sayılır;
-    // fiyat farkı = ürün fiyatı ile aynı kategorideki en düşük fiyat arasındaki fark.
-    // Kategori bazında en düşük fiyat hesapla.
-    $minByCat = [];
-    foreach ($byBarcode as $bc => $p) {
-        $cat = $p['category'] ?? 'Diğer';
-        $pr = (float)($p['price'] ?? 0);
-        if ($pr <= 0) continue;
-        if (!isset($minByCat[$cat]) || $pr < $minByCat[$cat]) $minByCat[$cat] = $pr;
-    }
-    $agg = [];
-    foreach ($byBarcode as $bc => $p) {
-        $price = (float)($p['price'] ?? 0);
-        $cat = $p['category'] ?? 'Diğer';
-        $minPrice = $minByCat[$cat] ?? $price;
-        $diff = $price - $minPrice;
-        $agg[] = [$bc, $p['name'] ?? $bc, $price, $minPrice, $diff];
-        $toplam['ciro'] += $price;
-        $toplam['maliyet'] += $minPrice;
-        $toplam['kar'] += $diff;
-    }
-    // büyükten küçüğe fiyat farkına göre sırala
-    usort($agg, fn($a, $b) => $b[4] <=> $a[4]);
-    $reportRows = $agg;
-} elseif ($rapor === 'campaign') {
-    $reportCols = ['Barkod', 'Ürün', 'Kupon', 'İndirim', 'Toplam Kampanya', 'Satış', 'Kampanya/Satış %'];
-    $aggMap = [];
-    $rows = db()->query("SELECT barcode, transaction_type, SUM(debt) tutar FROM settlements WHERE user_id = {$u['id']} AND marketplace = " . db()->quote($mp) . " AND transaction_type IN ('Kupon','İndirim') AND transaction_date >= $fromTs GROUP BY barcode, transaction_type")->fetchAll();
-    foreach ($rows as $r) {
-        $bc = $r['barcode'];
-        if (!isset($aggMap[$bc])) $aggMap[$bc] = ['kupon' => 0.0, 'indirim' => 0.0];
-        if ($r['transaction_type'] === 'Kupon') $aggMap[$bc]['kupon'] += (float)$r['tutar'];
-        else $aggMap[$bc]['indirim'] += (float)$r['tutar'];
-    }
-    $saleMap = [];
-    foreach ($orders as $o) {
-        foreach ($o['lines'] as $l) {
-            $bc = $l['barcode'] ?? '';
-            $saleMap[$bc] = ($saleMap[$bc] ?? 0) + (float)($l['price'] ?? 0) * max(1, (int)($l['quantity'] ?? 1));
-        }
-    }
-    $agg = [];
-    foreach ($aggMap as $bc => $d) {
-        $p = $byBarcode[$bc] ?? null;
-        $toplamK = $d['kupon'] + $d['indirim'];
-        $sale = $saleMap[$bc] ?? 0.0;
-        $oran = $sale > 0 ? $toplamK / $sale * 100 : null;
-        $agg[] = [$bc, $p['name'] ?? $bc, $d['kupon'], $d['indirim'], $toplamK, $sale > 0 ? $sale : null, $oran];
-        $toplam['ciro'] += $toplamK;
-        $toplam['maliyet'] += $sale;
-    }
-    // büyükten küçüğe sırala
-    usort($agg, fn($a, $b) => $b[4] <=> $a[4]);
-    $reportRows = $agg;
+    $summary=['Eşleşen belge'=>count($reportRows),'Bilinen alacak'=>$money($credit),'Bilinen borç'=>$money($debt)];
+    $reportNote='Belge açıklamasında reklam veya influencer ifadesi bulunan finansal kayıtlar. Reklam kaynaklı satış ve ROAS için ayrı doğrulanmış veri gerekir; tüm satışlar reklam satışı kabul edilmez.';
+}
+if(in_array($rapor,['return','campaign','ads'],true)){
+    $job=$rapor==='ads'?'documents':'settlements';
+    $q=db()->prepare("SELECT state,last_success FROM sync_status WHERE user_id=? AND marketplace=? AND job=?");$q->execute([$u['id'],$mp,$job]);$st=$q->fetch();
+    $reportNote.=' '.sync_coverage_label(db(),(int)$u['id'],$mp,$job.'_transaction',$fromTs,time()).' Son başarılı senkron: '.($st&&!empty($st['last_success'])?date('d.m.Y H:i',(int)$st['last_success']):'yok').'. Son işlem: '.($st['state']??'bilinmiyor').'. Kapsamı doğrulanmamış eski finans kayıtları tekrar çekilmeli.';
 }
 
 // CSV indir
@@ -231,18 +180,24 @@ if (isset($_GET['export'])) {
     echo "\xEF\xBB\xBF";
     $out = fopen('php://output', 'w');
     fputcsv($out, $reportCols);
-    foreach ($reportRows as $r) fputcsv($out, array_map(fn($v) => is_float($v) ? number_format($v, 2, '.', '') : $v, $r));
+    foreach ($reportRows as $r) fputcsv($out, array_map(fn($v) => is_float($v) ? number_format($v, 2, '.', '') : (is_string($v)?csv_safe_text($v):$v), $r));
     fclose($out);
     exit;
 }
 
 $raporLabels = [
     'order' => 'Sipariş Kârlılık Analizi',
+    'order_finance' => 'Sipariş Finansal Eşleştirme',
+    'period_finance' => 'Dönem Finans Hareketleri',
+    'product_finance' => 'Ürün Finansal Hareketleri',
+    'product_cost_evidence' => 'Ürün Satış / Maliyet Eşleştirmesi',
+    'cargo_effective' => 'Tahmini / Faturalanmış Kargo',
     'product' => 'Ürün Kârlılık Analizi',
     'category' => 'Kategori Kârlılık Analizi',
-    'return' => 'İade Zarar Analizi',
-    'ads' => 'Reklam Kârlılık Analizi',
-    'campaign' => 'Kampanya Kârlılık Analizi',
+    'claims' => 'İade Talepleri ve Durumları',
+    'return' => 'İade Finansal Hareketleri',
+    'ads' => 'Reklam Finansal Belgeleri',
+    'campaign' => 'Kampanya Finansal Hareketleri',
     'buybox' => 'Fiyat Pozisyonu (Buybox)',
 ];
 
@@ -255,50 +210,36 @@ $pageRows = array_slice($reportRows, ($page - 1) * $per, $per);
 $pageTitle = 'Raporlar — ' . APP_NAME;
 require __DIR__ . '/../includes/header.php';
 ?>
-<div class="page-head">
-  <h1>Raporlar</h1>
-  <p class="muted">Kârlılık analizleri · <a href="raporlar.php?r=<?= h($rapor) ?>&mp=<?= urlencode($mp) ?>&days=<?= $days ?>&export=1">⬇ Raporu İndir (CSV)</a></p>
+<div class="wrap"><div class="page-head">
+  <h1>Finans ve Raporlar</h1><?php if($rapor==='claims'&&$mp==='trendyol'): ?><p><a class="btn-ghost" href="iade-kontrol.php">İade depo kontrolü</a></p><?php endif; ?>
+  <p class="muted">Kârlılık analizleri · <a href="maliyet-senaryosu.php">Özel maliyet senaryosu</a> · <a href="raporlar.php?r=<?= h($rapor) ?>&mp=<?= urlencode($mp) ?>&days=<?= $days ?>&export=1">⬇ Raporu İndir (CSV)</a></p>
 </div>
 
-<div class="card">
-  <form method="get" style="display:flex;flex-wrap:wrap;gap:10px;align-items:end">
+<form method="get" class="ui-filterbar">
     <input type="hidden" name="mp" value="<?= h($mp) ?>">
     <label style="display:flex;flex-direction:column;gap:4px;font-size:13px">Rapor Seçin
-      <select name="r" onchange="this.form.submit()" style="padding:8px">
-        <?php foreach ($raporLabels as $k => $lbl): ?>
-          <option value="<?= $k ?>" <?= $rapor === $k ? 'selected' : '' ?>><?= h($lbl) ?></option>
-        <?php endforeach; ?>
-      </select>
+      <select name="r"><?php foreach(['Satış ve kâr'=>['order','product','category','product_cost_evidence'],'Finans hareketleri'=>['period_finance','order_finance','product_finance','ads','campaign'],'Kargo ve iadeler'=>['cargo_effective','claims','return'],'Fiyat rekabeti'=>['buybox']] as $group=>$keys):?><optgroup label="<?=h($group)?>"><?php foreach($keys as $k):?><option value="<?=h($k)?>" <?=$rapor===$k?'selected':''?>><?=h($raporLabels[$k])?></option><?php endforeach;?></optgroup><?php endforeach;?></select>
     </label>
     <label style="display:flex;flex-direction:column;gap:4px;font-size:13px">Tarih
-      <select name="days" onchange="this.form.submit()" style="padding:8px">
+      <select name="days">
         <?php foreach ([7 => 'Son 7 gün', 15 => 'Son 15 gün', 30 => 'Son 30 gün', 90 => 'Son 90 gün'] as $d => $lbl): ?>
           <option value="<?= $d ?>" <?= $days === $d ? 'selected' : '' ?>><?= $lbl ?></option>
         <?php endforeach; ?>
       </select>
     </label>
-  </form>
-</div>
-
-<div class="card">
-  <div style="display:flex;gap:24px;flex-wrap:wrap;margin-bottom:12px">
-    <div><div class="muted" style="font-size:12px">Ciro</div><div style="font-weight:700"><?= tl($toplam['ciro']) ?></div></div>
-    <?php if ($rapor !== 'return'): ?>
-      <div><div class="muted" style="font-size:12px">Ürün Maliyeti</div><div style="font-weight:700"><?= tl($toplam['maliyet']) ?></div></div>
-      <div><div class="muted" style="font-size:12px">Kâr</div><div style="font-weight:700;color:<?= $toplam['kar'] < 0 ? '#e11d48' : '#16a34a' ?>"><?= tl($toplam['kar']) ?></div></div>
-    <?php else: ?>
-      <div><div class="muted" style="font-size:12px">İade Adedi</div><div style="font-weight:700"><?= $toplam['kar'] ?></div></div>
-    <?php endif; ?>
-  </div>
+<button class="btn-primary">Raporu göster</button></form>
+<section class="card ui-report-summary"><h2><?=h($raporLabels[$rapor]??'Rapor')?></h2><details class="ui-disclosure"><summary>Bu rapor nasıl hesaplanıyor?</summary><div class="ui-detail-body"><p class="hint"><?=h($reportNote)?></p></div></details>
+  <?php if(in_array($rapor,['order','product','category'],true)&&$excludedCurrency): ?><p class="hint"><?= $excludedCurrency ?> paket ülke/para birimi doğrulanmadığından kapsam dışı.</p><?php endif; ?>
+  <div class="ui-report-metrics"><?php foreach($summary as $label=>$value):?><div><span><?=h($label)?></span><strong><?=h((string)$value)?></strong></div><?php endforeach;?></div></section><div class="card table-card">
 
     <table>
       <tr><?php foreach ($reportCols as $c): ?><th><?= h($c) ?></th><?php endforeach; ?></tr>
-      <?php if (!$reportRows): ?><tr><td colspan="<?= count($reportCols) ?>" class="muted">Kayıt yok.</td></tr><?php endif; ?>
+      <?php if (!$reportRows): ?><tr><td colspan="<?= count($reportCols) ?>" class="muted">Kapsamda kayıt yok veya henüz senkronize edilmedi.</td></tr><?php endif; ?>
       <?php foreach ($pageRows as $r): ?>
         <tr>
           <?php foreach ($r as $i => $v): ?>
             <?php if ($v === null): ?><td class="muted">—</td>
-            <?php elseif (is_float($v)): ?><td class="tar"><?= tl($v) ?></td>
+            <?php elseif (is_float($v)): ?><td class="tar"><?= str_ends_with($reportCols[$i],'%') ? '%'.number_format($v,2,',','.') : tl($v) ?></td>
             <?php elseif ($i === 0): ?><td style="font-family:monospace;font-size:12px"><?= h((string)$v) ?></td>
             <?php else: ?><td><?= h((string)$v) ?></td><?php endif; ?>
           <?php endforeach; ?>
@@ -317,5 +258,5 @@ require __DIR__ . '/../includes/header.php';
         <?php endfor; ?>
       </div>
     <?php endif; ?>
-</div>
+</div></div>
 <?php require __DIR__ . '/../includes/footer.php'; ?>

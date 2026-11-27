@@ -5,12 +5,35 @@ require_once __DIR__ . '/../includes/xlsx.php';
 
 $u = require_login();
 $pro = is_pro($u);
+header('Cache-Control: no-store, private');
+
+// Direct cost entry: explicit historical scope, exact tenant-owned product, no file needed.
+if($_SERVER['REQUEST_METHOD']==='POST'&&($_POST['action']??'')==='direct_cost'){
+    if(!csrf_verify(is_string($_POST['csrf']??null)?$_POST['csrf']:null)){http_response_code(403);exit('Geçersiz oturum.');}
+    try{
+        foreach(['pid','cost','vat','scope'] as $key)if(!is_string($_POST[$key]??null))throw new InvalidArgumentException('Maliyet, KDV ve geçerlilik kapsamı gerekli.');
+        if(!in_array($_POST['vat'],['1','10','20'],true))throw new InvalidArgumentException('Alış KDV oranı %1, %10 veya %20 olmalıdır.');
+        if(!ctype_digit($_POST['pid']))throw new InvalidArgumentException('Ürün geçersiz.');
+        $uid=(int)$u['id'];$pid=(int)$_POST['pid'];$scope=$_POST['scope'];
+        if(!in_array($scope,['today','first_sale'],true))throw new InvalidArgumentException('Geçerlilik kapsamını seçin.');
+        $res=with_marketplace_lock($uid,'trendyol',static function()use($uid,$pid,$scope){
+            $q=db()->prepare("SELECT barcode FROM products WHERE user_id=? AND id=? AND marketplace='trendyol' AND barcode<>''");$q->execute([$uid,$pid]);$bc=$q->fetchColumn();
+            if($bc===false)throw new InvalidArgumentException('Ürün bulunamadı.');
+            $values=$scope==='first_sale'?cost_history_first_sale_values([(string)$bc],$_POST['cost'],$_POST['vat']):cost_history_group_values([(string)$bc],date('Y-m-d'),$_POST['cost'],$_POST['vat']);
+            return ['ok'=>true]+cost_history_save(db(),$uid,$values,false,$scope==='first_sale'?'first_sale':'manual',true);
+        });
+        if(empty($res['ok']))throw new InvalidArgumentException($res['error']??'Maliyet kaydedilemedi.');
+        flash_set('success','Maliyet ve alış KDV oranı kaydedildi.');
+    }catch(InvalidArgumentException|RuntimeException $e){flash_set('error',$e->getMessage());}
+    catch(Throwable $e){flash_set('error','Maliyet kaydedilemedi; önceki kayıtlar korundu.');}
+    e_redirect('urunler.php?q='.urlencode(is_string($_POST['q']??null)?$_POST['q']:'').'&page='.max(1,(int)($_POST['page']??1)).'&open='.max(0,(int)($_POST['open']??0)).'&vp='.max(1,(int)($_POST['vp']??1)));
+}
 
 // ---- Maliyet şablonu indir (Melontik formatı: 14 kolon) ----
 if (($_GET['export'] ?? '') === 'maliyet') {
     $bos = (($_GET['bos'] ?? '') === '1');
     $format = (($_GET['format'] ?? 'xlsx') === 'csv') ? 'csv' : 'xlsx';
-    $sql = "SELECT * FROM products WHERE user_id = ? AND barcode != ''";
+    $sql = "SELECT * FROM products WHERE user_id = ? AND barcode != '' AND marketplace='trendyol'";
     if ($bos) $sql .= ' AND (cost = 0 OR cost IS NULL)';
     $sql .= ' ORDER BY id';
     $st = db()->prepare($sql);
@@ -27,10 +50,10 @@ if (($_GET['export'] ?? '') === 'maliyet') {
             $desi = (float)($r['kesilen_desi'] ?? 0);
             if ($desi <= 0) $desi = desi_from_dims((float)($r['en'] ?? 0), (float)($r['boy'] ?? 0), (float)($r['yukseklik'] ?? 0));
             fputcsv($out, [
-                $r['barcode'] ?? '', $r['model_kodu'] ?? '', '', $r['category'] ?? '', $r['name'] ?? '',
+                csv_safe_text($r['barcode'] ?? ''), csv_safe_text($r['model_kodu'] ?? ''), '', csv_safe_text($r['category'] ?? ''), csv_safe_text($r['name'] ?? ''),
                 (float)($r['price'] ?? 0), (int)($r['quantity'] ?? 0),
                 (float)($r['cost'] ?? 0) > 0 ? (float)$r['cost'] : '',
-                (float)($r['kdv'] ?? 0) > 0 ? (float)$r['kdv'] : 20,
+                (float)($r['cost_vat'] ?? $r['kdv'] ?? 20),
                 'TRY', $desi > 0 ? round($desi, 2) : '',
                 (!empty($r['cargo_type']) && $r['cargo_type'] !== 'seller') ? $r['cargo_type'] : 'standart',
                 0, (float)($r['extra_fee'] ?? 0),
@@ -61,108 +84,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'impor
         flash_set('error', 'Toplu maliyet içe aktarma Pro plan özelliğidir.');
         e_redirect('odeme.php');
     }
-    if (empty($_FILES['csv']['tmp_name'])) {
-        flash_set('error', 'CSV dosyası seçin.');
-        e_redirect('urunler.php');
-    }
-    $tmpName = $_FILES['csv']['tmp_name'];
-    $origName = $_FILES['csv']['name'] ?? '';
-    $isXlsx = (strtolower(pathinfo($origName, PATHINFO_EXTENSION)) === 'xlsx');
-
-    $rows = [];
-    $header = [];
-    if ($isXlsx) {
-        try {
-            $parsed = xlsx_read($tmpName);
-            $header = $parsed['headers'];
-            $rows = $parsed['rows'];
-        } catch (\Throwable $e) {
-            flash_set('error', 'XLSX okunamadı: ' . $e->getMessage());
-            e_redirect('urunler.php');
-        }
-    } else {
-        $file = fopen($tmpName, 'r');
-        $firstLine = (string)fgets($file);
-        rewind($file);
-        $delim = (substr_count($firstLine, ';') > substr_count($firstLine, ',')) ? ';' : ',';
-        $header = fgetcsv($file, null, $delim, '"', '\\');
-        $rows = [];
-        while (($r = fgetcsv($file, null, $delim, '"', '\\')) !== false) $rows[] = $r;
-        fclose($file);
-    }
-    // Türkçe karakter fold + normalize (büyük/küçük harf dahil)
-    $norm = static function (string $x): string {
-        $x = strtolower(trim($x)); // ASCII lowercase (Türkçe büyük harfler strtr ile)
-        $x = strtr($x, ['Ç' => 'c', 'Ğ' => 'g', 'İ' => 'i', 'I' => 'i', 'Ö' => 'o', 'Ş' => 's', 'Ü' => 'u', 'ç' => 'c', 'ğ' => 'g', 'ı' => 'i', 'ö' => 'o', 'ş' => 's', 'ü' => 'u']);
-        return preg_replace('/[^a-z0-9]/', '', $x);
-    };
-
-    if ($header === false) {
-        flash_set('error', 'Dosya boş veya okunamadı.');
-    } else {
-        $normHeader = array_map($norm, $header);
-        $idx = static function (array $names) use ($normHeader): ?int {
-            foreach ($names as $n) {
-                $k = array_search($n, $normHeader, true);
-                if ($k !== false) return $k;
-            }
-            return null;
-        };
-        $bIdx  = $idx(['barkod', 'barcode', 'sku']);
-        $cIdx  = $idx(['urunmaliyetikdvdahil', 'maliyet', 'cost', 'alis', 'alisfiyati']);
-        if ($bIdx === null || $cIdx === null) {
-            flash_set('error', 'Başlıklarda "Barkod" ve "Ürün Maliyeti (KDV Dahil)" kolonları bulunmalı.');
-        } else {
-            $kIdx  = $idx(['maliyetkdvorani', 'kdvorani', 'kdv']);
-            $dIdx  = $idx(['desi']);
-            $mIdx  = $idx(['marka']);
-            $mkIdx = $idx(['modelkodu', 'model']);
-            $rIdx  = $idx(['renk']);
-            $bdIdx = $idx(['beden']);
-            $sIdx  = $idx(['stokadet', 'stok', 'adet', 'quantity']);
-            $iIdx  = $idx(['iadeorani', 'iade', 'returnrate']);
-            $tIdx  = $idx(['teslimattipi', 'kargotipi', 'cargotype']);
-            $eIdx  = $idx(['ekstragider', 'ekstra', 'extrafee']);
-
-            $num = static function (?string $s): ?float {
-                $s = trim((string)$s);
-                if ($s === '') return null;
-                $s = str_replace(',', '.', $s);
-                return is_numeric($s) ? (float)$s : null;
-            };
-
-            foreach ($rows as $row) {
-                $barcode = trim((string)($row[$bIdx] ?? ''));
-                $costVal = $num($row[$cIdx] ?? null);
-                if ($barcode === '' || $costVal === null) continue;
-
-                $sets = ['cost = ?'];
-                $params = [max(0.0, $costVal)];
-                $add = function (string $col, $val) use (&$sets, &$params) {
-                    $sets[] = "$col = ?";
-                    $params[] = $val;
-                };
-                if (($v = $num($kIdx !== null ? ($row[$kIdx] ?? null) : null)) !== null) $add('kdv', $v);
-                if (($v = $num($dIdx !== null ? ($row[$dIdx] ?? null) : null)) !== null) $add('kesilen_desi', $v);
-                if (($v = $sIdx !== null ? trim((string)($row[$sIdx] ?? '')) : '') !== '' && is_numeric(str_replace(['.', ','], '', $v))) $add('quantity', (int)str_replace(['.', ','], '', $v));
-                if (($v = $num($iIdx !== null ? ($row[$iIdx] ?? null) : null)) !== null) $add('return_rate', $v);
-                if (($v = $eIdx !== null ? trim((string)($row[$eIdx] ?? '')) : '') !== '' && ($v = $num($v)) !== null) $add('extra_fee', $v);
-                if ($mIdx !== null && ($v = trim((string)($row[$mIdx] ?? ''))) !== '') $add('marka', $v);
-                if ($mkIdx !== null && ($v = trim((string)($row[$mkIdx] ?? ''))) !== '') $add('model_kodu', $v);
-                if ($rIdx !== null && ($v = trim((string)($row[$rIdx] ?? ''))) !== '') $add('renk', $v);
-                if ($bdIdx !== null && ($v = trim((string)($row[$bdIdx] ?? ''))) !== '') $add('beden', $v);
-                if ($tIdx !== null && ($v = trim((string)($row[$tIdx] ?? ''))) !== '') $add('cargo_type', $v);
-
-                $params[] = $u['id'];
-                $params[] = $barcode;
-                $upd = db()->prepare("UPDATE products SET " . implode(', ', $sets) . " WHERE user_id = ? AND barcode = ?");
-                $upd->execute($params);
-                if ($upd->rowCount() > 0) $updated++; else $notFound++;
-            }
-        }
-    }
-    flash_set($updated > 0 ? 'success' : 'error',
-        $updated > 0 ? "$updated ürünün maliyeti güncellendi" . ($notFound ? ", $notFound barkod eşleşmedi" : '') . '.' : 'Hiçbir ürün güncellenemedi. Barkodları kontrol edin.');
+    try{
+        [$headers,$rows]=analysis_read_upload($_FILES['csv']??[]);
+        $res=with_marketplace_lock((int)$u['id'],'trendyol',static function()use($u,$headers,$rows){
+            return ['ok'=>true,'stats'=>catalog_cost_import(db(),(int)$u['id'],$headers,$rows)];
+        });
+        if(!$res['ok'])throw new RuntimeException($res['error']);
+        $stats=$res['stats'];
+        flash_set('success',$stats['updated'].' ürün güncellendi; '.$stats['unmatched'].' barkod eşleşmedi, '.$stats['blank'].' boş maliyet atlandı. Fiyat, stok ve fatura desisi değiştirilmedi.');
+    }catch(Throwable $e){flash_set('error',$e instanceof InvalidArgumentException||$e instanceof RuntimeException?$e->getMessage():'Dosya işlenemedi; değişiklikler geri alındı.');}
     e_redirect('urunler.php');
 }
 
@@ -241,68 +171,58 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'impor
     e_redirect('urunler.php');
 }
 
-// ---- Arama + sayfalama (14k+ ürün için performans) ----
-$q = trim($_GET['q'] ?? '');
-$where = 'user_id = ?';
-$args = [$u['id']];
-if ($q !== '') {
-    $where .= ' AND (name LIKE ? OR barcode LIKE ?)';
-    $args[] = '%' . $q . '%';
-    $args[] = '%' . $q . '%';
+// Model grouping is based only on verified catalogue identity; legacy rows stay separate.
+// Search matches any variant; a matched model shows all its variants.
+$q = trim(is_string($_GET['q']??null)?$_GET['q']:'');
+$uid=(int)$u['id'];
+$keyExpr="CASE WHEN marketplace='trendyol' AND variant_model_key IS NOT NULL AND variant_model_key<>'' THEN 'm:'||variant_model_key ELSE 'p:'||id END";
+$cte="WITH scoped AS (SELECT *, $keyExpr AS group_key FROM products WHERE user_id=?), matched AS (SELECT DISTINCT group_key FROM scoped";
+$args=[$uid];
+if($q!==''){
+    $cte.=" WHERE name LIKE ? OR barcode LIKE ? OR variant_model_code LIKE ? OR variant_size LIKE ?";
+    for($i=0;$i<4;$i++)$args[]='%'.$q.'%';
 }
-
-// KPI toplamları: yalnızca gerekli kolonlar, tüm ürünler üzerinden (hafif döngü)
-$totalProfit = 0.0; $totalRevenue = 0.0; $totalCommission = 0.0; $totalCount = 0; $maliyetsiz = 0;
-$totStmt = db()->prepare("SELECT cost, price, cargo, rate, kdv, extra_fee, service_fee, stopaj, return_rate FROM products WHERE $where");
+$cte.="), grouped AS (SELECT s.group_key,MIN(s.id) AS group_id,MAX(s.id) AS newest_id,COUNT(*) AS variants,SUM(CASE WHEN s.cost>0 THEN 1 ELSE 0 END) AS cost_known,MIN(s.price) AS min_price,MAX(s.price) AS max_price FROM scoped s JOIN matched m ON s.group_key=m.group_key GROUP BY s.group_key) ";
+$totalProfit=0.0;$totalCommission=0.0;$totalCount=0;$maliyetsiz=0;
+$totStmt=db()->prepare($cte."SELECT s.marketplace,s.cost,s.price,s.cargo,s.rate,s.kdv,s.cost_vat,s.extra_fee,s.service_fee,s.stopaj,s.stopaj_mode,s.stopaj_rate,s.allow_negative_vat,s.return_rate FROM scoped s JOIN matched m ON s.group_key=m.group_key");
 $totStmt->execute($args);
-foreach ($totStmt->fetchAll() as $tp) {
-    if ((float)$tp['cost'] <= 0) $maliyetsiz++;
-    $rr = calc_profit((float)$tp['cost'], (float)$tp['price'], (float)$tp['cargo'], (float)$tp['rate'],
-        (float)($tp['kdv'] ?? 20), (float)($tp['extra_fee'] ?? 0), (float)($tp['service_fee'] ?? 0),
-        (float)($tp['stopaj'] ?? 0), (float)($tp['return_rate'] ?? 0));
-    $totalProfit += $rr['profit'];
-    $totalRevenue += (float)$tp['price'];
-    $totalCommission += $rr['commission'];
-    $totalCount++;
+while($tp=$totStmt->fetch()){
+    if((float)$tp['cost']<=0)$maliyetsiz++;
+    $rr=product_profit($tp);
+    if((float)$tp['cost']>0)$totalProfit+=$rr['profit'];
+    $totalCommission+=$rr['commission'];$totalCount++;
 }
-$totals = ['profit' => $totalProfit, 'revenue' => $totalRevenue, 'commission' => $totalCommission, 'count' => $totalCount];
-
-// Sayfalama
-$perPage = 50;
-$page = max(1, (int) ($_GET['page'] ?? 1));
-$totalPages = max(1, (int) ceil($totalCount / $perPage));
-$page = min($page, $totalPages);
-$offset = ($page - 1) * $perPage;
-
-// Yalnızca bu sayfanın ürünleri
-$stmt = db()->prepare("SELECT * FROM products WHERE $where ORDER BY id DESC LIMIT $perPage OFFSET $offset");
-$stmt->execute($args);
-$products = $stmt->fetchAll();
-
-foreach ($products as &$p) {
-    $r = calc_profit((float)$p['cost'], (float)$p['price'], (float)$p['cargo'], (float)$p['rate'],
-        (float)($p['kdv'] ?? 20), (float)($p['extra_fee'] ?? 0), (float)($p['service_fee'] ?? 0),
-        (float)($p['stopaj'] ?? 0), (float)($p['return_rate'] ?? 0));
-    $p['_profit'] = $r['profit'];
-    $p['_margin'] = $r['margin'];
-    $p['_ratio'] = $r['ratio'];
-    $p['_has_cost'] = (float)$p['cost'] > 0;
-}
-unset($p);
-
+$totals=['profit'=>$totalProfit,'commission'=>$totalCommission,'count'=>$totalCount];
+$st=db()->prepare($cte."SELECT COUNT(*) FROM grouped");$st->execute($args);$modelCount=(int)$st->fetchColumn();
+$perPage=50;$page=max(1,(int)($_GET['page']??1));$totalPages=max(1,(int)ceil($modelCount/$perPage));$page=min($page,$totalPages);$offset=($page-1)*$perPage;
+$st=db()->prepare($cte."SELECT s.*,g.group_id,g.variants,g.cost_known,g.min_price,g.max_price FROM grouped g JOIN scoped s ON s.id=g.group_id ORDER BY g.newest_id DESC LIMIT $perPage OFFSET $offset");$st->execute($args);$products=$st->fetchAll();
+$open=max(0,(int)($_GET['open']??0));$vp=max(1,(int)($_GET['vp']??1));$variantPages=1;$expanded=[];
+$enrich=static function(array $p):array{
+    $r=product_profit($p);$p['_profit']=$r['profit'];$p['_margin']=$r['margin'];$p['_ratio']=$r['ratio'];$p['_has_cost']=(float)$p['cost']>0;return $p;
+};
+foreach($products as &$p){
+    $p=$enrich($p);
+    if((int)$p['group_id']===$open&&(int)$p['variants']>1){
+        $variantPages=max(1,(int)ceil((int)$p['variants']/100));$vp=min($vp,$variantPages);$vo=($vp-1)*100;
+        $st=db()->prepare("SELECT * FROM products WHERE user_id=? AND marketplace='trendyol' AND variant_model_key=? ORDER BY variant_size,barcode,id LIMIT 100 OFFSET $vo");
+        $st->execute([$uid,$p['variant_model_key']]);$expanded=array_map($enrich,$st->fetchAll());
+    }
+}unset($p);
+$url=static fn(int $pg,int $opened=0,int $vpage=1):string=>'urunler.php?q='.urlencode($q).'&page='.$pg.'&open='.$opened.'&vp='.$vpage.($opened?'#model-'.$opened:'');
 $pageTitle = 'Ürünlerim — ' . APP_NAME;
 require __DIR__ . '/../includes/header.php';
 ?>
 <div class="wrap">
   <div class="toolbar">
-    <h1>Ürünlerim</h1>
-    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-      <form method="get" style="display:flex;gap:8px;align-items:center">
-        <input type="text" name="q" value="<?= h($q) ?>" placeholder="Ürün adı veya barkod ara..." style="width:240px">
+    <div><h1>Ürünlerim</h1><p class="ui-muted">Model ve varyantları inceleyin, alış maliyetlerini tamamlayın.</p></div><div class="actions"><a class="btn-primary" href="maliyet-senaryosu.php">Toplu maliyet gir</a><a class="btn-ghost" href="maliyet-gecmisi.php">Maliyet geçmişi</a></div>
+    <div class="ui-catalog-tools">
+      <form method="get" class="ui-catalog-search">
+        <input type="text" name="q" value="<?= h($q) ?>" aria-label="Ürün veya barkod ara" placeholder="Ürün, model, ebat veya barkod ara...">
         <button type="submit" class="btn-ghost">Ara</button>
         <?php if ($q !== ''): ?><a href="urunler.php" class="btn-ghost" style="text-decoration:none">Temizle</a><?php endif; ?>
       </form>
       <?php if ($pro): ?>
+      <details class="ui-file-tools"><summary>Excel ile işlem yap</summary>
         <a href="urunler.php?export=maliyet" class="btn-ghost" style="text-decoration:none" title="Melontik formatında Excel indir">⬇ Maliyet Şablonu İndir (Excel)</a>
         <a href="urunler.php?export=maliyet&bos=1" class="btn-ghost" style="text-decoration:none" title="Sadece maliyeti henüz girilmemiş ürünleri indir">Sadece maliyeti boş</a>
         <a href="urunler.php?export=maliyet&format=csv" class="btn-ghost" style="text-decoration:none;font-size:12px" title="CSV olarak indir">CSV</a>
@@ -318,41 +238,52 @@ require __DIR__ . '/../includes/header.php';
           <input type="file" name="csv" accept=".csv,.xlsx" style="width:auto;font-size:13px" required>
           <button type="submit" class="btn-ghost">Yeni Ürün CSV</button>
         </form>
+      </details>
       <?php else: ?>
-        <a href="odeme.php" class="btn-ghost">Pro — CSV içe aktarma</a>
+        <a href="odeme.php" class="btn-ghost">Pro — isteğe bağlı dosya aktarımı</a>
       <?php endif; ?>
     </div>
   </div>
 
-  <?php if ($pro && $totalCount > 0 && $maliyetsiz > 0): ?>
-  <div class="alert alert-error" style="margin-bottom:14px">
+  <?php if ($totalCount > 0 && $maliyetsiz > 0): ?>
+  <div class="ui-callout" style="margin-bottom:14px">
     <b><?= $maliyetsiz ?></b> ürüne henüz maliyet girilmedi — kâr hesaplanamaz.
-    <a href="urunler.php?export=maliyet&bos=1" style="margin-left:auto;white-space:nowrap">⬇ Maliyeti boş olanları indir → Excel'de doldur → "Maliyet Yükle"</a>
+    <a href="maliyet-senaryosu.php" style="margin-left:auto">Panelden toplu maliyet gir</a>
   </div>
   <?php endif; ?>
 
-  <div class="kpi-row" style="grid-template-columns:repeat(3,1fr);margin-bottom:20px">
-    <div class="kpi"><div class="k-label">Toplam Net Kâr</div><div class="k-value <?= $totals['profit'] < 0 ? 'neg' : 'pos' ?>"><?= tl($totals['profit']) ?></div></div>
-    <div class="kpi"><div class="k-label">Ürün Sayısı</div><div class="k-value"><?= $totals['count'] ?><?= !$pro ? ' / ' . FREE_PRODUCT_LIMIT : '' ?></div></div>
-    <div class="kpi"><div class="k-label">Toplam Komisyon</div><div class="k-value"><?= tl($totals['commission']) ?></div></div>
-  </div>
-
+  <section class="ui-kpi-grid ui-three" aria-label="Ürün özeti">
+<?php ui_kpi('products','Ana ürün / model',(string)$modelCount,$totalCount.' barkod kaydı');?>
+<?php ui_kpi('check','Maliyeti kayıtlı',(string)($totalCount-$maliyetsiz),'Barkod bazında');?>
+<?php ui_kpi('wallet','Maliyeti eksik',(string)$maliyetsiz,'Kâr hesabı için gerekli');?>
+</section><details class="ui-disclosure"><summary>Ürün fiyat senaryosu toplamları</summary><div class="ui-detail-body"><p class="hint">Her ürün için bir adet satış varsayımıdır; gerçekleşen mağaza kârı değildir.</p><div class="detail-row"><span>Tahmini ürün kârı toplamı</span><strong><?=tl($totals['profit'])?></strong></div><div class="detail-row"><span>Komisyon senaryosu toplamı</span><strong><?=tl($totals['commission'])?></strong></div></div></details>
   <?php if (!$products): ?>
     <div class="card empty"><?= $q !== '' ? 'Aramanızla eşleşen ürün yok.' : 'Henüz ürün yok. <a href="index.php">Hesap makinesinden</a> ürünlerini kaydetmeye başla.' ?></div>
   <?php else: ?>
-  <div class="card table-card">
+  <div class="card table-card ui-catalog-table">
     <table>
-      <tr><th>Ürün</th><th>Barkod</th><th>Pazaryeri</th><th>Kategori</th><th>Satış</th><th>Net Kâr</th><th>Kâr Oranı</th><th>Kâr Marjı</th><th></th></tr>
-      <?php foreach ($products as $p): ?>
-      <tr>
-        <td><?= h($p['name']) ?><?= !$p['_has_cost'] ? ' <span class="hint" style="font-size:11px;color:var(--muted)">(maliyet girilmedi)</span>' : '' ?></td>
-        <td style="font-size:11px;color:var(--muted)"><?= $p['barcode'] !== '' ? h($p['barcode']) : '—' ?></td>
-        <td><?= h(marketplace_label($p['marketplace'])) ?></td>
-        <td style="font-size:12px"><?= h($p['category']) ?></td>
+      <tr><th>Ürün</th><th>Satış fiyatı</th><th>Alış maliyeti / KDV</th><th>Tahmini kâr</th><th>Kâr marjı</th><th>İşlem</th></tr>
+      <?php foreach ($products as $parent): $grouped=(int)$parent['variants']>1;$gid=(int)$parent['group_id']; ?>
+      <?php if($grouped):?>
+      <tr id="model-<?=$gid?>" data-model-group="<?=$gid?>">
+        <td><a class="btn-ghost" href="<?=h($url($page,$open===$gid?0:$gid))?>" aria-expanded="<?=$open===$gid?'true':'false'?>"><?=$open===$gid?'▾':'▸'?> <?=h($parent['name'])?></a><div class="hint"><?=h((string)$parent['variant_model_code'])?> · <?=(int)$parent['variants']?> varyant</div><div class="hint"><?=h(marketplace_label($parent['marketplace']))?> · <?=h($parent['category'])?></div></td>
+        
+        <td><?=tl((float)$parent['min_price'])?><?php if((float)$parent['min_price']!==(float)$parent['max_price']):?> – <?=tl((float)$parent['max_price'])?><?php endif;?></td>
+        <td><div class="hint"><?=(int)$parent['cost_known']?> / <?=(int)$parent['variants']?> maliyet girildi</div><a class="btn-ghost" href="perde-maliyeti.php?pid=<?=$gid?>">Perde maliyeti gir</a></td>
+        <td colspan="3"><a class="btn-ghost" href="<?=h($url($page,$open===$gid?0:$gid))?>"><?=$open===$gid?'Varyantları gizle':'Varyantları göster'?></a></td>
+      </tr>
+      <?php endif;?>
+      <?php foreach($grouped?($open===$gid?$expanded:[]):[$parent] as $p):?>
+      <tr <?=$grouped?'data-variant-row="'.$gid.'"':''?>>
+        <td><?php if($grouped):?><span class="hint">↳</span> <b><?=h((string)($p['variant_size']??'Ebat belirsiz'))?></b><div class="hint"><?=h($p['name'])?></div><?php else:?><?=h($p['name'])?><?php endif;?><?= !$p['_has_cost'] ? ' <span class="hint" style="font-size:11px;color:var(--muted)">(maliyet girilmedi)</span>' : '' ?><div class="hint"><?= $p['barcode'] !== '' ? h($p['barcode']) : '—' ?> · <?=h(marketplace_label($p['marketplace']))?> · <?=h($p['category'])?></div></td>
         <td><?= tl((float)$p['price']) ?></td>
+        <td><?php if($p['marketplace']==='trendyol'&&$p['barcode']!==''): ?><details><summary><?= $p['_has_cost']?tl((float)$p['cost']).' / %'.h((string)$p['cost_vat']):'Maliyet gir' ?></summary><form method="post" style="min-width:180px">
+          <input type="hidden" name="csrf" value="<?=h(csrf_token())?>"><input type="hidden" name="action" value="direct_cost"><input type="hidden" name="pid" value="<?=(int)$p['id']?>"><input type="hidden" name="q" value="<?=h($q)?>"><input type="hidden" name="page" value="<?=$page?>"><input type="hidden" name="open" value="<?=$open?>"><input type="hidden" name="vp" value="<?=$vp?>">
+          <label>Ürün alış fiyatı (KDV dahil TL) <input name="cost" required inputmode="decimal" value="<?= $p['_has_cost']?h((string)$p['cost']):'' ?>"></label><label>Alış faturası KDV oranı <select name="vat" required><option value="">Seçin</option><?php foreach([1,10,20] as $v):?><option value="<?=$v?>" <?= $p['_has_cost']&&(float)$p['cost_vat']===(float)$v?'selected':'' ?>>%<?=$v?></option><?php endforeach;?></select></label>
+          <label>Geçerlilik <select name="scope" required><option value="">Seçin</option><option value="today">Bugünden itibaren</option><option value="first_sale">İlk satıştan itibaren</option></select></label><button class="btn-primary">Maliyeti kaydet</button></form><p><a class="btn-ghost" href="perde-maliyeti.php?pid=<?=(int)$p['id']?>">Perde maliyeti gir</a></p></details><?php else: ?><?= $p['_has_cost']?tl((float)$p['cost']):'—' ?><?php endif; ?></td>
         <td class="<?= $p['_profit'] < 0 ? 'neg' : 'pos' ?>"><?= $p['_has_cost'] ? tl($p['_profit']) : '—' ?></td>
-        <td class="<?= $p['_ratio'] < 0 ? 'neg' : 'pos' ?>"><?= $p['_has_cost'] ? '%' . number_format($p['_ratio'], 1, ',', '.') : '—' ?></td>
-        <td class="<?= $p['_margin'] < 0 ? 'neg' : 'pos' ?>"><?= $p['_has_cost'] ? '%' . number_format($p['_margin'], 1, ',', '.') : '—' ?></td>
+        
+        <td class="<?= $p['_margin'] < 0 ? 'neg' : 'pos' ?>"><?= $p['_has_cost'] ? '%' . number_format($p['_margin'], 1, ',', '.') : '—' ?><?php if($p['_has_cost']):?><div class="hint">Maliyete oranı: %<?=number_format($p['_ratio'],1,',','.')?></div><?php endif;?></td>
         <td>
           <form method="post" style="display:inline" onsubmit="return confirm('Bu ürünü sil?')">
             <input type="hidden" name="csrf" value="<?= h(csrf_token()) ?>">
@@ -363,6 +294,8 @@ require __DIR__ . '/../includes/header.php';
         </td>
       </tr>
       <?php endforeach; ?>
+      <?php if($grouped&&$open===$gid&&$variantPages>1):?><tr><td colspan="6"><nav aria-label="Varyant sayfaları" style="display:flex;gap:12px;align-items:center"><?php if($vp>1):?><a class="btn-ghost" href="<?=h($url($page,$gid,$vp-1))?>">Önceki varyantlar</a><?php endif;?><span>Varyant sayfası <?=$vp?> / <?=$variantPages?></span><?php if($vp<$variantPages):?><a class="btn-ghost" href="<?=h($url($page,$gid,$vp+1))?>">Sonraki varyantlar</a><?php endif;?></nav></td></tr><?php endif;?>
+      <?php endforeach; ?>
     </table>
   </div>
 
@@ -371,19 +304,19 @@ require __DIR__ . '/../includes/header.php';
     <?php if ($page > 1): ?>
       <a class="btn-ghost" style="text-decoration:none" href="urunler.php?q=<?= urlencode($q) ?>&page=<?= $page - 1 ?>">← Önceki</a>
     <?php endif; ?>
-    <span class="hint">Sayfa <?= $page ?> / <?= $totalPages ?> (<?= $totals['count'] ?> ürün)</span>
+    <span class="hint">Sayfa <?= $page ?> / <?= $totalPages ?> (<?=$modelCount?> ana ürün / <?=$totalCount?> barkod kaydı)</span>
     <?php if ($page < $totalPages): ?>
       <a class="btn-ghost" style="text-decoration:none" href="urunler.php?q=<?= urlencode($q) ?>&page=<?= $page + 1 ?>">Sonraki →</a>
     <?php endif; ?>
   </div>
   <?php endif; ?>
 
-  <div class="note" style="max-width:640px">
+  <details class="ui-disclosure"><summary>CSV dosya biçimi ve örnek şablon</summary><div class="ui-detail-body ui-csv-help">
     <b>CSV formatı:</b> Başlık satırı <code>name,marketplace,category,cost,price,cargo,service_fee,stopaj,return_rate</code> olmalı.
     Türkçe eşdeğerler de kabul edilir (urun_adi, pazaryeri, kategori, alis, satis, kargo, hizmet_bedeli, stopaj, iade…).
     marketplace: <code>trendyol</code>, <code>hepsiburada</code>, <code>amazon</code> veya <code>n11</code>.
     <a href="csv-sablon.php" style="display:inline-block;margin-top:8px">⬇ Örnek CSV şablonu indir</a>
-  </div>
+  </div></details>
   <?php endif; ?>
 </div>
 <?php require __DIR__ . '/../includes/footer.php'; ?>

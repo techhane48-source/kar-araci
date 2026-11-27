@@ -82,8 +82,11 @@ require __DIR__ . '/../includes/header.php';
             <div class="hint" id="rate-hint"></div>
           </div>
           <div class="row">
-            <label>KDV (%)</label>
-            <input type="number" id="kdv" value="20" step="0.1">
+            <label>Satış KDV (%)</label>
+            <input type="number" id="kdv" value="20" min="0" max="100" step="0.1">
+            <label>Alış KDV (%)</label>
+            <input type="number" id="cost-vat" value="20" min="0" max="100" step="0.1">
+            <label class="check"><input type="checkbox" id="negative-vat"> Negatif KDV farkını hesaba kat</label>
           </div>
         </div>
 
@@ -117,6 +120,7 @@ require __DIR__ . '/../includes/header.php';
             <label>Stopaj (tevkifat)</label>
             <label class="check" style="margin:4px 0 8px"><input type="checkbox" id="stopaj-auto" checked> Otomatik — KDV-hariç satış × %1 (Trendyol)</label>
             <input type="number" id="stopaj" value="" step="0.01" disabled placeholder="Otomatik hesaplanır">
+            <label>Stopaj oranı (%)</label><input type="number" id="stopaj-rate" value="1" min="0" max="100" step="0.01">
             <div class="hint">Stopaj, Trendyol'da KDV-hariç satış tutarının %1'i olarak otomatik hesaplanır. Elle girmek istersen işareti kaldır.</div>
           </div>
         </div>
@@ -132,7 +136,7 @@ require __DIR__ . '/../includes/header.php';
           <div class="target-row">
             <div>
               <input type="number" id="targetProfit" value="50" step="0.01" placeholder="Kâr ₺">
-              <div class="hint">Hedef net kâr (₺)</div>
+              <div class="hint">Hedef net kâr (₺); pozitif marj girilirse marj önceliklidir.</div>
             </div>
             <div>
               <input type="number" id="targetMargin" value="0" step="0.1" placeholder="Marj %">
@@ -349,18 +353,27 @@ require __DIR__ . '/../includes/header.php';
 </div>
 
 <script>window.CATEGORIES = <?= json_encode(categories(), JSON_UNESCAPED_UNICODE) ?>;</script>
-<script src="assets/app.js?v=4"></script>
+<script src="assets/app.js?v=6"></script>
 <?php if ($u): ?>
 <script>
 document.getElementById("save-btn").addEventListener("click", async () => {
+  if(!calculationValid){alert("Önce geçerli bir hesaplama yapın.");return;}
   const category = window.CATEGORIES[+document.getElementById("category").value].name;
-  const priceVal = mode === "price" ? lastPrice : num("price");
+  const priceVal = mode === "price" ? lastPrice
+    : mode === "campaign" ? Math.round((num("price") * (1 - num("discount") / 100)+Number.EPSILON)*100)/100 : num("price");
+  if (!Number.isFinite(priceVal) || priceVal <= 0) {
+    alert("Geçerli ve pozitif bir satış fiyatı hesaplayın.");
+    return;
+  }
   const sa = document.getElementById("stopaj-auto");
-  const stopajVal = (sa && sa.checked) ? priceVal / (1 + num("kdv")/100) * 0.01 : num("stopaj");
+  const stopajVal = (sa && sa.checked) ? priceVal / (1 + num("kdv")/100) * num("stopaj-rate")/100 : num("stopaj");
   const body = {
     marketplace, category,
     cost: num("cost"), price: priceVal, cargo: num("cargo"),
-    rate: num("rate"), kdv: num("kdv"),
+    rate: num("rate"), kdv: num("kdv"), cost_vat: num("cost-vat"),
+    allow_negative_vat: document.getElementById("negative-vat").checked,
+    stopaj_mode: sa && sa.checked ? "auto" : "manual", stopaj_rate: num("stopaj-rate"),
+    csrf: <?= json_encode(csrf_token()) ?>,
     cargo_type: cargoType,
     extra_fee: num("extra-fee"),
     service_fee: num("service-fee"), stopaj: stopajVal, return_rate: num("return-rate"),

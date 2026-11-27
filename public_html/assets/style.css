@@ -347,3 +347,28 @@ tbody tr:hover{background:var(--bg-softer)}
 .tar{text-align:right}
 .btn-group{display:inline-flex;gap:4px;align-items:center;flex-wrap:wrap}
 .btn-active{background:var(--accent);color:#fff;border-color:var(--accent)}
+
+/* Keep all authenticated navigation reachable on narrow screens without widening the page. */
+.signed-in-header .header-inner{height:auto;min-height:68px;flex-wrap:wrap;gap:8px;padding-block:12px}
+.signed-in-header .main-nav{display:none}
+.signed-in-header .nav-auth{flex:1 1 100%;min-width:0;overflow-x:auto;gap:6px;padding:4px 0;scrollbar-width:thin}
+.signed-in-header .nav-auth>*{flex-shrink:0;white-space:nowrap}
+.signed-in-header .user-menu{margin-left:auto}
+a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible{outline:2px solid var(--accent);outline-offset:3px}
+@media(max-width:600px){.signed-in-header .header-inner{padding-inline:12px}.signed-in-header .nav-auth{margin-inline:0}.table-card{max-width:100%;overflow-x:auto}}
+
+/* Compact responsive reporting and keyboard navigation. */
+.skip-link{position:absolute;left:12px;top:-100px;z-index:1000;background:var(--card);color:var(--fg);padding:10px 16px;border:2px solid var(--accent);border-radius:8px}
+.skip-link:focus{top:12px}
+.overview-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin:12px 0}
+.overview-grid>div{border:1px solid var(--border);border-radius:10px;padding:12px;min-width:0}
+.overview-grid span{display:block;font-size:12px;color:var(--muted)}
+.overview-grid strong{display:block;font-size:20px;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
+.funnel-row{display:grid;grid-template-columns:minmax(140px,1fr) minmax(60px,2fr) minmax(90px,auto);align-items:center;gap:12px;margin:8px 0}
+.funnel-label{font-size:13px;color:var(--muted)}
+.funnel-value{text-align:right;font-weight:600;font-size:14px;font-variant-numeric:tabular-nums}
+@media(max-width:600px){.overview-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.funnel-row{grid-template-columns:minmax(0,1fr) auto;gap:4px 10px}.funnel-row>div:nth-child(2){grid-row:2;grid-column:1/-1}.funnel-value{grid-row:1;grid-column:2}}
+
+/* Prevent currency values and long navigation labels from widening the viewport. */
+.kpi-row{grid-template-columns:repeat(3,minmax(0,1fr))}.kpi,.card,.wrap{min-width:0}.kpi .k-value{overflow-wrap:anywhere}.signed-in-header .nav-auth{max-width:100%}.signed-in-header .header-inner{min-width:0}.table-card{max-width:100%}
+@media(max-width:600px){.wrap{padding:24px 12px}.kpi-row{grid-template-columns:repeat(2,minmax(0,1fr))}.kpi .k-value{font-size:17px}.toolbar>div{max-width:100%}.card{max-width:100%}}

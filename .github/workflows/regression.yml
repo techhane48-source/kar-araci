@@ -1,0 +1,78 @@
+name: PHP regression checks
+on:
+  pull_request:
+    branches: [master]
+  push:
+    branches: ['dev/profit-engine-phase-1']
+permissions:
+  contents: read
+jobs:
+  checks:
+    strategy:
+      fail-fast: false
+      matrix:
+        suite: [syntax, finance, integration, application, security-performance, http, calculator]
+    name: Regression / ${{ matrix.suite }}
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          extensions: pdo_sqlite, mbstring, openssl, curl, zip, simplexml
+          coverage: none
+      - name: Install browser for isolated UI acceptance
+        if: matrix.suite == 'http'
+        run: |
+          python3 -m pip install playwright==1.52.0
+          python3 -m playwright install --with-deps chromium
+      - name: Run suite (continue after individual failures)
+        shell: bash
+        env:
+          SUITE: ${{ matrix.suite }}
+        run: |
+          set +e
+          failures=0
+          run_test() {
+            if "$@"; then
+              echo "PASS command: $*"
+            else
+              echo "FAIL command: $*"
+              failures=$((failures + 1))
+            fi
+          }
+          case "$SUITE" in
+            syntax)
+              run_test bash -o pipefail -c "find includes public_html scripts -name '*.php' -print0 | xargs -0 -n1 php -l"
+              run_test node --check public_html/assets/app.js
+              run_test node --check crawler/crawl.js
+              ;;
+            finance)
+              for test in private-cost-scenario profit money-input order-estimate commission-evidence product-profit payout report-lines finance-integrity period-finance product-finance payout-receipts cargo-audit cargo-estimate cargo-reprice cargo-tariff-install; do run_test php "scripts/test-$test.php"; done
+              ;;
+            integration)
+              for test in trendyol-v2 verify-trendyol api-contract sync-coverage claims return-inventory auto-sync auto-market-checks order-evidence; do run_test php "scripts/test-$test.php"; done
+              ;;
+            application)
+              for test in analysis-import billing cost-history profit-targets buybox-decision catalog-alerts; do run_test php "scripts/test-$test.php"; done
+              ;;
+            security-performance)
+              run_test php scripts/test-db-safety.php
+              run_test php scripts/test-backup-restore.php
+              run_test php scripts/test-release-preflight.php
+              run_test php scripts/test-large-catalog.php
+              ;;
+            http)
+              run_test env KAR_BROWSER_TEST=1 python3 scripts/test-http-smoke.py
+              run_test python3 scripts/run-legacy-http-tests.py
+              ;;
+            calculator)
+              run_test php scripts/test-calculator-matrix.php /tmp/karfiyat-calculator-matrix.json
+              run_test node scripts/test-calculator-parity.js /tmp/karfiyat-calculator-matrix.json
+              ;;
+            *) exit 2 ;;
+          esac
+          echo "Failed commands: $failures"
+          test "$failures" -eq 0

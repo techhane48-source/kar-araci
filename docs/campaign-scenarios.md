@@ -1,0 +1,5 @@
+# Scenario comparison and input guards
+
+Campaign analysis stores the current catalog price, current catalog commission and corresponding modeled profit alongside each tier scenario. Profit delta is per unit, not sales-volume forecast. Closed ranges show both positive endpoints separately (zero lower endpoint is not a valid sale); no assumption that the endpoint is an eligible offer. Explicit file commission and catalog commission are distinguished. Older analyses without these snapshot fields show unavailable, not fabricated values. No marketplace writes or automatic campaign participation.
+
+Product scenario calculations reject invalid stored negative/nonfinite amounts and out-of-range rates. Package estimates reject fractional quantities, duplicated explicit line IDs, malformed rate/VAT/cost/cargo and nonfinite totals. Existing order estimates are not realized profit; carrier fees, withholding and actual accounting still require live evidence. Actual Trendyol campaign file layouts and merchant-specific eligibility must be validated before release.

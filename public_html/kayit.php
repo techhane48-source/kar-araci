@@ -51,6 +51,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 db()->prepare("UPDATE users SET referral_code = ? WHERE id = ?")->execute([$ownCode, $uid]);
 
                 session_boot();
+                session_regenerate_id(true);
+                unset($_SESSION['csrf']);
                 $_SESSION['uid'] = $uid;
                 flash_set('success', 'Hoş geldin! Ürünlerini kaydetmeye başlayabilirsin.');
                 e_redirect('index.php');
@@ -62,8 +64,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 $pageTitle = 'Kayıt Ol — ' . APP_NAME;
 require __DIR__ . '/../includes/header.php';
 ?>
-<div class="wrap">
-  <div class="card auth-card">
+<div class="wrap ui-auth-wrap"><div class="ui-auth-intro"><span class="ui-auth-mark"><?=ui_icon('finance')?></span><h1>Covisca</h1><p>Mağazanızı, satışlarınızı ve kârınızı tek yerden yönetin.</p><p class="ui-muted">Trendyol bağlantınızı hesabınızı oluşturduktan sonra yapabilirsiniz.</p></div><div class="card auth-card">
     <h2>Ücretsiz hesap oluştur</h2>
     <div class="sub" style="margin-bottom:16px">Üyelik ücretsiz. Ürünlerini kaydet, toplu kârlılık tablosunda gör.</div>
     <?php if ($error): ?><div class="flash flash-error" style="margin:0 0 16px"><?= h($error) ?></div><?php endif; ?>
@@ -76,12 +77,12 @@ require __DIR__ . '/../includes/header.php';
         <input type="text" name="name" value="<?= h($_POST['name'] ?? '') ?>" required>
       </div>
       <div class="row">
-        <label>E-posta</label>
-        <input type="email" name="email" value="<?= h($_POST['email'] ?? '') ?>" required>
+        <label for="auth-email">E-posta</label>
+        <input type="email" id="auth-email" autocomplete="email" name="email" value="<?= h($_POST['email'] ?? '') ?>" required>
       </div>
       <div class="row">
-        <label>Şifre (en az 6 karakter)</label>
-        <input type="password" name="password" required minlength="6">
+        <label for="auth-password">Şifre (en az 6 karakter)</label>
+        <input type="password" id="auth-password" autocomplete="new-password" name="password" required minlength="6">
       </div>
       <button type="submit" class="btn-primary" style="width:100%">Kayıt Ol</button>
     </form>
