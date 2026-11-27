@@ -3,3 +3,4 @@ data/app.sqlite
 data/.enc-key
 *.zip
  maybe
+data/uploads/

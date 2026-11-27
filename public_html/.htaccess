@@ -5,3 +5,6 @@ Options -Indexes
 <FilesMatch "\.(sqlite|db|sql)$">
   Require all denied
 </FilesMatch>
+
+# Chrome eklentisi API anahtarı: Authorization başlığını PHP'ye geçir (bazı Apache/LiteSpeed kurulumları düşürür)
+SetEnvIf Authorization "(.*)" HTTP_AUTHORIZATION=$1
