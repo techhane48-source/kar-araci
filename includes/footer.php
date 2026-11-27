@@ -1,4 +1,5 @@
 </main>
+<?php if(!empty($uiShell)):?><footer class="ui-footer"><span>Covisca</span><span><a href="kvkk.php">Gizlilik</a> · <a href="kosullar.php">Kullanım koşulları</a></span></footer></div><?php else:?>
 <footer class="site-footer">
   <div class="footer-inner">
     <div class="footer-brand"><span class="logo-mark">K</span>Kâr<span>&</span>Fiyat</div>
@@ -19,5 +20,6 @@
     <div class="footer-note">Komisyon oranları 2025–2026 güncel kategori tarifelerinden derlenmiştir; kesin rakam için kendi satıcı panelinizi doğrulayın.</div>
   </div>
 </footer>
+<?php endif;?>
 </body>
 </html>
