@@ -273,9 +273,13 @@ require __DIR__ . '/../includes/header.php';
           <td style="font-size:12px"><?= date('d.m H:i', (int)$o['order_date']) ?></td>
           <td><?= order_is_domestic_try($o) ? tl((float)$o['total_price']) : h((string)($o['currency_code'] ?? 'Belirsiz')) . ' ' . number_format((float)$o['total_price'],2,',','.') ?></td>
           <td>
-            <?php if(isset($o['closed_loss'])):$cl=$o['closed_loss'];?>
+            <?php if(isset($o['closed_loss'])):$cl=$o['closed_loss'];$cancel=in_array(strtolower((string)$o['status']),['cancelled','canceled','unsupplied'],true);?>
+              <?php if($cancel&&$cl['loss']===0.0):?><span class="hint" title="0 TL tahmin; henüz gönderim/kesinti kaydı yok.">Paket iptal edildi</span>
+              <?php elseif($cancel&&$cl['loss']===null):?><span class="hint" title="<?=h($cl['state'])?>">Paket iptal edildi · Gider kontrolü bekleniyor</span>
+              <?php else:?>
               <?php if($cl['loss']!==null):?><span class="neg">Tahmini zarar: <?=tl(-$cl['loss'])?></span><br><small>Gidiş: <?=$cl['outbound']!==null?tl($cl['outbound']):'bekleniyor'?> · Dönüş: <?=$cl['return_cargo']!==null?tl($cl['return_cargo']):'bekleniyor'?> · Stok kaybı: <?=$cl['inventory']!==null?tl($cl['inventory']):'belirsiz'?> · Ekstre kaybı: <?=$cl['settlement_loss']!==null?tl($cl['settlement_loss']):'bekleniyor'?></small><br><?php endif;?>
-              <small><?=h($cl['state'])?><?=$cl['assumed']?' · Operasyonel varsayım':''?></small><br><a href="iade-kontrol.php?q=<?=urlencode((string)$o['order_number'])?>">İade / satılamaz işareti</a>
+              <small><?=h($cl['state'])?><?=$cl['assumed']?' · Operasyonel varsayım':''?></small><?php if(!$cancel):?><br><a href="iade-kontrol.php?q=<?=urlencode((string)$o['order_number'])?>">İade / satılamaz işareti</a><?php endif;?>
+              <?php endif;?>
             <?php elseif ($pr['ok']): ?><span class="<?= $pr['profit'] < 0 ? 'neg' : 'pos' ?>"><?= tl($pr['profit']) ?></span><br><small><?=h((string)$pr['cargo_source'])?> · <?=h((string)$pr['commission_source'])?></small>
             <?php else: ?><span class="hint"><?= h($pr['reason'] ?? 'Veri eksik') ?></span><?php endif; ?>
           </td>

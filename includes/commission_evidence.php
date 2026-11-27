@@ -103,6 +103,29 @@ function order_discount_estimate_allowed(array $order,array $rows,string $seller
     }
     return $adjust;
 }
+/** Operational estimate only: ignore unresolved NON-return settlement allocations.
+ * Validate all row identities, allowed types and signs. Do not treat any of these
+ * movements as an exact commission or add/subtract them from the order net again.
+ */
+function order_commission_estimate_allowed(array $o,array $rows,string $seller,array $packages): bool
+{
+    if(!$rows||$seller===''||!order_is_domestic_try($o)||!order_is_active_sale($o)||!isset($packages[(string)($o['package_number']??'')]))return false;
+    $lines=$o['lines']??null;if(is_string($lines))$lines=json_decode($lines,true);
+    if(!is_array($lines))return false;$o['lines']=$lines;
+    if(report_order_lines($o,[])===null)return false;
+    foreach($lines as $l)if(!is_numeric($l['commission_rate']??null)||!is_finite((float)$l['commission_rate'])||$l['commission_rate']<0||$l['commission_rate']>100)return false;
+    $no=(string)$o['order_number'];$seen=[];
+    $allowed=['Sale','Discount','Coupon','DiscountCancel','CouponCancel','TyDiscount','TyCoupon','TyDiscountCancel','TyCouponCancel','CommissionPositive','CommissionNegative','CommissionPositiveCancel','CommissionNegativeCancel','SellerRevenuePositive','SellerRevenueNegative','SellerRevenuePositiveCancel','SellerRevenueNegativeCancel'];
+    foreach($rows as $r){
+        $raw=json_decode((string)($r['raw_json']??''),true);$id=(string)($r['external_id']??'');$type=(string)($r['query_type']??'');
+        if($id===''||isset($seen[$id])||!is_array($raw)||!finance_is_domestic($raw)||!in_array($type,$allowed,true)||
+            (string)($raw['id']??'')!==$id||(string)($raw['sellerId']??'')!==$seller||(string)($raw['orderNumber']??'')!==$no||(string)($r['order_number']??'')!==$no||
+            (string)($raw['shipmentPackageId']??'')!==(string)($r['shipment_package_id']??''))return false;
+        $seen[$id]=true;
+        try{$c=finance_units($raw['credit']??null);$d=finance_units($raw['debt']??null);if($c<0||$d<0||($c>0&&$d>0)||($type==='Sale'&&($c<=0||$d!==0)))return false;}catch(InvalidArgumentException $e){return false;}
+    }
+    return true;
+}
 /** Batch all movements by order number, including adjustments outside the displayed date. */
 function commission_profit_overlay(PDO $db,int $uid,array $orders): array
 {
@@ -126,6 +149,9 @@ function commission_profit_overlay(PDO $db,int $uid,array $orders): array
                 $a=$ambiguous?['present'=>true,'amount'=>null,'source'=>'Siparişin ekstre düzeltmesi/eşleşmeyen paketi var']:order_commission_evidence($orders[$i],$byPackage[(string)($orders[$i]['package_number']??'')]??[],$seller,isset($claims[$no]));
                 if($a['present']&&$a['amount']===null&&!isset($claims[$no])&&order_discount_estimate_allowed($orders[$i],$byOrder[$no]??[],$seller,$packages[$no]??[])){
                     $a=['present'=>false,'amount'=>null,'source'=>'İndirimli sipariş tutarı / tahmini komisyon; ekstre eşleşmesi bekleniyor'];
+                }
+                if($a['present']&&$a['amount']===null&&!isset($claims[$no])&&order_commission_estimate_allowed($orders[$i],$byOrder[$no]??[],$seller,$packages[$no]??[])){
+                    $a=['present'=>false,'amount'=>null,'source'=>'Sipariş oranı / tahmini komisyon (ekstre henüz eşleşmedi)'];
                 }
                 if($a['present'])$orders[$i]['commission_override']=$a['amount'];
                 $orders[$i]['commission_source']=$a['source'];

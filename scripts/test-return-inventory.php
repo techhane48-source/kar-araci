@@ -83,4 +83,8 @@ $t['duplicate returned unit not accepted']=!closed_full_claim($delivered,[$c,arr
 $noCost=$closed;unset($noCost['lines'][0]['cost_snapshot']);
 $t['normal return needs no cost if not impaired']=closed_package_loss($noCost,[$noCost],[],$freight,[$c],[return_inventory_key($c)=>1],[],'123')['loss']===100.0;
 $t['explicit exception needs cost']=closed_package_loss($noCost,[$noCost],[],$freight,[$c],[return_inventory_key($c)=>1],['I1'=>$exception],'123')['loss']===null;
+$cancelled=array_replace($closed,['status'=>'Cancelled']);$second=array_replace($cancelled,['package_number'=>'P2']);
+$t['all cancelled split no evidence provisional zero']=closed_package_loss($cancelled,[$cancelled,$second],[],[],[],[],[],'123')['loss']===0.0;
+$t['split with actual charges still no allocation']=closed_package_loss($cancelled,[$cancelled,$second],[],$freight,[],[],[],'123')['loss']===null;
+$t['mixed status split no zero assumption']=closed_package_loss($cancelled,[$cancelled,array_replace($second,['status'=>'Delivered'])],[],[],[],[],[],'123')['loss']===null;
 foreach($t as $n=>$ok)echo ($ok?'PASS':'FAIL')." $n\n";exit(in_array(false,$t,true)?1:0);

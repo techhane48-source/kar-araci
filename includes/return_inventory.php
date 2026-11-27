@@ -153,8 +153,24 @@ function closed_package_loss(array $o,array $packages,array $rows,array $cargo,a
     if(!in_array($status,['cancelled','canceled','unsupplied','returned','undelivered'],true))return $out;
     $cancel=in_array($status,['cancelled','canceled','unsupplied'],true);
     $no=(string)($o['order_number']??'');$pid=(string)($o['package_number']??'');
-    if($seller===''||$no===''||$pid===''||count($packages)!==1||(string)($packages[0]['package_number']??'')!==$pid||!order_is_domestic_try($o))
-        return array_replace($out,['state'=>'Çoklu paket veya satıcı kapsamı doğrulanmalı']);
+    if($seller===''||$no===''||$pid===''||!order_is_domestic_try($o))
+        return array_replace($out,['state'=>'Satıcı veya ülke kapsamı doğrulanmalı']);
+    if(count($packages)!==1){
+        // An entirely cancelled split order without any recorded shipping or charge
+        // can use the same provisional zero as a single cancelled package. Never
+        // spread a real order-level debit across packages.
+        $allCancelled=$cancel&&$packages&&!$rows&&!$cargo&&!$claims;$found=false;$seenPackages=[];
+        foreach($packages as $p){
+            $id=(string)($p['package_number']??'');
+            $ctx=json_decode((string)($p['cargo_quote_context']??''),true);
+            if($id===''||isset($seenPackages[$id])||(string)($p['order_number']??'')!==$no||!order_is_domestic_try($p)||
+               !in_array(strtolower((string)($p['status']??'')),['cancelled','canceled','unsupplied'],true)||($ctx['desi_source']??'')==='shipment_api')$allCancelled=false;
+            $seenPackages[$id]=true;$found=$found||$id===$pid;
+        }
+        if($allCancelled&&$found)return array_replace($out,['loss'=>0.0,'cargo'=>0.0,'outbound'=>0.0,'return_cargo'=>0.0,'inventory'=>0.0,'assumed'=>true,'state'=>'İptal: 0 TL tahmin (gönderim/kesinti kaydı yok)']);
+        return array_replace($out,['state'=>'Çoklu paket: gider eşleşmesi bekleniyor']);
+    }
+    if((string)($packages[0]['package_number']??'')!==$pid)return $out;
     $lines=$o['lines']??[];if(is_string($lines))$lines=json_decode($lines,true);
     if(!is_array($lines)||!$lines)return $out;
     $o['lines']=$lines;$want=[];$lineIds=[];$units=0;
@@ -300,7 +316,7 @@ function closed_package_loss_overlay(PDO $db,int $uid,array $orders): array
     foreach(array_chunk(array_keys($by),200) as $chunk){
         $in=implode(',',array_fill(0,count($chunk),'?'));$args=array_merge([$uid],$chunk);$groups=[];
         $sqls=[
-          'packages'=>"SELECT order_number,package_number FROM orders WHERE user_id=? AND marketplace='trendyol' AND order_number IN ($in)",
+          'packages'=>"SELECT order_number,package_number,status,currency_code,country_code,cargo_quote_context FROM orders WHERE user_id=? AND marketplace='trendyol' AND order_number IN ($in)",
           'rows'=>"SELECT external_id,order_number,shipment_package_id,query_type,raw_json FROM settlements WHERE user_id=? AND marketplace='trendyol' AND order_number IN ($in)",
           'cargo'=>"SELECT c.*,d.raw_json AS invoice_raw FROM trendyol_cargo_items c LEFT JOIN trendyol_financial_documents d ON d.user_id=c.user_id AND d.external_id=c.invoice_serial AND d.query_type='DeductionInvoices' WHERE c.user_id=? AND c.order_number IN ($in)",
           'claims'=>"SELECT * FROM trendyol_claim_items WHERE user_id=? AND order_number IN ($in)"

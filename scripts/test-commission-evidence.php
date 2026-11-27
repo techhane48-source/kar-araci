@@ -40,4 +40,13 @@ $t['split package not estimated']=!order_discount_estimate_allowed($discounted,[
 $t['return never estimated']=!order_discount_estimate_allowed($discounted,[$a,$b,$d,array_replace($d,['query_type'=>'Return'])],'123',['P'=>true]);
 $t['no discount evidence not estimated']=!order_discount_estimate_allowed($o,[$a,$b,$d],'123',['P'=>true]);
 $t['wrong seller not estimated']=!order_discount_estimate_allowed($discounted,[$a,$b,$d],'999',['P'=>true]);
+$correction=array_replace($d,['external_id'=>'C1','query_type'=>'CommissionNegative','shipment_package_id'=>'','raw_json'=>json_encode(array_replace($raw,['id'=>'C1','shipmentPackageId'=>'','credit'=>0,'debt'=>5]))]);
+$t['non-return correction allows clearly provisional rate']=order_commission_estimate_allowed($discounted,[$a,$b,$correction],'123',['P'=>true]);
+$t['unknown return never uses provisional rate']=!order_commission_estimate_allowed($discounted,[$a,array_replace($correction,['query_type'=>'Return'])],'123',['P'=>true]);
+$t['foreign seller never uses provisional rate']=!order_commission_estimate_allowed($discounted,[$a,$correction],'999',['P'=>true]);
+$t['platform discount not silently treated as seller funded']=!order_commission_estimate_allowed(array_replace($discounted,['lines'=>[array_replace($discounted['lines'][0],['platform_discount'=>1]),$discounted['lines'][1]]]),[$a,$correction],'123',['P'=>true]);
+$db->exec("DELETE FROM settlements WHERE external_id='R'");
+$q->execute([1,'trendyol','C1','O','','CommissionNegative',$correction['raw_json']]);
+$over=commission_profit_overlay($db,1,[$o])[0];
+$t['unallocated correction rate estimate displayed without double subtraction']=!array_key_exists('commission_override',$over)&&calc_order_profit($over,$products)['ok']&&str_contains($over['commission_source'],'tahmini komisyon');
 foreach($t as $n=>$ok)echo ($ok?'PASS':'FAIL')." $n\n";exit(in_array(false,$t,true)?1:0);
