@@ -63,7 +63,7 @@ function campaign_link_context(PDO $db,int $uid,array $barcodes,int $now):array{
     }
     return $out;
 }
-function campaign_link_quotes(array $r,string $module,array $ctx,array $product,int $uploaded,int $now):array{
+function campaign_link_quotes(array $r,string $module,array $ctx,array $product,int $uploaded,int $now,?array $rule=null):array{
     if(!in_array($module,['plus','flash','etiket'],true)||$uploaded>$now||campaign_day($uploaded)!==campaign_day($now))return [];
     $normal=$ctx['komisyon']??null;if(!$normal||($normal['row']['barcode']??null)!==($r['barcode']??null))return [];
     $m=$r['campaign_meta']??[];$nm=$normal['row']['campaign_meta']??[];$tsf=campaign_clean_snapshot($m);
@@ -98,8 +98,38 @@ function campaign_link_quotes(array $r,string $module,array $ctx,array $product,
         try{
             $nc=product_profit($product,($module==='plus'?$tsf:$price)/100,$nr);
             $pc=$module==='plus'?product_profit($product,$price/100,(float)$pr):null;
-            $out[$key]=['normal_rate'=>$nr,'normal_profit'=>$nc['profit'],'normal_price'=>($module==='plus'?$tsf:$price)/100,'plus_rate'=>$pr,'plus_profit'=>$pc['profit']??null,'plus_price'=>$pc?$price/100:null,'period'=>$tier['period'],'conditional'=>true];
+            $out[$key]=['normal_rate'=>$nr,'normal_profit'=>$nc['profit'],'normal_price'=>($module==='plus'?$tsf:$price)/100,'plus_rate'=>$pr,'plus_profit'=>$pc['profit']??null,'plus_price'=>$pc?$price/100:null,'period'=>$tier['period'],'conditional'=>true,
+                'target_met'=>$rule===null?null:(target_pass($rule,$nc,(float)$product['cost'],($module==='plus'?$tsf:$price)/100)&&($pc===null||target_pass($rule,$pc,(float)$product['cost'],$price/100)))];
         }catch(InvalidArgumentException $e){}
     }
     return $out;
+}
+
+/** Compare only evaluated candidates for the same audience and time scope.
+ * No prediction of order volume; no ranking across different Flash slots or Plus periods. */
+function campaign_rank_quotes(string $module,array $quotes):array{
+    $groups=[];
+    foreach($quotes as $key=>$q){
+        if(empty($q['conditional'])||($q['target_met']??null)===false)continue;
+        $profit=$module==='plus'?($q['plus_profit']??null):($q['normal_profit']??null);
+        if(!is_numeric($profit)||!is_finite((float)$profit)||$profit<=0)continue;
+        if($module==='flash')continue; // different slots cannot be treated as equivalent demand
+        if($module==='plus')continue; // one offer per distinct period; no volume estimate
+        if($module!=='etiket'||!preg_match('/^star[1-3]$/D',$key))continue;
+        $group=(string)($q['period']??'');if($group==='')continue;
+        $groups[$group][$key]=(float)$profit;
+    }
+    $out=[];
+    foreach($groups as $values){if(count($values)<2)continue;$max=max($values);foreach($values as $key=>$v)if(abs($v-$max)<0.000001)$out[$key]=true;}
+    return $out;
+}
+/** Normal tariff boundaries are compared within each period, not across days. */
+function campaign_rank_normal(array $r,int $now):array{
+    $groups=[];foreach($r['tiers']??[] as $key=>$t){
+        if(!preg_match('/^period([34])_tier[1-4]$/D',$key,$m))continue;
+        $pick=tariff_apply_select($r,$key,true,false,$now);
+        if(!$pick||!is_numeric($pick['profit'])||!is_finite((float)$pick['profit']))continue;
+        $groups[$m[1]][$key]=(float)$pick['profit'];
+    }
+    $out=[];foreach($groups as $values){if(count($values)<2)continue;$max=max($values);foreach($values as $key=>$v)if(abs($v-$max)<0.000001)$out[$key]=true;}return $out;
 }

@@ -15,7 +15,7 @@ function campaign_export_clean(array $raw,array $cols,string $module):bool{
     return true;
 }
 function campaign_export_plan(string $module,string $key,array $quote,array $raw,array $cols):?array{
-    if(empty($quote['conditional'])||!campaign_export_clean($raw,$cols,$module))return null;
+    if(empty($quote['conditional'])||($quote['target_met']??null)===false||!campaign_export_clean($raw,$cols,$module))return null;
     if($module==='plus'){
         if(!preg_match('/^period([34])_plus$/D',$key,$m)||!is_numeric($quote['plus_profit']??null)||$quote['plus_profit']<=0)return null;
         $label=trim((string)($raw[$cols['choice'.$m[1]]]??''));

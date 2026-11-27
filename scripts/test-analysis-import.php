@@ -119,6 +119,13 @@ $ec=campaign_export_columns(['YENİ TSF (FİYAT GÜNCELLE)','Tarife Sonuna Kadar
 $tests['star draft does not lock price']=campaign_export_plan('etiket','star2',['conditional'=>true,'normal_profit'=>10.0,'normal_price'=>150.0],['','Evet'],$ec)===[0=>150.0,1=>'Hayır'];
 $patch=$dir.'/campaign-patch.xlsx';campaign_patch_xlsx($orig,$patch,[3=>[21=>350.0,22=>'4 Günlük Fiyat']]);$pd=xlsx_read($patch,true);
 $tests['exact row coordinates and untouched row']=$pd['row_numbers']===[2,3]&&$pd['rows'][0][21]===''&&$pd['rows'][1][21]==='350.00'&&$pd['rows'][1][22]==='4 Günlük Fiyat';
+$tests['target prevents draft']=campaign_export_plan('plus','period3_plus',$quote+['target_met'=>false],['','','3 Günlük Fiyat (26 Kasım 08.00-29 Kasım 07.59)','',''],$pc)===null;
+$qs=['star1'=>['conditional'=>true,'normal_profit'=>50.0,'period'=>'A','target_met'=>true],'star2'=>['conditional'=>true,'normal_profit'=>60.0,'period'=>'A','target_met'=>true],'star3'=>['conditional'=>true,'normal_profit'=>80.0,'period'=>'A','target_met'=>false]];
+$tests['rank only eligible candidates within one period']=campaign_rank_quotes('etiket',$qs)===['star2'=>true];
+$tests['no ranking different audiences or slots']=campaign_rank_quotes('flash',$qs)===[]&&campaign_rank_quotes('plus',$qs)===[];
+$qs['star2']['period']='B';$tests['do not compare different periods']=campaign_rank_quotes('etiket',$qs)===[];
+$blocked=campaign_link_quotes($pr,'plus',$ctx,$products['001'],$at,$at,['kind'=>'profit','value'=>999999]);
+$tests['linked quote target applied']=isset($blocked['period3_plus'])&&$blocked['period3_plus']['target_met']===false;
 $bulk=analysis_schema(['Barkod','Fiyat'],'bulk');
 $rows=(static function(){for($i=0;$i<20000;$i++)yield ['001','200'];})();
 $stats=analysis_save(db(),1,'bulk','bulk',$bulk,$rows,$products);
