@@ -222,18 +222,20 @@ function verify_adjustment_overlap(array $orders,array $movements): array
             'currency_code'=>$o['currencyCode']??null,'country_code'=>$o['orderCountryCode']??null,'lines'=>$o['lines']??[]];
     }
     foreach($movements as $s){
-        $no=(string)($s['orderNumber']??'');if(!isset($packages[$no])||($s['queryType']??null)==='Sale')continue;
+        $no=(string)($s['orderNumber']??'');if(!isset($packages[$no]))continue;
         $rows[$no][]=['external_id'=>$s['externalId']??null,'order_number'=>$no,'shipment_package_id'=>$s['shipmentPackageId']??null,
             'query_type'=>$s['queryType']??null,'raw_json'=>$s['raw']??null];
     }
-    $matched=0;$unresolved=0;$reasons=[];
+    $matched=0;$unresolved=0;$reasons=[];$unallocated=0;
     foreach($rows as $no=>$group){
+        if(!array_filter($group,static fn($r)=>$r['query_type']!=='Sale'))continue;
         $seller=(string)($group[0]['raw_json']['sellerId']??'');
         $e=order_adjustment_evidence($packages[$no],$group,$seller);
+        if(order_unallocated_adjustment_evidence($packages[$no],$group,$seller)['state']==='observed')$unallocated++;
         if($e['state']==='matched')$matched++;else{$unresolved++;if(is_string($e['reason']??null))$reasons[$e['reason']]=true;}
     }
     // A missing identity is an unresolved coverage condition, not a proven wrong monetary calculation.
-    return ['ok'=>true,'state'=>$unresolved?'incomplete':($matched?'matched':'not_verified'),'matched_orders'=>$matched,'unresolved_orders'=>$unresolved,'reasons'=>array_keys($reasons),'final_profit_verified'=>false];
+    return ['ok'=>true,'state'=>$unresolved?'incomplete':($matched?'matched':'not_verified'),'matched_orders'=>$matched,'unresolved_orders'=>$unresolved,'reasons'=>array_keys($reasons),'unallocated_order_reference_present'=>$unallocated>0,'final_profit_verified'=>false];
 }
 /** An invoice order reference alone cannot assign a parcel charge to a shipment package. */
 function verify_cargo_order_overlap(array $orders,array $invoiceOrders): array
@@ -252,7 +254,7 @@ function verify_extend_order_overlap(object $client,array $recent,array $movemen
     $targets=$invoiceOrders;
     foreach($movements as $row){
         $no=(string)($row['orderNumber']??'');
-        if($no!==''&&($row['queryType']??null)==='Sale')$targets[$no]=true;
+        if($no!=='')$targets[$no]=true;
     }
     if(!$targets)return $recent;
     $earliest=$now-56*86400;

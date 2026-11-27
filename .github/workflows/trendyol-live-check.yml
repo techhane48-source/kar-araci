@@ -106,6 +106,7 @@ jobs:
           for reason in ("PACKAGE_SCOPE","TRANSACTION_ID","SELLER_SCOPE","PACKAGE_REFERENCE","MOVEMENT_TYPE","BARCODE_REFERENCE","AMOUNT"):
               if isinstance(reasons, list) and reason in reasons:
                   print("Adjustment diagnostic: " + reason)
+          print("Unallocated adjustment order reference: " + ("PRESENT (NO PACKAGE ALLOCATION)" if adjustment.get("unallocated_order_reference_present") is True else "NOT VERIFIED"))
           print("Independent financial reconciliation: NOT VERIFIED")
           sys.exit(0 if sys.argv[2] == "0" and report.get("ok") is True else 1)
           PY

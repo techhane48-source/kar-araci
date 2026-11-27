@@ -22,11 +22,12 @@ function order_adjustment_evidence(array $packages,array $rows,string $seller): 
         'SellerRevenuePositiveCancel','SellerRevenueNegativeCancel','CommissionPositive','CommissionNegative','CommissionPositiveCancel','CommissionNegativeCancel',
         'DeliveryFee','DeliveryFeeCancel','PayByLink'];
     $seen=[];$n=0;$balance=0;$bad=0;$reasons=[];
+    $allIds=[];foreach($rows as $row){$id=(string)($row['external_id']??'');if($id!=='')$allIds[$id]=($allIds[$id]??0)+1;}
     foreach($rows as $row){
         $type=(string)($row['query_type']??'');if($type==='Sale')continue;
         $id=(string)($row['external_id']??'');$pid=(string)($row['shipment_package_id']??'');
         $raw=$row['raw_json']??null;if(is_string($raw))$raw=json_decode($raw,true);
-        if($id===''||isset($seen[$id])){$bad++;$reasons['TRANSACTION_ID']=true;continue;}
+        if($id===''||isset($seen[$id])||($allIds[$id]??0)!==1){$bad++;$reasons['TRANSACTION_ID']=true;continue;}
         if(!is_array($raw)||$seller===''||!finance_is_domestic($raw)||(string)($raw['sellerId']??'')!==$seller){$bad++;$reasons['SELLER_SCOPE']=true;continue;}
         if((string)($raw['id']??'')!==$id||(string)($row['order_number']??'')!==$orderNo||(string)($raw['orderNumber']??'')!==$orderNo){$bad++;$reasons['TRANSACTION_ID']=true;continue;}
         if(!isset($ids[$pid])||(string)($raw['shipmentPackageId']??'')!==$pid){$bad++;$reasons['PACKAGE_REFERENCE']=true;continue;}
@@ -41,6 +42,46 @@ function order_adjustment_evidence(array $packages,array $rows,string $seller): 
         }catch(InvalidArgumentException $e){$bad++;$reasons['AMOUNT']=true;}
     }
     return ['state'=>$bad?'incomplete':($n?'matched':'not_verified'),'rows'=>$n,'balance'=>!$bad&&$n?$balance/10000.0:null,'reason'=>$bad?array_key_first($reasons):null];
+}
+/** A distinct, weaker tier: observed financial rows tied to the order and known
+ * barcode only. No package allocation, no refund inference, no realized profit.
+ * Withhold the aggregate if any adjustment is inconsistent. */
+function order_unallocated_adjustment_evidence(array $packages,array $rows,string $seller): array
+{
+    $empty=['state'=>'not_verified','rows'=>0,'balance'=>null,'package_allocation_verified'=>false];
+    $bad=array_replace($empty,['state'=>'incomplete']);
+    if(!$packages||$seller==='')return $bad;
+    $no=(string)($packages[0]['order_number']??'');$barcodes=[];$ids=[];
+    foreach($packages as $p){
+        $pid=(string)($p['package_number']??'');
+        if($no===''||$pid===''||isset($ids[$pid])||(string)($p['order_number']??'')!==$no||!order_is_domestic_try($p))return $bad;
+        $ids[$pid]=true;$lines=$p['lines']??[];if(is_string($lines))$lines=json_decode($lines,true);
+        if(!is_array($lines)||!$lines)return $bad;
+        foreach($lines as $l){if(!is_array($l)||trim((string)($l['barcode']??''))==='')return $bad;$barcodes[(string)$l['barcode']]=true;}
+    }
+    $counts=[];foreach($rows as $row){$id=(string)($row['external_id']??'');if($id!=='')$counts[$id]=($counts[$id]??0)+1;}
+    $n=0;$sum=0;
+    foreach($rows as $row){
+        $type=(string)($row['query_type']??'');if($type==='Sale')continue;
+        $id=(string)($row['external_id']??'');$pid=(string)($row['shipment_package_id']??'');
+        $raw=$row['raw_json']??null;if(is_string($raw))$raw=json_decode($raw,true);
+        if($id===''||($counts[$id]??0)!==1||!is_array($raw)||!finance_is_domestic($raw)||
+           (string)($raw['sellerId']??'')!==$seller||(string)($raw['id']??'')!==$id||
+           (string)($row['order_number']??'')!==$no||(string)($raw['orderNumber']??'')!==$no||
+           (string)($raw['shipmentPackageId']??'')!==$pid)return $bad;
+        // Reuse strict type, amount and barcode validation without assigning a real package.
+        // The synthetic identity exists solely inside this validation call.
+        $bc=(string)($raw['barcode']??'');if(!isset($barcodes[$bc]))return $bad;
+        $virtual=['marketplace'=>'trendyol','order_number'=>$no,'package_number'=>'validation-only','currency_code'=>'TRY','country_code'=>'TR','lines'=>[['barcode'=>$bc]]];
+        $copy=$row;$copy['shipment_package_id']='validation-only';$raw['shipmentPackageId']='validation-only';$copy['raw_json']=$raw;
+        $check=order_adjustment_evidence([$virtual],[$copy],$seller);
+        if($check['state']!=='matched')return $bad;
+        if(!isset($ids[$pid])){
+            try{$sum+=finance_units($raw['credit'])-finance_units($raw['debt']);}catch(InvalidArgumentException $e){return $bad;}
+            $n++;
+        }
+    }
+    return $n?['state'=>'observed','rows'=>$n,'balance'=>$sum/10000.0,'package_allocation_verified'=>false]:$empty;
 }
 /**
  * Order-level evidence aggregation. The order number and package ID are separate
@@ -175,6 +216,7 @@ function order_evidence(array $packages,array $settlements,array $cargo,array $c
         if(!$single)$unallocatedCargo=$outbound/10000.0;
     }
     $adjustments=order_adjustment_evidence($packages,$settlements,$seller);
+    $unallocated=order_unallocated_adjustment_evidence($packages,$settlements,$seller);
     // Deliberately not a net-profit result: invoices, VAT, withholding, service,
     // merchant shipping, returns and future adjustments are not fully reconciled.
     return ['order_number'=>$orderNo,'packages'=>count($byPackage),'active_packages'=>$active,
@@ -184,7 +226,7 @@ function order_evidence(array $packages,array $settlements,array $cargo,array $c
         'sale_credit'=>$sales?$saleCredit/10000.0:null,'sale_commission'=>$sales?$saleCommission/10000.0:null,'sale_revenue'=>$sales?$saleRevenue/10000.0:null,
         'cargo_rows'=>$cargoN,'outbound_cargo'=>$outboundN?$outbound/10000.0:null,'return_cargo'=>$returnN?$returnCargo/10000.0:null,'other_cargo'=>$cargoN?$otherCargo/10000.0:null,
         'claim_items'=>count($claims),'issues'=>array_values(array_unique($issues)),
-        'adjustment_state'=>$adjustments['state'],'adjustment_rows'=>$adjustments['rows'],'adjustment_balance'=>$adjustments['balance'],
+        'adjustment_state'=>$adjustments['state'],'adjustment_rows'=>$adjustments['rows'],'adjustment_balance'=>$adjustments['balance'],'unallocated_adjustment'=>$unallocated,
         'known_subtotal'=>$subtotal,'product_components'=>$productComponents,'unallocated_product_cargo'=>$unallocatedCargo,'profit'=>null,'state'=>$issues?'Eksik / inceleme gerekli':'Temel kalemler eşleşti; kesin kâr değil'];
 }
 

@@ -67,6 +67,11 @@ $tests['adjustment duplicate withheld']=order_adjustment_evidence([$p],[$adjust,
 $bad=order_adjustment_evidence([$p],[array_replace($adjust,['raw_json'=>json_encode(array_replace($adjustRaw,['barcode'=>'OTHER']))])],'123');
 $tests['adjustment wrong barcode withheld']=$bad['balance']===null&&$bad['reason']==='BARCODE_REFERENCE';
 $tests['missing package diagnostic']=order_adjustment_evidence([$p],[array_replace($adjust,['shipment_package_id'=>'OTHER'])],'123')['reason']==='PACKAGE_REFERENCE';
+$unallocated=$adjust;$unallocated['shipment_package_id']='OLD';$unallocated['raw_json']=json_encode(array_replace($adjustRaw,['shipmentPackageId'=>'OLD']));
+$weak=order_unallocated_adjustment_evidence([$p],[$s,$unallocated],'123');
+$tests['unallocated order evidence distinct']=$weak['state']==='observed'&&$weak['balance']===-10.0&&!$weak['package_allocation_verified']&&order_adjustment_evidence([$p],[$unallocated],'123')['balance']===null;
+$tests['unallocated barcode mismatch withheld']=order_unallocated_adjustment_evidence([$p],[array_replace($unallocated,['raw_json'=>json_encode(array_replace($adjustRaw,['shipmentPackageId'=>'OLD','barcode'=>'OTHER']))])],'123')['state']==='incomplete';
+$tests['cross type duplicate rejected']=order_adjustment_evidence([$p],[$s,array_replace($adjust,['external_id'=>$s['external_id']])],'123')['reason']==='TRANSACTION_ID';
 $tests['adjustment missing evidence not zero']=order_adjustment_evidence([$p],[$s],'123')['balance']===null;
 $tests['adjustment unknown type withheld']=order_adjustment_evidence([$p],[array_replace($adjust,['query_type'=>'UNKNOWN'])],'123')['balance']===null;
 foreach($tests as $name=>$ok)echo ($ok?'PASS':'FAIL')." $name\n";

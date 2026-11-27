@@ -96,6 +96,9 @@ $adj=$overlapSale;$adj['queryType']='Discount';$adj['raw']['credit']=0;$adj['raw
 $adj['externalId']='PRIVATE-ADJUSTMENT';$adj['raw']['id']='PRIVATE-ADJUSTMENT';
 $r=verify_adjustment_overlap([$overlapOrder],[$overlapSale,$adj]);
 $t['adjustment overlap does not expose amount']=$r['state']==='matched'&&!$r['final_profit_verified']&&!str_contains(json_encode($r),'PRIVATE')&&!array_key_exists('balance',$r);
+$old=$adj;$old['shipmentPackageId']='PRIVATE-OLD';$old['raw']['shipmentPackageId']='PRIVATE-OLD';
+$r=verify_adjustment_overlap([$overlapOrder],[$overlapSale,$old]);
+$t['unallocated order evidence redacted']=$r['state']==='incomplete'&&$r['unallocated_order_reference_present']&&!str_contains(json_encode($r),'PRIVATE');
 $adj['raw']['barcode']='OTHER';
 $r=verify_adjustment_overlap([$overlapOrder],[$adj]);
 $t['adjustment overlap unresolved not passed as evidence']=$r['state']==='incomplete'&&$r['reasons']===['BARCODE_REFERENCE'];
