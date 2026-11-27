@@ -101,12 +101,12 @@ $funnel = [
     'kar'           => $brutKar,
 ];
 
-$pageTitle = 'Dashboard — ' . APP_NAME;
+$pageTitle = 'Genel Bakış — ' . APP_NAME;
 require __DIR__ . '/../includes/header.php';
 ?>
 <div class="wrap">
   <div class="toolbar">
-    <h1>Dashboard</h1>
+    <div><h1>Genel Bakış</h1><p class="ui-muted">Mağazanızın satış, kâr ve dikkat gerektiren işlemleri.</p></div>
     <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
       <select onchange="location.href='?mp='+encodeURIComponent(this.value)+'&days=<?= $days ?>'" style="width:auto">
         <?php foreach ($mps as $c): ?>
@@ -121,6 +121,43 @@ require __DIR__ . '/../includes/header.php';
     </div>
   </div>
 
+  <?php if (!$orders): ?>
+    <div class="card" style="padding:32px;text-align:center">
+      <h2>Henüz veri yok</h2>
+      <p class="hint" style="max-width:520px;margin:8px auto">
+        <?= $toplamUrun === 0
+            ? 'Mağazanı bağla, siparişler ve kârlılığın otomatik gelsin. <a href="magaza.php">Mağaza Bağla →</a>'
+            : 'Siparişler senkron edilmedi. <a href="canli-performans.php">Canlı Performans</a> sayfasından siparişleri senkronize et.' ?>
+      </p>
+    </div>
+  <?php else: ?>
+
+  <section class="ui-kpi-grid" aria-label="Satış ve kâr göstergeleri">
+    <?php ui_kpi('wallet','Toplam satış',tl($ciro),$aralikLabel.' · aktif paketler');?>
+    <?php ui_kpi('finance','Tahmini Sipariş Kârı',$maliyetliSiparis+$closedKnown>0?tl($netKar):'—',$maliyetliSiparis.'/'.$siparis.' aktif paket hesaplandı',$netKar<0?'neg':'');?>
+    <?php ui_kpi('orders','Satış paketi',number_format($siparis,0,',','.'),$urunAdet.' ürün adedi');?>
+    <?php ui_kpi('price','Tahmini kâr marjı',$maliyetliSiparis>0?'%'.number_format($karSatis,1,',','.'):'—','Hesaplanabilen satış üzerinden',$karSatis<0?'neg':'');?>
+  </section>
+  <?php $excludedCurrency=count(array_filter($orders,static fn($o)=>!order_is_domestic_try($o))); if($excludedCurrency): ?><p class="hint"><?= $excludedCurrency ?> paket ülke/para birimi doğrulanmadığından TL cirosuna dahil edilmedi. Eski kayıtları tekrar senkronize edin.</p><?php endif; ?>
+  <p class="hint">Kâr tahmini <?= $maliyetliSiparis ?>/<?= $siparis ?> aktif paket ve <?=$closedKnown?>/<?=$closedCount?> iptal/iade üzerinden. İptal/iade tahmini zarar: <?= $closedKnown?tl($closedLoss):'—' ?> (bir kez düşüldü). Reklam, ceza ve diğer mağaza giderleri henüz kesin net kâra işlenmiyor.</p>
+  <div class="ui-dashboard-grid">
+    <section class="card ui-attention"><h2>Hemen ilgilenmeniz gerekenler</h2>
+      <?php $missing=max(0,$toplamUrun-$maliyetGirilen);$uncomputed=max(0,$siparis-$maliyetliSiparis);?>
+      <?php if($missing):?><a class="ui-task" href="maliyet-senaryosu.php"><span class="ui-task-icon"><?=ui_icon('products')?></span><span><strong><?=$missing?> ürünün maliyeti eksik</strong><small>Kâr hesabını tamamlamak için maliyetleri girin.</small></span><?=ui_icon('chevron')?></a><?php endif;?>
+      <?php if($uncomputed):?><a class="ui-task" href="canli-performans.php"><span class="ui-task-icon"><?=ui_icon('orders')?></span><span><strong><?=$uncomputed?> paketin kârı hesaplanamadı</strong><small>Eksik sipariş bilgilerini kontrol edin.</small></span><?=ui_icon('chevron')?></a><?php endif;?>
+      <?php if(($catalogAlerts['flagged']??0)>0):?><a class="ui-task" href="uyarilar.php"><span class="ui-task-icon"><?=ui_icon('bell')?></span><span><strong><?=$catalogAlerts['flagged']?> ürün uyarısı</strong><small>Fiyat ve kâr hedeflerini inceleyin.</small></span><?=ui_icon('chevron')?></a><?php endif;?>
+      <?php if($closedCount>$closedKnown):?><a class="ui-task" href="iade-kontrol.php"><span class="ui-task-icon"><?=ui_icon('orders')?></span><span><strong><?=$closedCount-$closedKnown?> iptal/iade gideri bekliyor</strong><small>İade ve kargo bilgilerini kontrol edin.</small></span><?=ui_icon('chevron')?></a><?php endif;?>
+      <?php if(!$missing&&!$uncomputed&&!($catalogAlerts['flagged']??0)&&$closedCount===$closedKnown):?><div class="ui-task"><span class="ui-task-icon success"><?=ui_icon('check')?></span><span><strong>Şu anda listelenen uyarı yok</strong><small>Bu kontrol yalnızca kayıtlı verileri kapsar.</small></span></div><?php endif;?>
+      <a class="btn-ghost" href="uyarilar.php">Tüm uyarıları gör</a>
+    </section>
+    <section class="card"><h2>Bugünün satış hareketi</h2><p class="ui-muted">Saatlik satış · TL</p>
+      <?php $maxH=max(1.0,max($todayHourly));?>
+      <div class="ui-chart" role="img" aria-label="Bugünün saatlik satış grafiği"><?php foreach($todayHourly as $hour=>$amount):?><div class="ui-chart-col" title="<?=sprintf('%02d:00',$hour)?> — <?=h(tl($amount))?>"><span style="height:<?=max(0,min(100,$amount/$maxH*100))?>%"></span></div><?php endforeach;?></div>
+      <div class="ui-chart-axis"><span>00:00</span><span>06:00</span><span>12:00</span><span>18:00</span><span>23:00</span></div><p class="ui-muted">Bugün: <?=tl(array_sum($todayHourly))?></p><a href="canli-performans.php" class="btn-ghost">Siparişlere git</a>
+    </section>
+  </div>
+  <details class="ui-disclosure"><summary>Finans ve hesaplama ayrıntıları</summary><div class="ui-detail-body">
+  <p class="hint">Kesin mağaza net kârı henüz doğrulanmadı. Aşağıdaki finans hareketleri tahmini kârdan yeniden düşülmez.</p>
   <?php if($catalogAlerts!==null): ?><div class="card" style="margin:12px 0"><h2>Mağaza kontrolü</h2>
   <p><?= $catalogAlerts['products'] ?> ürün · <?= $catalogAlerts['evaluated'] ?> kâr hesabı · <?= $catalogAlerts['flagged'] ?> uyarılı ürün</p>
   <p><?= $catalogAlerts['counts']['loss'] ?> tahmini zarar · <?= $catalogAlerts['counts']['below_target'] ?> hedef altı · <?= $catalogAlerts['counts']['missing_cost'] ?> maliyet eksik</p>
@@ -147,28 +184,6 @@ require __DIR__ . '/../includes/header.php';
     <a href="iade-kontrol.php">Yalnız satılamaz ürünleri işaretle</a> · <a href="raporlar.php?r=claims">İade raporu</a>
   </section>
   <?php endif; ?>
-  <?php if (!$orders): ?>
-    <div class="card" style="padding:32px;text-align:center">
-      <h2>Henüz veri yok</h2>
-      <p class="hint" style="max-width:520px;margin:8px auto">
-        <?= $toplamUrun === 0
-            ? 'Mağazanı bağla, siparişler ve kârlılığın otomatik gelsin. <a href="magaza.php">Mağaza Bağla →</a>'
-            : 'Siparişler senkron edilmedi. <a href="canli-performans.php">Canlı Performans</a> sayfasından siparişleri senkronize et.' ?>
-      </p>
-    </div>
-  <?php else: ?>
-
-  <div class="kpi-row">
-    <div class="kpi"><div class="k-label">Toplam Ciro</div><div class="k-value"><?= tl($ciro) ?></div></div>
-    <div class="kpi"><div class="k-label">Kârı Hesaplanabilen Ciro</div><div class="k-value"><?= tl($maliyetliCiro) ?></div></div>
-    <div class="kpi"><div class="k-label">Kesin mağaza net kârı</div><div class="k-value">—</div></div>
-    <div class="kpi"><div class="k-label">Tahmini Sipariş Kârı</div><div class="k-value <?= $netKar < 0 ? 'neg' : 'pos' ?>"><?= $maliyetliSiparis+$closedKnown > 0 ? tl($netKar) : '—' ?></div></div>
-    <div class="kpi"><div class="k-label">Tahmini Sipariş Kârı / Satış</div><div class="k-value <?= $karSatis < 0 ? 'neg' : '' ?>"><?= $maliyetliSiparis>0?'%'.number_format($karSatis,1,',','.'):'—' ?></div></div>
-    <div class="kpi"><div class="k-label">Tahmini Sipariş Kârı / Maliyet</div><div class="k-value <?= $karMaliyet < 0 ? 'neg' : '' ?>"><?= $maliyetliSiparis>0?'%'.number_format($karMaliyet,1,',','.'):'—' ?></div></div>
-  </div>
-
-  <?php $excludedCurrency=count(array_filter($orders,static fn($o)=>!order_is_domestic_try($o))); if($excludedCurrency): ?><p class="hint"><?= $excludedCurrency ?> paket ülke/para birimi doğrulanmadığından TL cirosuna dahil edilmedi. Eski kayıtları tekrar senkronize edin.</p><?php endif; ?>
-  <p class="hint">Kâr tahmini <?= $maliyetliSiparis ?>/<?= $siparis ?> aktif paket ve <?=$closedKnown?>/<?=$closedCount?> iptal/iade üzerinden. İptal/iade tahmini zarar: <?= $closedKnown?tl($closedLoss):'—' ?> (bir kez düşüldü). Reklam, ceza ve diğer mağaza giderleri henüz kesin net kâra işlenmiyor.</p>
   <?php if($expenseEvidence!==null): ?>
   <div class="card table-card" style="margin:12px 0">
     <h2>Dönemde kaydedilen gerçek finans hareketleri</h2>
@@ -221,19 +236,6 @@ require __DIR__ . '/../includes/header.php';
   </div>
 
   <div class="card table-card" style="margin:16px 0">
-    <h2>Bugün Saatlik Satış</h2>
-    <?php $maxH = max(1.0, max($todayHourly)); ?>
-    <div style="display:flex;gap:4px;align-items:flex-end;height:90px;margin:8px 0 4px;padding:0 2px">
-      <?php for ($h = 0; $h < 24; $h++): $sh = $todayHourly[$h] / $maxH * 100; ?>
-        <div style="flex:1;display:flex;flex-direction:column;justify-content:flex-end;align-items:center" title="<?= str_pad((string)$h,2,'0',STR_PAD_LEFT) ?>:00 — <?= tl($todayHourly[$h]) ?>">
-          <div style="width:100%;background:var(--accent);border-radius:2px 2px 0 0;height:<?= max(1, $sh) ?>%;opacity:<?= $todayHourly[$h] > 0 ? 1 : 0.15 ?>"></div>
-        </div>
-      <?php endfor; ?>
-    </div>
-    <p class="hint">Saat etiketleri 00-23. Bugün henüz sipariş yoksa çubuklar boş.</p>
-  </div>
-
-  <div class="card table-card" style="margin:16px 0">
     <h2>Masraf Kalemleri</h2>
     <table>
       <tr><td>Ürün Maliyeti</td><td class="tar"><?= tl($urunMaliyeti) ?></td></tr>
@@ -262,6 +264,7 @@ require __DIR__ . '/../includes/header.php';
     </table>
   </div>
 
+  </div></details>
   <?php endif; ?>
 </div>
 <?php require __DIR__ . '/../includes/footer.php'; ?>

@@ -20,7 +20,10 @@ if (!in_array($mp, $mps, true)) $mp = $mps[0];
 $days=(int)($_POST['sync_days']??$_POST['days']??$_GET['days']??7);
 if(!in_array($days,[7,30,89],true))$days=7;
 $page=max(1,(int)($_GET['page']??1));
-$rangeUrl=static fn(int $p=1):string=>'canli-performans.php?mp='.urlencode($mp).'&days='.$days.'&page='.$p;
+$search=trim(is_string($_GET['q']??null)?$_GET['q']:'');
+$statusFilter=is_string($_GET['status']??null)?$_GET['status']:'';
+if(!in_array($statusFilter,['','new','shipping','delivered','closed'],true))$statusFilter='';
+$rangeUrl=static fn(int $p=1):string=>'canli-performans.php?mp='.urlencode($mp).'&days='.$days.'&q='.urlencode($search).'&status='.urlencode($statusFilter).'&page='.$p;
 
 // --- Maliyet kaydet (inline; Bugün Sipariş Alan Ürünler) ---
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'save_cost') {
@@ -81,7 +84,13 @@ $orders=closed_package_loss_overlay(db(),(int)$u['id'],$orders);
 $todayStart = strtotime('today');
 $yesterdayStart = $todayStart - 86400;
 $now = time();
-$perPage=50;$orderTotal=count($orders);$pages=max(1,(int)ceil($orderTotal/$perPage));$page=min($page,$pages);
+$visibleOrders=array_values(array_filter($orders,static function($o)use($search,$statusFilter){
+    $status=strtolower((string)($o['status']??''));
+    $group=isset($o['closed_loss'])||in_array($status,['returned','cancelled','canceled','unsupplied','undelivered'],true)?'closed':(in_array($status,['shipped','atcollectionpoint'],true)?'shipping':($status==='delivered'?'delivered':(in_array($status,['created','awaiting','unpacked','picking','invoiced','packed','readytoship'],true)?'new':'unknown')));
+    if($statusFilter!==''&&$group!==$statusFilter)return false;
+    return $search===''||str_contains((string)($o['order_number']??''),$search)||str_contains((string)($o['package_number']??''),$search);
+}));
+$perPage=50;$orderTotal=count($visibleOrders);$pages=max(1,(int)ceil($orderTotal/$perPage));$page=min($page,$pages);
 $blank=['sale'=>0.0,'profit'=>0.0,'count'=>0,'profitCount'=>0,'profitSale'=>0.0];$period=$blank;$closed=['count'=>0,'known'=>0,'loss'=>0.0];
 
 $today = ['sale' => 0.0, 'profit' => 0.0, 'count' => 0, 'profitCount' => 0, 'profitSale'=>0.0];
@@ -136,12 +145,12 @@ $deltaSale = $yesterday['sale'] > 0 ? ($today['sale'] - $yesterday['sale']) / $y
 $avgMargin = $today['profitSale'] > 0 ? $today['profit'] / $today['profitSale'] * 100 : null;
 $excludedCurrency = count(array_filter($orders, static fn($o)=>!order_is_domestic_try($o)));
 
-$pageTitle = 'Canlı Performans — ' . APP_NAME;
+$pageTitle = 'Siparişler — ' . APP_NAME;
 require __DIR__ . '/../includes/header.php';
 ?>
 <div class="wrap">
   <div class="toolbar">
-    <h1>Canlı Performans</h1>
+    <div><h1>Siparişler</h1><p class="ui-muted">Satışlarınızı, kargo durumlarını ve sipariş kârınızı takip edin.</p></div>
     <form method="post" style="display:flex;gap:8px;align-items:center">
       <input type="hidden" name="csrf" value="<?= h(csrf_token()) ?>">
       <input type="hidden" name="action" value="sync">
@@ -151,31 +160,64 @@ require __DIR__ . '/../includes/header.php';
         <?php endforeach; ?>
       </select>
       <select name="sync_days" aria-label="Güncelleme geçmişi"><?php foreach([7,30,89] as $n):?><option value="<?=$n?>" <?=$days===$n?'selected':''?>>Son <?=$n?> gün</option><?php endforeach;?></select>
-      <button type="submit" class="btn-primary">Siparişleri Senkronize Et</button>
+      <button type="submit" class="btn-primary">Siparişleri güncelle</button>
     </form>
   </div>
 
-  <form method="get" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+  <form method="get" class="ui-filterbar">
     <input type="hidden" name="mp" value="<?=h($mp)?>">
     <label>Görüntüleme aralığı <select name="days"><?php foreach([7,30,89] as $n):?><option value="<?=$n?>" <?=$days===$n?'selected':''?>>Son <?=$n?> gün</option><?php endforeach;?></select></label>
-    <button class="btn-ghost">Göster</button>
+    <label>Sipariş veya paket no <input name="q" value="<?=h($search)?>" placeholder="Sipariş numarası"></label>
+    <label>Durum <select name="status"><?php foreach([''=>'Tümü','new'=>'Yeni / hazırlanıyor','shipping'=>'Kargoda','delivered'=>'Teslim edildi','closed'=>'İptal / iade'] as $key=>$label):?><option value="<?=h($key)?>" <?=$statusFilter===$key?'selected':''?>><?=h($label)?></option><?php endforeach;?></select></label>
+    <button class="btn-primary">Filtrele</button><a class="btn-ghost" href="?mp=<?=urlencode($mp)?>&days=<?=$days?>">Temizle</a>
   </form>
   <?php $flash = flash_get(); if ($flash): ?><div class="alert alert-<?= $flash['type'] ?>"><?= h($flash['msg']) ?></div><?php endif; ?>
 
   <p class="hint">Son başarılı sipariş senkronu: <?= $lastOrdersSync > 0 ? date("d.m.Y H:i", $lastOrdersSync) : "Henüz yok" ?><?= $lastOrdersSync > 0 && $lastOrdersSync < time()-900 ? " — veriler eski olabilir" : "" ?>.</p>
   <?php if($mp==='trendyol'): ?><p class="hint"><?= h(sync_coverage_label(db(),(int)$u['id'],$mp,'orders_modified',$weekStart,time())) ?> Sipariş aralığı son güncelleme tarihine göredir; oluşturulma tarihi kapsamı garanti edilmez.</p><?php endif; ?>
-  <div class="kpi-row">
-    <div class="kpi"><div class="k-label">Bugün Satış</div><div class="k-value"><?= tl($today['sale']) ?></div></div>
-    <div class="kpi"><div class="k-label">Bugün Tahmini Kâr</div><div class="k-value <?= $today['profit'] < 0 ? 'neg' : '' ?>"><?= $today['profitCount'] > 0 ? tl($today['profit']) : '—' ?></div></div>
-    <div class="kpi"><div class="k-label">Sipariş</div><div class="k-value"><?= $today['count'] ?></div></div>
-    <div class="kpi"><div class="k-label">Ort. Kâr Marjı</div><div class="k-value"><?= $avgMargin === null ? '—' : '%'.number_format($avgMargin,1,',','.') ?></div></div>
-  </div>
-
+  <section class="ui-kpi-grid" aria-label="Bugünkü satışlar">
+    <?php ui_kpi('wallet','Bugün satış',tl($today['sale']),'Bugün · aktif satışlar');?>
+    <?php ui_kpi('finance','Bugün tahmini kâr',$today['profitCount']?tl($today['profit']):'—',$today['profitCount'].'/'.$today['count'].' paket hesaplandı',$today['profit']<0?'neg':'');?>
+    <?php ui_kpi('orders','Bugünkü paketler',(string)$today['count'],'İptal ve iadeler dahil');?>
+    <?php ui_kpi('price','Tahmini kâr marjı',$avgMargin===null?'—':'%'.number_format($avgMargin,1,',','.'),'Hesaplanabilen satış üzerinden');?>
+  </section>
   <p class="hint">Kâr kapsamı: <?= $today['profitCount'] ?>/<?= $today['count'] ?> sipariş; <?= tl($today['profitSale']) ?> ciro. <?= $excludedCurrency ?> paket ülke/para birimi doğrulaması dışında. Eski kayıtlar için yeniden senkron gerekir.</p>
   <?php if ($deltaSale !== null): ?>
     <p class="hint" style="margin:8px 0">Dünün tamamına göre bugünkü satış <b class="<?= $deltaSale >= 0 ? 'pos' : 'neg' ?>">%<?= number_format($deltaSale, 1, ',', '.') ?></b> (dün <?= tl($yesterday['sale']) ?>).</p>
   <?php endif; ?>
 
+  <div class="card table-card" style="margin:16px 0">
+    <h2>Son <?=$days?> Günün Siparişleri</h2><p class="hint"><?=$orderTotal?> kayıtlı paket · Sayfa <?=$page?> / <?=$pages?> · Sayfa başına <?=$perPage?> paket</p>
+    <table>
+      <tr><th>Sipariş No</th><th>Tarih</th><th>Satış tutarı</th><th>Tahmini Kâr</th><th>Durum</th></tr>
+      <?php foreach (array_slice($visibleOrders,($page-1)*$perPage,$perPage) as $o): $o['lines'] = is_array($o['lines'])?$o['lines']:(json_decode($o['lines']??'[]',true)?:[]); $pr = calc_order_profit($o, $byBarcode); ?>
+        <tr>
+          <td style="font-size:12px"><?= h($o['order_number'] ?: $o['package_number'] ?: '—') ?></td>
+          <td style="font-size:12px"><?= date('d.m H:i', (int)$o['order_date']) ?></td>
+          <td><?= order_is_domestic_try($o) ? tl((float)$o['total_price']) : h((string)($o['currency_code'] ?? 'Belirsiz')) . ' ' . number_format((float)$o['total_price'],2,',','.') ?></td>
+          <td>
+            <?php if(isset($o['closed_loss'])):$cl=$o['closed_loss'];$cancel=in_array(strtolower((string)$o['status']),['cancelled','canceled','unsupplied'],true);?>
+              <?php if($cancel&&$cl['loss']===0.0):?><span class="hint" title="0 TL tahmin; henüz gönderim/kesinti kaydı yok.">Paket iptal edildi</span>
+              <?php elseif($cancel&&$cl['loss']===null):?><span class="hint" title="<?=h($cl['state'])?>">Paket iptal edildi · Gider kontrolü bekleniyor</span>
+              <?php else:?>
+              <?php if($cl['loss']!==null):?><span class="neg">Tahmini zarar: <?=tl(-$cl['loss'])?></span><br><small>Gidiş: <?=$cl['outbound']!==null?tl($cl['outbound']):'bekleniyor'?> · Dönüş: <?=$cl['return_cargo']!==null?tl($cl['return_cargo']):'bekleniyor'?> · Stok kaybı: <?=$cl['inventory']!==null?tl($cl['inventory']):'belirsiz'?> · Ekstre kaybı: <?=$cl['settlement_loss']!==null?tl($cl['settlement_loss']):'bekleniyor'?></small><br><?php endif;?>
+              <small><?=h($cl['state'])?><?=$cl['assumed']?' · Operasyonel varsayım':''?></small><?php if(!$cancel):?><br><a href="iade-kontrol.php?q=<?=urlencode((string)$o['order_number'])?>">İade / satılamaz işareti</a><?php endif;?>
+              <?php endif;?>
+            <?php elseif ($pr['ok']): ?><span class="<?= $pr['profit'] < 0 ? 'neg' : 'pos' ?>"><?= tl($pr['profit']) ?></span><br><small><?=h((string)$pr['cargo_source'])?> · <?=h((string)$pr['commission_source'])?></small>
+              <?php if(isset($o['partial_units'])):?><br><small><?= (int)$o['partial_units']?> adet <?=h($o['partial_kind'])?> · kalan satış <?=tl((float)$o['total_price'])?><?php if($o['partial_kind']==='iade'):?> · <a href="iade-kontrol.php?q=<?=urlencode((string)$o['order_number'])?>">Satılamaz işareti</a><?php endif;?></small><?php endif;?>
+            <?php else: ?><span class="hint"><?= h($pr['reason'] ?? 'Veri eksik') ?></span><?php endif; ?>
+          </td>
+          <td><?php [$label,$tone]=ui_status(isset($o['closed_loss'])&&!in_array(strtolower((string)$o['status']),['cancelled','canceled','unsupplied','undelivered'],true)?'Returned':(string)$o['status']);?><span class="ui-status <?=h($tone)?>"><?=h($label)?></span></td>
+        </tr>
+      <?php endforeach; ?>
+      <?php if (!$visibleOrders): ?><tr><td colspan="5" class="hint">Bu filtreye uygun sipariş yok. Filtreleri temizleyin veya siparişleri güncelleyin.</td></tr><?php endif; ?>
+    </table>
+    <nav aria-label="Sipariş sayfaları" style="display:flex;gap:12px;margin-top:12px">
+      <?php if($page>1):?><a class="btn-ghost" href="<?=h($rangeUrl($page-1))?>">Önceki sayfa</a><?php endif;?>
+      <?php if($page<$pages):?><a class="btn-ghost" href="<?=h($rangeUrl($page+1))?>">Sonraki sayfa</a><?php endif;?>
+    </nav>
+  </div>
+  <details class="ui-disclosure"><summary>Satış ve kâr ayrıntıları · maliyet düzenleme</summary><div class="ui-detail-body">
   <div class="card table-card" style="margin:16px 0">
     <h2>Bugün Saatlik</h2>
     <?php
@@ -204,7 +246,7 @@ require __DIR__ . '/../includes/header.php';
           <td><?= $d['count'] ?></td>
         </tr>
       <?php endforeach; ?>
-      <?php if (!array_filter(array_column($hourly, 'count'))): ?><tr><td colspan="4" class="hint">Bugün henüz sipariş yok. "Siparişleri Senkronize Et" ile güncelleyin.</td></tr><?php endif; ?>
+      <?php if (!array_filter(array_column($hourly, 'count'))): ?><tr><td colspan="4" class="hint">Bugün henüz sipariş yok. "Siparişleri güncelle" ile güncelleyin.</td></tr><?php endif; ?>
     </table>
   </div>
 
@@ -212,7 +254,7 @@ require __DIR__ . '/../includes/header.php';
     <h2>Son <?=$days?> Gün</h2>
     <p>Satış: <b><?=tl($period['sale'])?></b> · Hesaplanabilen tahmini kâr: <b id="period-profit"><?=$period['profitCount']?tl($period['profit']):'—'?></b> · Kâr kapsamı: <?=$period['profitCount']?>/<?=$period['count']?> paket (iptal/iade dahil).</p>
     <p class="hint">Eksik verili paketler kâr toplamına alınmaz. Hesaplanamayan kâr sıfır değildir.</p>
-    <p id="closed-loss-summary">İptal/iade: <?=$closed['count']?> paket · Tahmini zarar: <b><?=$closed['known']?tl($closed['loss']):'—'?></b> (<?=$closed['known']?>/<?=$closed['count']?> paket). Hesaplanabilen zarar dönem kârından bir kez düşülür. Satış ve komisyon sıfır varsayılır; eksik dönüş kargosu gidiş fiyatıyla tahmin edilir, fatura geldiğinde değişir. <a href="iade-kontrol.php">Satılamaz iadeleri işaretle</a>.</p>
+    <p id="closed-loss-summary">İptal/iade: <?=$closed['count']?> paket · Tahmini zarar: <b><?=$closed['known']?tl($closed['loss']):'—'?></b> (<?=$closed['known']?>/<?=$closed['count']?> paket). Hesaplanabilen zarar dönem kârından bir kez düşülür. Satış ve komisyon sıfır varsayılır; eksik dönüş kargosu mevcut taşıyıcı ve desi verisiyle tahmin edilir, fatura geldiğinde değişir. <a href="iade-kontrol.php">Satılamaz iadeleri işaretle</a>.</p>
     <table>
       <tr><th>Gün</th><th>Satış</th><th>Tahmini Kâr</th><th>Kâr kapsamı</th><th>Paket</th></tr>
       <?php foreach ($week as $day => $d): ?>
@@ -271,36 +313,7 @@ require __DIR__ . '/../includes/header.php';
     <?php endif; ?>
   </div>
 
-  <div class="card table-card" style="margin:16px 0">
-    <h2>Son <?=$days?> Günün Siparişleri</h2><p class="hint"><?=$orderTotal?> kayıtlı paket · Sayfa <?=$page?> / <?=$pages?> · Sayfa başına <?=$perPage?> paket</p>
-    <table>
-      <tr><th>Sipariş No</th><th>Tarih</th><th>İndirimli sipariş tutarı</th><th>Tahmini Kâr</th><th>Durum</th></tr>
-      <?php foreach (array_slice($orders,($page-1)*$perPage,$perPage) as $o): $o['lines'] = is_array($o['lines'])?$o['lines']:(json_decode($o['lines']??'[]',true)?:[]); $pr = calc_order_profit($o, $byBarcode); ?>
-        <tr>
-          <td style="font-size:12px"><?= h($o['order_number'] ?: $o['package_number'] ?: '—') ?></td>
-          <td style="font-size:12px"><?= date('d.m H:i', (int)$o['order_date']) ?></td>
-          <td><?= order_is_domestic_try($o) ? tl((float)$o['total_price']) : h((string)($o['currency_code'] ?? 'Belirsiz')) . ' ' . number_format((float)$o['total_price'],2,',','.') ?></td>
-          <td>
-            <?php if(isset($o['closed_loss'])):$cl=$o['closed_loss'];$cancel=in_array(strtolower((string)$o['status']),['cancelled','canceled','unsupplied'],true);?>
-              <?php if($cancel&&$cl['loss']===0.0):?><span class="hint" title="0 TL tahmin; henüz gönderim/kesinti kaydı yok.">Paket iptal edildi</span>
-              <?php elseif($cancel&&$cl['loss']===null):?><span class="hint" title="<?=h($cl['state'])?>">Paket iptal edildi · Gider kontrolü bekleniyor</span>
-              <?php else:?>
-              <?php if($cl['loss']!==null):?><span class="neg">Tahmini zarar: <?=tl(-$cl['loss'])?></span><br><small>Gidiş: <?=$cl['outbound']!==null?tl($cl['outbound']):'bekleniyor'?> · Dönüş: <?=$cl['return_cargo']!==null?tl($cl['return_cargo']):'bekleniyor'?> · Stok kaybı: <?=$cl['inventory']!==null?tl($cl['inventory']):'belirsiz'?> · Ekstre kaybı: <?=$cl['settlement_loss']!==null?tl($cl['settlement_loss']):'bekleniyor'?></small><br><?php endif;?>
-              <small><?=h($cl['state'])?><?=$cl['assumed']?' · Operasyonel varsayım':''?></small><?php if(!$cancel):?><br><a href="iade-kontrol.php?q=<?=urlencode((string)$o['order_number'])?>">İade / satılamaz işareti</a><?php endif;?>
-              <?php endif;?>
-            <?php elseif ($pr['ok']): ?><span class="<?= $pr['profit'] < 0 ? 'neg' : 'pos' ?>"><?= tl($pr['profit']) ?></span><br><small><?=h((string)$pr['cargo_source'])?> · <?=h((string)$pr['commission_source'])?></small>
-              <?php if(isset($o['partial_units'])):?><br><small><?= (int)$o['partial_units']?> adet <?=h($o['partial_kind'])?> · kalan satış <?=tl((float)$o['total_price'])?><?php if($o['partial_kind']==='iade'):?> · <a href="iade-kontrol.php?q=<?=urlencode((string)$o['order_number'])?>">Satılamaz işareti</a><?php endif;?></small><?php endif;?>
-            <?php else: ?><span class="hint"><?= h($pr['reason'] ?? 'Veri eksik') ?></span><?php endif; ?>
-          </td>
-          <td style="font-size:12px"><?= h($o['status'] ?: '—') ?></td>
-        </tr>
-      <?php endforeach; ?>
-      <?php if (!$orders): ?><tr><td colspan="5" class="hint">Sipariş yok.</td></tr><?php endif; ?>
-    </table>
-    <nav aria-label="Sipariş sayfaları" style="display:flex;gap:12px;margin-top:12px">
-      <?php if($page>1):?><a class="btn-ghost" href="<?=h($rangeUrl($page-1))?>">Önceki sayfa</a><?php endif;?>
-      <?php if($page<$pages):?><a class="btn-ghost" href="<?=h($rangeUrl($page+1))?>">Sonraki sayfa</a><?php endif;?>
-    </nav>
-  </div>
+
+  </div></details>
 </div>
 <?php require __DIR__ . '/../includes/footer.php'; ?>
