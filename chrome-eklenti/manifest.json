@@ -1,16 +1,19 @@
 {
   "manifest_version": 3,
-  "name": "Kâr&Fiyat — Pazaryeri Kâr Hesaplama",
-  "version": "1.0.0",
-  "description": "Trendyol ve Hepsiburada satıcı panelinde fiyat kararı verirken net kârını anında hesapla. Komisyon, kargo, iade ve tüm kesintileri çıkar.",
-  "permissions": ["activeTab", "storage"],
-  "action": {
-    "default_popup": "popup.html",
-    "default_title": "Kâr&Fiyat"
-  },
-  "icons": {
-    "16": "icons/icon16.png",
-    "48": "icons/icon48.png",
-    "128": "icons/icon128.png"
-  }
+  "name": "Kâr&Fiyat — Trendyol Net Kâr",
+  "version": "2.0.0",
+  "description": "Trendyol Satıcı Paneli'nde komisyon tarifesi, Plus, avantajlı etiket ve flaş sayfalarında her fiyat seçeneğinin net kârını gösterir.",
+  "permissions": ["storage"],
+  "host_permissions": ["https://partner.trendyol.com/*"],
+  "optional_host_permissions": ["https://*/*", "http://*/*"],
+  "background": { "service_worker": "background.js" },
+  "content_scripts": [{
+    "matches": ["https://partner.trendyol.com/pricing/*"],
+    "js": ["content.js"],
+    "css": ["content.css"],
+    "run_at": "document_idle"
+  }],
+  "options_page": "options.html",
+  "action": { "default_popup": "popup.html", "default_title": "Kâr&Fiyat" },
+  "icons": { "16": "icons/icon16.png", "48": "icons/icon48.png", "128": "icons/icon128.png" }
 }

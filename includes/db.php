@@ -412,4 +412,13 @@ function migrate_tariffs(PDO $pdo): void
         updated_at INTEGER NOT NULL,
         PRIMARY KEY (user_id, marketplace, barcode)
     )");
+    // Chrome eklentisi erişim anahtarları (yalnız SHA-256 özeti saklanır)
+    $pdo->exec("CREATE TABLE IF NOT EXISTS api_tokens (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER NOT NULL,
+        token_hash TEXT NOT NULL UNIQUE,
+        label TEXT NOT NULL DEFAULT '',
+        created_at INTEGER NOT NULL,
+        last_used_at INTEGER
+    )");
 }

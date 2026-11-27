@@ -95,3 +95,9 @@ php /home/KULLANICI_ADI/scripts/sync.php
 - **Demo hesabı**: ana sayfadaki "Demo Hesabını Gör" butonu.
 - **Partner programı**: Hesabım'daki yönlendirme linkiyle gelen her Pro abonelikte %15 hakediş.
 - **Chrome eklentisi**: `chrome-eklenti/` klasörünü `chrome://extensions` → "Paketlenmemiş öğe yükle" ile kur.
+
+## Chrome eklentisi
+- Sunucu tarafı: `public_html/api-eklenti.php` (Bearer anahtar, CORS açık, çerez kullanmaz). Anahtarlar Ayarlar sayfasından üretilir; veritabanında yalnız SHA-256 özeti tutulur.
+- Hostinger'da Apache `Authorization` başlığını PHP'ye geçirmeyebilir. Bunun için `public_html/.htaccess` içinde şu satır var; rozetler yine "Erişim anahtarı yok" derse sunucu ayarını kontrol edin:
+  `SetEnvIf Authorization "(.*)" HTTP_AUTHORIZATION=$1`
+- Eklenti kurulumu: `chrome-eklenti/README.md`.

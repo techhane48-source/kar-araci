@@ -1,0 +1,9 @@
+.kf-badge{margin-top:6px;padding:4px 6px;border-radius:6px;font:600 12px/1.35 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;background:#f1f5f9;color:#334155;text-align:center}
+.kf-badge b{font-weight:800}
+.kf-badge small{display:block;font-weight:500;opacity:.8;font-size:11px}
+.kf-badge.kf-pos{background:#dcfce7;color:#14532d}
+.kf-badge.kf-low{background:#fef3c7;color:#78350f}
+.kf-badge.kf-neg{background:#fee2e2;color:#7f1d1d}
+.kf-badge.kf-best{box-shadow:inset 0 0 0 2px #16a34a}
+.kf-badge.kf-info{background:transparent;color:#64748b;font-weight:500;text-align:left;padding:2px 0}
+.kf-badge.kf-info a{color:#2563eb;cursor:pointer;text-decoration:underline}

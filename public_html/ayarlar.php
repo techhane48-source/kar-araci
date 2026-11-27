@@ -2,6 +2,7 @@
 declare(strict_types=1);
 require_once __DIR__ . '/../includes/functions.php';
 require_once __DIR__ . '/../includes/xlsx.php';
+require_once __DIR__ . '/../includes/api_tokens.php';
 
 $u = require_login();
 $uid = (int)$u['id'];
@@ -50,6 +51,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $n = recompute_all($uid);
         flash_set('success', "Ayarlar kaydedildi. $n siparişin kârı yeni ayarlarla yeniden hesaplandı.");
         e_redirect('ayarlar.php');
+    }
+
+    if ($action === 'eklenti_anahtar') {
+        $_SESSION['new_api_token'] = api_token_create($uid, 'Chrome eklentisi');
+        e_redirect('ayarlar.php#eklenti');
+    }
+    if ($action === 'eklenti_sil') {
+        api_token_delete($uid, (int)($_POST['id'] ?? 0));
+        flash_set('success', 'Anahtar silindi; bu anahtarı kullanan eklenti artık bağlanamaz.');
+        e_redirect('ayarlar.php#eklenti');
     }
 
     if ($action === 'tarife') {
@@ -228,6 +239,26 @@ require __DIR__ . '/../includes/header.php';
         </form>
       </div>
     </div>
+  </div>
+
+  <?php $newToken = $_SESSION['new_api_token'] ?? null; unset($_SESSION['new_api_token']); $tokens = api_tokens_list($uid);
+        $apiUrl = (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off' ? 'https' : 'http') . '://' . ($_SERVER['HTTP_HOST'] ?? 'localhost') . rtrim(dirname($_SERVER['SCRIPT_NAME'] ?? '/'), '/') . '/api-eklenti.php'; ?>
+  <div class="card" id="eklenti" style="margin-top:16px;max-width:760px">
+    <h2>Chrome eklentisi</h2>
+    <p class="hint">Eklenti, Trendyol Satıcı Paneli'ndeki komisyon tarifesi, Plus, avantajlı etiket ve flaş sayfalarında her fiyat seçeneğinin yanına net kârını yazar. Eklentinin ayarlarına aşağıdaki adresi ve anahtarı gir.</p>
+    <div class="field"><label>Sunucu adresi</label><input type="text" readonly value="<?= h($apiUrl) ?>" onclick="this.select()"></div>
+    <?php if ($newToken): ?>
+      <div class="alert alert-success">Anahtar oluşturuldu. Şimdi kopyala; bir daha gösterilmeyecek.</div>
+      <div class="field"><label>Erişim anahtarı</label><input type="text" readonly value="<?= h($newToken) ?>" onclick="this.select()"></div>
+    <?php endif; ?>
+    <?php if ($tokens): ?>
+      <table style="margin:8px 0"><tr><th>Anahtar</th><th>Oluşturuldu</th><th>Son kullanım</th><th></th></tr>
+      <?php foreach ($tokens as $t): ?>
+        <tr><td><?= h($t['label']) ?></td><td><?= date('d.m.Y H:i', (int)$t['created_at']) ?></td><td><?= $t['last_used_at'] ? date('d.m.Y H:i', (int)$t['last_used_at']) : '—' ?></td>
+          <td><form method="post" onsubmit="return confirm('Anahtar silinsin mi?')"><input type="hidden" name="csrf" value="<?= h(csrf_token()) ?>"><input type="hidden" name="action" value="eklenti_sil"><input type="hidden" name="id" value="<?= (int)$t['id'] ?>"><button class="btn-ghost">Sil</button></form></td></tr>
+      <?php endforeach; ?></table>
+    <?php endif; ?>
+    <form method="post"><input type="hidden" name="csrf" value="<?= h(csrf_token()) ?>"><input type="hidden" name="action" value="eklenti_anahtar"><button class="btn-primary">Yeni anahtar oluştur</button></form>
   </div>
 </div>
 <?php require __DIR__ . '/../includes/footer.php'; ?>
