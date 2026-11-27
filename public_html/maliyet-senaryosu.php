@@ -23,7 +23,7 @@ if($_SERVER['REQUEST_METHOD']==='POST'){
             $gross=parse_money_input($cost);if($gross===null||$gross<=0)throw new InvalidArgumentException('KDV dahil maliyet girin.');
             $purchaseVat=$vat===''?null:parse_money_input($vat);if($vat!==''&&($purchaseVat===null||$purchaseVat<0||$purchaseVat>100))throw new InvalidArgumentException('KDV oranı geçersiz.');
             if($action==='save_group'){
-                if(!is_pro($u))throw new InvalidArgumentException('Toplu maliyet kaydı Pro özelliğidir.');
+                // Direct panel cost entry is available to every signed-in account; file import stays Pro.
                 if(($_POST['confirm_save']??'')!=='1')throw new InvalidArgumentException('Kalıcı tarihli maliyet kaydı için açık onay gerekli.');
                 $firstSale=($_POST['first_sale']??'')==='1';
                 if($firstSale&&$date!=='')throw new InvalidArgumentException('İlk satış seçeneğinde tarih alanını boş bırakın.');
@@ -48,7 +48,7 @@ if($_SERVER['REQUEST_METHOD']==='POST'){
 $pageTitle='Maliyet Senaryosu — '.APP_NAME;require __DIR__.'/../includes/header.php';
 ?>
 <div class="wrap">
-<h1>Özel maliyet senaryosu</h1>
+<h1>Özel maliyet senaryosu</h1><p><a href="urunler.php">Ürünlerim</a> · Panelden toplu maliyet girin; Excel gerekmez.</p>
 <p class="hint">Mevcut kayıtlı Trendyol verileriyle geçici hesap. Hesapla işlemi hiçbir maliyeti değiştirmez. Tarihli maliyeti kaydetmek ayrı ve açık onay gerektiren yerel işlemdir. Mağazaya yazma yapılmaz.</p>
 <?php if($error!==''): ?><p class="flash flash-error" role="alert"><?=h($error)?></p><?php endif; ?>
 <div class="card">
@@ -64,7 +64,6 @@ $pageTitle='Maliyet Senaryosu — '.APP_NAME;require __DIR__.'/../includes/heade
 <?php foreach($candidates as $p): ?><tr><td><input type="checkbox" name="barcodes[]" aria-label="<?=h($p['title'].' '.$p['barcode'])?>" value="<?=h($p['barcode'])?>" <?=!$chosen||in_array($p['barcode'],$chosen,true)?'checked':''?>></td><td><?=h($p['barcode'])?></td><td><?=h($p['title'])?></td></tr><?php endforeach; ?>
 </tbody></table></div>
 <button class="btn-primary" name="action" value="calculate">Seçili ürünleri hesapla</button>
-<?php if(is_pro($u)): ?>
 <fieldset style="margin-top:16px"><legend>Tarihli toplu maliyet kaydı (isteğe bağlı)</legend>
 <p class="hint">Yalnızca işaretli barkodlar için geçerli tarih ve alış KDV oranı girin. Önceki maliyetler korunur; kayıt geçmiş raporları etkileyebilir. İlk satıştan beri aynı maliyet seçeneği tüm satış geçmişini kapsar; gerçek ilk satış tarihini bildiğini iddia etmez. Çelişen tarihli kayıt varsa işlem durur. Güncel katalog maliyeti ayrı kutuyla bugün veya ilk satış kapsamı için güncellenebilir.</p>
 <label>Geçerlilik tarihi <input type="date" name="date" value="<?=h($date)?>" max="<?=h((new DateTimeImmutable('now',new DateTimeZone('Europe/Istanbul')))->format('Y-m-d'))?>"></label>
@@ -72,8 +71,8 @@ $pageTitle='Maliyet Senaryosu — '.APP_NAME;require __DIR__.'/../includes/heade
 <label><input type="checkbox" name="confirm_save" value="1"> Seçili ürünlerde belirtilen tarih veya ilk satış kapsamı için bu maliyetin geçerli olduğunu onaylıyorum.</label>
 <label><input type="checkbox" name="replace" value="1"> Aynı tarihli farklı maliyeti düzelt (eski sürümü koru).</label>
 <label><input type="checkbox" name="update_catalog" value="1"> Bugün geçerli maliyeti ürünlerim, fiyatlandırma ve uyarılar için de uygula.</label>
-<button class="btn-ghost" name="action" value="save_group">Tarihli maliyetleri kaydet</button>
-</fieldset><?php endif; ?>
+<button class="btn-primary" name="action" value="save_group">Tarihli maliyetleri kaydet</button>
+</fieldset>
 <?php elseif($phrase!==''&&$error===''): ?><p class="hint">Eşleşen ürün yok.</p><?php endif; ?>
 </form></div>
 <?php if($result!==null): ?>

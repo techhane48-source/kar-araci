@@ -128,6 +128,22 @@ with tempfile.TemporaryDirectory(prefix="karfiyat-http-") as tmp:
             status, page = request("maliyet-senaryosu.php",payload)
             assert status == 200 and "Farklı tarihli maliyet kaydı var" in page
             print("PASS first-sale baseline conflict blocked")
+            with sqlite3.connect(db) as con:
+                pid=con.execute("SELECT id FROM products WHERE user_id=? AND barcode='CI001'",(uid,)).fetchone()[0]
+                con.execute("INSERT INTO products(user_id,marketplace,name,barcode,category,rate,cost,price) VALUES(?,?,?,?,?,?,?,?)",(uid,"trendyol","CI direct","CI002","Test",19,0,200))
+                direct_id=con.execute("SELECT id FROM products WHERE user_id=? AND barcode='CI002'",(uid,)).fetchone()[0]
+            status, page = request("urunler.php")
+            assert status == 200 and "Toplu maliyet gir" in page and "Maliyeti kaydet" in page
+            direct={"action":"direct_cost","pid":str(direct_id),"cost":"80","vat":"10","scope":"first_sale"}
+            status, page=request("urunler.php",direct)
+            assert status==403
+            direct["csrf"]=csrf
+            status, page=request("urunler.php",direct)
+            assert status==200 and "Maliyet ve alış KDV oranı kaydedildi." in page
+            with sqlite3.connect(db) as con:
+                assert con.execute("SELECT cost,cost_vat,price FROM products WHERE id=?",(direct_id,)).fetchone()==(80.0,10.0,200.0)
+                assert con.execute("SELECT source FROM product_cost_history WHERE user_id=? AND barcode='CI002'",(uid,)).fetchone()==("first_sale",)
+            print("PASS direct cost entry without file and explicit history scope")
             print("PASS explicit current catalog update preserves selling price")
             print("PASS explicit dated group cost confirmation and idempotent save")
             print("PASS private scenario preview, selection, unknown VAT and unchanged persisted cost")

@@ -5,6 +5,28 @@ require_once __DIR__ . '/../includes/xlsx.php';
 
 $u = require_login();
 $pro = is_pro($u);
+header('Cache-Control: no-store, private');
+
+// Direct cost entry: explicit historical scope, exact tenant-owned product, no file needed.
+if($_SERVER['REQUEST_METHOD']==='POST'&&($_POST['action']??'')==='direct_cost'){
+    if(!csrf_verify(is_string($_POST['csrf']??null)?$_POST['csrf']:null)){http_response_code(403);exit('Geçersiz oturum.');}
+    try{
+        foreach(['pid','cost','vat','scope'] as $key)if(!is_string($_POST[$key]??null))throw new InvalidArgumentException('Maliyet, KDV ve geçerlilik kapsamı gerekli.');
+        if(!ctype_digit($_POST['pid']))throw new InvalidArgumentException('Ürün geçersiz.');
+        $uid=(int)$u['id'];$pid=(int)$_POST['pid'];$scope=$_POST['scope'];
+        if(!in_array($scope,['today','first_sale'],true))throw new InvalidArgumentException('Geçerlilik kapsamını seçin.');
+        $res=with_marketplace_lock($uid,'trendyol',static function()use($uid,$pid,$scope){
+            $q=db()->prepare("SELECT barcode FROM products WHERE user_id=? AND id=? AND marketplace='trendyol' AND barcode<>''");$q->execute([$uid,$pid]);$bc=$q->fetchColumn();
+            if($bc===false)throw new InvalidArgumentException('Ürün bulunamadı.');
+            $values=$scope==='first_sale'?cost_history_first_sale_values([(string)$bc],$_POST['cost'],$_POST['vat']):cost_history_group_values([(string)$bc],date('Y-m-d'),$_POST['cost'],$_POST['vat']);
+            return ['ok'=>true]+cost_history_save(db(),$uid,$values,false,$scope==='first_sale'?'first_sale':'manual',true);
+        });
+        if(empty($res['ok']))throw new InvalidArgumentException($res['error']??'Maliyet kaydedilemedi.');
+        flash_set('success','Maliyet ve alış KDV oranı kaydedildi.');
+    }catch(InvalidArgumentException|RuntimeException $e){flash_set('error',$e->getMessage());}
+    catch(Throwable $e){flash_set('error','Maliyet kaydedilemedi; önceki kayıtlar korundu.');}
+    e_redirect('urunler.php?q='.urlencode(is_string($_POST['q']??null)?$_POST['q']:'').'&page='.max(1,(int)($_POST['page']??1)));
+}
 
 // ---- Maliyet şablonu indir (Melontik formatı: 14 kolon) ----
 if (($_GET['export'] ?? '') === 'maliyet') {
@@ -196,10 +218,9 @@ unset($p);
 $pageTitle = 'Ürünlerim — ' . APP_NAME;
 require __DIR__ . '/../includes/header.php';
 ?>
-<div class="wrap"><a class="btn-ghost" href="maliyet-gecmisi.php">Tarih bazlı maliyet geçmişi</a></div>
 <div class="wrap">
   <div class="toolbar">
-    <h1>Ürünlerim</h1>
+    <h1>Ürünlerim</h1><div class="actions"><a class="btn-primary" href="maliyet-senaryosu.php">Toplu maliyet gir</a><a class="btn-ghost" href="maliyet-gecmisi.php">Maliyet geçmişi</a></div>
     <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
       <form method="get" style="display:flex;gap:8px;align-items:center">
         <input type="text" name="q" value="<?= h($q) ?>" placeholder="Ürün adı veya barkod ara..." style="width:240px">
@@ -207,6 +228,7 @@ require __DIR__ . '/../includes/header.php';
         <?php if ($q !== ''): ?><a href="urunler.php" class="btn-ghost" style="text-decoration:none">Temizle</a><?php endif; ?>
       </form>
       <?php if ($pro): ?>
+      <details><summary>Excel / CSV (isteğe bağlı)</summary>
         <a href="urunler.php?export=maliyet" class="btn-ghost" style="text-decoration:none" title="Melontik formatında Excel indir">⬇ Maliyet Şablonu İndir (Excel)</a>
         <a href="urunler.php?export=maliyet&bos=1" class="btn-ghost" style="text-decoration:none" title="Sadece maliyeti henüz girilmemiş ürünleri indir">Sadece maliyeti boş</a>
         <a href="urunler.php?export=maliyet&format=csv" class="btn-ghost" style="text-decoration:none;font-size:12px" title="CSV olarak indir">CSV</a>
@@ -222,16 +244,17 @@ require __DIR__ . '/../includes/header.php';
           <input type="file" name="csv" accept=".csv,.xlsx" style="width:auto;font-size:13px" required>
           <button type="submit" class="btn-ghost">Yeni Ürün CSV</button>
         </form>
+      </details>
       <?php else: ?>
-        <a href="odeme.php" class="btn-ghost">Pro — CSV içe aktarma</a>
+        <a href="odeme.php" class="btn-ghost">Pro — isteğe bağlı dosya aktarımı</a>
       <?php endif; ?>
     </div>
   </div>
 
-  <?php if ($pro && $totalCount > 0 && $maliyetsiz > 0): ?>
+  <?php if ($totalCount > 0 && $maliyetsiz > 0): ?>
   <div class="alert alert-error" style="margin-bottom:14px">
     <b><?= $maliyetsiz ?></b> ürüne henüz maliyet girilmedi — kâr hesaplanamaz.
-    <a href="urunler.php?export=maliyet&bos=1" style="margin-left:auto;white-space:nowrap">⬇ Maliyeti boş olanları indir → Excel'de doldur → "Maliyet Yükle"</a>
+    <a href="maliyet-senaryosu.php" style="margin-left:auto">Panelden toplu maliyet gir</a>
   </div>
   <?php endif; ?>
 
@@ -246,7 +269,7 @@ require __DIR__ . '/../includes/header.php';
   <?php else: ?>
   <div class="card table-card">
     <table>
-      <tr><th>Ürün</th><th>Barkod</th><th>Pazaryeri</th><th>Kategori</th><th>Satış</th><th>Net Kâr</th><th>Kâr Oranı</th><th>Kâr Marjı</th><th></th></tr>
+      <tr><th>Ürün</th><th>Barkod</th><th>Pazaryeri</th><th>Kategori</th><th>Satış</th><th>Alış maliyeti / KDV</th><th>Net Kâr</th><th>Kâr Oranı</th><th>Kâr Marjı</th><th></th></tr>
       <?php foreach ($products as $p): ?>
       <tr>
         <td><?= h($p['name']) ?><?= !$p['_has_cost'] ? ' <span class="hint" style="font-size:11px;color:var(--muted)">(maliyet girilmedi)</span>' : '' ?></td>
@@ -254,6 +277,10 @@ require __DIR__ . '/../includes/header.php';
         <td><?= h(marketplace_label($p['marketplace'])) ?></td>
         <td style="font-size:12px"><?= h($p['category']) ?></td>
         <td><?= tl((float)$p['price']) ?></td>
+        <td><?php if($p['marketplace']==='trendyol'&&$p['barcode']!==''): ?><details><summary><?= $p['_has_cost']?tl((float)$p['cost']).' / %'.h((string)$p['cost_vat']):'Maliyet gir' ?></summary><form method="post" style="min-width:180px">
+          <input type="hidden" name="csrf" value="<?=h(csrf_token())?>"><input type="hidden" name="action" value="direct_cost"><input type="hidden" name="pid" value="<?=(int)$p['id']?>"><input type="hidden" name="q" value="<?=h($q)?>"><input type="hidden" name="page" value="<?=$page?>">
+          <label>KDV dahil TL <input name="cost" required inputmode="decimal" value="<?= $p['_has_cost']?h((string)$p['cost']):'' ?>"></label><label>Alış KDV % <input name="vat" required inputmode="decimal" value="<?= $p['_has_cost']?h((string)$p['cost_vat']):'' ?>"></label>
+          <label>Geçerlilik <select name="scope" required><option value="">Seçin</option><option value="today">Bugünden itibaren</option><option value="first_sale">İlk satıştan itibaren</option></select></label><button class="btn-primary">Maliyeti kaydet</button></form></details><?php else: ?><?= $p['_has_cost']?tl((float)$p['cost']):'—' ?><?php endif; ?></td>
         <td class="<?= $p['_profit'] < 0 ? 'neg' : 'pos' ?>"><?= $p['_has_cost'] ? tl($p['_profit']) : '—' ?></td>
         <td class="<?= $p['_ratio'] < 0 ? 'neg' : 'pos' ?>"><?= $p['_has_cost'] ? '%' . number_format($p['_ratio'], 1, ',', '.') : '—' ?></td>
         <td class="<?= $p['_margin'] < 0 ? 'neg' : 'pos' ?>"><?= $p['_has_cost'] ? '%' . number_format($p['_margin'], 1, ',', '.') : '—' ?></td>
