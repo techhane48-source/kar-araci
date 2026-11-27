@@ -236,7 +236,7 @@ require __DIR__ . '/../includes/header.php';
 <?php if ($mp === 'trendyol'): ?>
 <div class="wrap">
 <div class="card table-card" style="margin:16px 0">
-<h2>Ödeme emri bazlı finans kontrolü</h2><p><a class="btn-primary" href="banka-mutabakat.php">Banka dekontu karşılaştırması</a></p>
+<h2>Ödeme emri bazlı finans kontrolü</h2><p><a class="btn-primary" href="banka-mutabakat.php">Banka mutabakatı (isteğe bağlı)</a></p>
 <p class="hint">Ödeme emrini seçerek ilgili tüm finansal işlem türlerini sorgulayın. Alacak ve borç kalemleri ayrı gösterilir; bunlar banka mutabakatı veya kesin net kâr değildir.</p>
 <?php if($payoutMessage!==null): ?><p><?= h($payoutMessage) ?></p><?php endif; ?>
 <form method="post"><input type="hidden" name="csrf" value="<?= h(csrf_token()) ?>"><input type="hidden" name="mp" value="trendyol"><input type="hidden" name="tab" value="hakedis"><input type="hidden" name="action" value="payout_list"><label>API sayfası (0'dan başlar) <input type="number" name="payout_page" min="0" value="<?= $payoutPage ?>"></label><button>Ödeme emirlerini çek</button></form>

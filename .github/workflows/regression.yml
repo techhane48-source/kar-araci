@@ -13,7 +13,7 @@ jobs:
       matrix:
         suite: [syntax, finance, integration, application, security-performance, http, calculator]
     name: Regression / ${{ matrix.suite }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
         with:

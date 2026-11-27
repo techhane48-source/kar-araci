@@ -33,7 +33,7 @@ $q=$db->prepare("SELECT * FROM trendyol_payouts WHERE user_id=? AND seller_id=? 
 $receipt=$db->prepare("SELECT * FROM payout_receipts WHERE user_id=? AND seller_id=? AND payment_order_id=? ORDER BY received_day,reference");
 $pageTitle='Banka dekontu karşılaştırması — '.APP_NAME;require __DIR__.'/../includes/header.php';?>
 <div class="wrap"><div class="toolbar"><h1>Banka dekontu karşılaştırması</h1></div>
-<p class="hint">Resmî ödeme emri ile kullanıcı tarafından girilen TL dekontlarını karşılaştırır. Aynı referans tekrar sayılmaz. Birden fazla dekont eklenebilir. Otomatik banka bağlantısı veya kesin banka doğrulaması değildir. IBAN ya da kişisel bilgi girmeyin.</p>
+<p class="hint">Bu ekran isteğe bağlıdır. Banka dekontu eklemeden diğer modülleri kullanabilirsiniz. Resmî ödeme emri ile kullanıcı tarafından girilen TL dekontlarını karşılaştırır. Aynı referans tekrar sayılmaz. Birden fazla dekont eklenebilir. Otomatik banka bağlantısı veya kesin banka doğrulaması değildir. IBAN ya da kişisel bilgi girmeyin.</p>
 <p><a href="hakedis-desi.php?tab=hakedis">Ödeme emirleri</a></p><?php if($error):?><div class="alert alert-error"><?=h($error)?></div><?php endif;?>
 <div class="card"><h2>Toplu dekont aktarımı</h2><p class="hint">Yalnız ödeme emri, referans, YYYY-AA-GG tarih ve TL tutarı içeren şablonu kullanın. Herhangi bir hatada hiçbir satır kaydedilmez.</p>
 <a href="?export=template">CSV şablonunu indir</a>

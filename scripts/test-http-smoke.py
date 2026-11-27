@@ -123,6 +123,11 @@ with tempfile.TemporaryDirectory(prefix="karfiyat-http-") as tmp:
             with sqlite3.connect(db) as con:
                 assert con.execute("SELECT cost,cost_vat,price FROM products WHERE user_id=? AND barcode='CI001'",(uid,)).fetchone() == (100.0,10.0,717.74)
                 assert con.execute("SELECT COUNT(*) FROM product_cost_history WHERE user_id=? AND barcode='CI001'",(uid,)).fetchone()[0] == 2
+            # Conflicting dated periods are intentionally rejected, even with a replacement flag.
+            payload.update({"date":"","first_sale":"1","cost":"90","replace":"1"})
+            status, page = request("maliyet-senaryosu.php",payload)
+            assert status == 200 and "Farklı tarihli maliyet kaydı var" in page
+            print("PASS first-sale baseline conflict blocked")
             print("PASS explicit current catalog update preserves selling price")
             print("PASS explicit dated group cost confirmation and idempotent save")
             print("PASS private scenario preview, selection, unknown VAT and unchanged persisted cost")

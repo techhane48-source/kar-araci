@@ -39,5 +39,12 @@ $r=cost_history_save($db,1,$todayRows,false,'group',true);
 $tests['repeat catalog update idempotent']=$r['catalog_updated']===0&&$r['unchanged']===2;
 try{cost_history_save($db,1,cost_history_group_values(['001'],'2025-06-01','95','10'),false,'group',true);$tests['historic date cannot change current catalog']=false;}catch(InvalidArgumentException $e){$tests['historic date cannot change current catalog']=(float)$db->query("SELECT cost FROM products WHERE user_id=1 AND barcode='001'")->fetchColumn()===130.0;}
 try{cost_history_save($db,1,cost_history_group_values(['001','999'],$today,'140','10'),true,'group',true);$tests['catalog and history both rolled back']=false;}catch(InvalidArgumentException $e){$tests['catalog and history both rolled back']=(float)$db->query("SELECT cost FROM products WHERE user_id=1 AND barcode='001'")->fetchColumn()===130.0&&(float)cost_history_at(cost_history_map($db,1,['001'],time())['001'],time())['cost']===130.0;}
+$db->prepare("INSERT INTO products(user_id,marketplace,name,barcode,category,rate,cost,price) VALUES(?,?,?,?,?,?,?,?)")->execute([1,'trendyol','Synthetic baseline','003','Test',19,80,200]);
+$baseline=cost_history_first_sale_values(['003'],'90','10');
+$res=cost_history_save($db,1,$baseline,false,'first_sale',true);
+$oldOrder=['marketplace'=>'trendyol','order_date'=>cost_effective_day('2021-01-01'),'lines'=>[['barcode'=>'003','quantity'=>1]]];
+$tests['first sale baseline covers older imported orders']=cost_history_overlay($db,1,[$oldOrder])[0]['lines'][0]['cost_snapshot']===90.0&&$res['catalog_updated']===1;
+$tests['first sale retry idempotent']=cost_history_save($db,1,$baseline,false,'first_sale',true)['unchanged']===1;
+try{cost_history_save($db,1,cost_history_first_sale_values(['001'],'90','10'),true,'first_sale',true);$tests['conflicting later history blocked']=false;}catch(InvalidArgumentException $e){$tests['conflicting later history blocked']=true;}
 foreach($tests as $n=>$ok)echo ($ok?'PASS':'FAIL')." $n\n";
 exit(in_array(false,$tests,true)?1:0);

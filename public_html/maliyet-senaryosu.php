@@ -5,9 +5,9 @@ require_once __DIR__.'/../includes/private_cost_scenario.php';
 $u=require_login();$uid=(int)$u['id'];header('Cache-Control: no-store, private');
 $phrase='';$cost='';$vat='';$days=30;$date='';$error='';$candidates=[];$result=null;$chosen=[];
 if($_SERVER['REQUEST_METHOD']==='POST'){
-    if(!csrf_verify($_POST['csrf']??null)){http_response_code(403);exit('Geçersiz oturum.');}
+    if(!csrf_verify(is_string($_POST['csrf']??null)?$_POST['csrf']:null)){http_response_code(403);exit('Geçersiz oturum.');}
     try{
-        foreach(['phrase','cost','vat','days','action','date','confirm_save','replace','update_catalog'] as $key)if(isset($_POST[$key])&&!is_string($_POST[$key]))throw new InvalidArgumentException('Geçersiz girdi.');
+        foreach(['phrase','cost','vat','days','action','date','confirm_save','replace','update_catalog','first_sale'] as $key)if(isset($_POST[$key])&&!is_string($_POST[$key]))throw new InvalidArgumentException('Geçersiz girdi.');
         $phrase=trim($_POST['phrase']??'');$cost=trim($_POST['cost']??'');$vat=trim($_POST['vat']??'');$date=trim($_POST['date']??'');
         $days=(int)($_POST['days']??30);if(!in_array($days,[7,15,30,90],true))throw new InvalidArgumentException('Geçersiz tarih aralığı.');
         $q=db()->prepare("SELECT * FROM products WHERE user_id=? AND marketplace='trendyol' AND barcode<>'' ORDER BY name,barcode LIMIT 20001");$q->execute([$uid]);$products=$q->fetchAll();
@@ -25,10 +25,12 @@ if($_SERVER['REQUEST_METHOD']==='POST'){
             if($action==='save_group'){
                 if(!is_pro($u))throw new InvalidArgumentException('Toplu maliyet kaydı Pro özelliğidir.');
                 if(($_POST['confirm_save']??'')!=='1')throw new InvalidArgumentException('Kalıcı tarihli maliyet kaydı için açık onay gerekli.');
-                $values=cost_history_group_values($chosen,$date,$cost,$vat);
+                $firstSale=($_POST['first_sale']??'')==='1';
+                if($firstSale&&$date!=='')throw new InvalidArgumentException('İlk satış seçeneğinde tarih alanını boş bırakın.');
+                $values=$firstSale?cost_history_first_sale_values($chosen,$cost,$vat):cost_history_group_values($chosen,$date,$cost,$vat);
                 $replace=($_POST['replace']??'')==='1';
                 $updateCatalog=($_POST['update_catalog']??'')==='1';
-                $saved=with_marketplace_lock($uid,'trendyol',static fn()=>['ok'=>true]+cost_history_save(db(),$uid,$values,$replace,'group',$updateCatalog));
+                $saved=with_marketplace_lock($uid,'trendyol',static fn()=>['ok'=>true]+cost_history_save(db(),$uid,$values,$replace,$firstSale?'first_sale':'group',$updateCatalog));
                 if(empty($saved['ok']))throw new InvalidArgumentException($saved['error']??'Maliyet kaydedilemedi.');
                 flash_set('success',$saved['inserted'].' maliyet sürümü kaydedildi; '.$saved['unchanged'].' aynı kayıt atlandı; '.$saved['catalog_updated'].' güncel katalog maliyeti güncellendi.');
                 e_redirect('maliyet-gecmisi.php');
@@ -64,9 +66,10 @@ $pageTitle='Maliyet Senaryosu — '.APP_NAME;require __DIR__.'/../includes/heade
 <button class="btn-primary" name="action" value="calculate">Seçili ürünleri hesapla</button>
 <?php if(is_pro($u)): ?>
 <fieldset style="margin-top:16px"><legend>Tarihli toplu maliyet kaydı (isteğe bağlı)</legend>
-<p class="hint">Yalnızca işaretli barkodlar için geçerli tarih ve alış KDV oranı girin. Önceki maliyetler korunur; kayıt geçmiş raporları etkileyebilir. Güncel katalog maliyeti yalnızca ayrı kutu işaretlenirse ve tarih bugünse güncellenir.</p>
+<p class="hint">Yalnızca işaretli barkodlar için geçerli tarih ve alış KDV oranı girin. Önceki maliyetler korunur; kayıt geçmiş raporları etkileyebilir. İlk satıştan beri aynı maliyet seçeneği tüm satış geçmişini kapsar; gerçek ilk satış tarihini bildiğini iddia etmez. Çelişen tarihli kayıt varsa işlem durur. Güncel katalog maliyeti ayrı kutuyla bugün veya ilk satış kapsamı için güncellenebilir.</p>
 <label>Geçerlilik tarihi <input type="date" name="date" value="<?=h($date)?>" max="<?=h((new DateTimeImmutable('now',new DateTimeZone('Europe/Istanbul')))->format('Y-m-d'))?>"></label>
-<label><input type="checkbox" name="confirm_save" value="1"> Seçili ürünler için belirtilen tarihten itibaren bu maliyetin geçerli olduğunu onaylıyorum.</label>
+<label><input type="checkbox" name="first_sale" value="1"> İlk satıştan bugüne aynı maliyet (tarih alanını boş bırakın).</label>
+<label><input type="checkbox" name="confirm_save" value="1"> Seçili ürünlerde belirtilen tarih veya ilk satış kapsamı için bu maliyetin geçerli olduğunu onaylıyorum.</label>
 <label><input type="checkbox" name="replace" value="1"> Aynı tarihli farklı maliyeti düzelt (eski sürümü koru).</label>
 <label><input type="checkbox" name="update_catalog" value="1"> Bugün geçerli maliyeti ürünlerim, fiyatlandırma ve uyarılar için de uygula.</label>
 <button class="btn-ghost" name="action" value="save_group">Tarihli maliyetleri kaydet</button>
