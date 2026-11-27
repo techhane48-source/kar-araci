@@ -293,8 +293,10 @@ function sync_products_unlocked(int $userId, string $marketplace): array
                           WHERE id = ? AND user_id = ? AND marketplace = ?");
     $observation=$db->prepare("UPDATE products SET stock_observed_at=?,sale_price_observed_at=? WHERE id=? AND user_id=? AND marketplace='trendyol'");
     $now=time();
+    $variantMeta=$db->prepare("UPDATE products SET variant_model_key=?,variant_model_code=?,variant_size=? WHERE user_id=? AND marketplace='trendyol' AND barcode=?");
     $db->beginTransaction();
     try {
+        if($marketplace==='trendyol')$db->prepare("UPDATE products SET variant_model_key=NULL,variant_model_code=NULL,variant_size=NULL WHERE user_id=? AND marketplace='trendyol'")->execute([$userId]);
         foreach ($res['products'] as $p) {
             $barcode = (string)($p['barcode'] ?? '');
             $name = $p['title'] ?: ($barcode ?: 'Ürün');
@@ -311,6 +313,7 @@ function sync_products_unlocked(int $userId, string $marketplace): array
             // Tekil anahtar: barkod (Trendyol'da benzersiz). Barkod yoksa isim'e düş.
             $key = ($barcode !== '') ? ('b:' . $barcode) : ('n:' . $name);
             if (isset($existing[$key])) {
+                if($marketplace==='trendyol'&&$barcode!=='')$variantMeta->execute([$p['variantModelKey']??null,$p['variantModelCode']??null,$p['variantSize']??null,$userId,$barcode]);
                 if($marketplace==='trendyol')$observation->execute([$stockAt,$saleAt,$existing[$key],$userId]);
                 if ($barcode !== '' && ($price !== null || $quantity !== null || $vat !== null)) {
                     $upd->execute([$price, $quantity, $vat, $existing[$key], $userId, $marketplace]);
@@ -321,6 +324,7 @@ function sync_products_unlocked(int $userId, string $marketplace): array
 
             $ins->execute([$userId, $name, $barcode, $marketplace, $cat, $rate, $price ?? 0.0, $quantity ?? 0, $marketplace === 'trendyol' ? trendyol_service_fee() : 0.0, $vat ?? 20.0]);
             $existing[$key] = (int)$db->lastInsertId();
+            if($marketplace==='trendyol'&&$barcode!=='')$variantMeta->execute([$p['variantModelKey']??null,$p['variantModelCode']??null,$p['variantSize']??null,$userId,$barcode]);
             if($marketplace==='trendyol')$observation->execute([$stockAt,$saleAt,$existing[$key],$userId]);
             $inserted++;
         }

@@ -36,7 +36,7 @@ $db->exec("INSERT INTO return_inventory_checks(user_id,item_id,claim_id,order_nu
 $db->exec('ALTER TABLE return_inventory_checks DROP COLUMN group_line_id');
 $db->exec('PRAGMA user_version=9');migrate();
 $row=$db->query("SELECT group_line_id,condition,cost_units FROM return_inventory_checks WHERE item_id='I'")->fetch();
-$tests['v9 migration preserves explicit exception and marks legacy group unknown']=(int)$db->query('PRAGMA user_version')->fetchColumn()===10&&$row['group_line_id']===null&&$row['condition']==='unusable'&&(int)$row['cost_units']===500000;
+$tests['v9 migration preserves explicit exception and marks legacy group unknown']=(int)$db->query('PRAGMA user_version')->fetchColumn()===11&&$row['group_line_id']===null&&$row['condition']==='unusable'&&(int)$row['cost_units']===500000;
 migrate();
 $tests['repeat migration']=true;
 foreach($tests as $name=>$ok)echo ($ok?'PASS':'FAIL')." $name\n";

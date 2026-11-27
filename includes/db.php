@@ -30,7 +30,7 @@ function migrate(): void
 {
     $pdo = db();
     // Versioned, serialized and atomic; normal reads avoid schema writes.
-    $version=10;
+    $version=11;
     if((int)$pdo->query('PRAGMA user_version')->fetchColumn()>=$version)return;
     $pdo->exec('BEGIN IMMEDIATE');
     try{
@@ -383,6 +383,9 @@ function migrate(): void
         'model_kodu' => "ALTER TABLE products ADD COLUMN model_kodu TEXT NOT NULL DEFAULT ''",
         'renk' => "ALTER TABLE products ADD COLUMN renk TEXT NOT NULL DEFAULT ''",
         'beden' => "ALTER TABLE products ADD COLUMN beden TEXT NOT NULL DEFAULT ''",
+        'variant_model_key' => "ALTER TABLE products ADD COLUMN variant_model_key TEXT DEFAULT NULL",
+        'variant_model_code' => "ALTER TABLE products ADD COLUMN variant_model_code TEXT DEFAULT NULL",
+        'variant_size' => "ALTER TABLE products ADD COLUMN variant_size TEXT DEFAULT NULL",
     ];
     $pcols2 = array_column($pdo->query("PRAGMA table_info(products)")->fetchAll(PDO::FETCH_ASSOC), 'name');
     foreach ($padd as $col => $sql) {
@@ -397,6 +400,7 @@ function migrate(): void
     $pdo->exec("CREATE INDEX IF NOT EXISTS idx_products_market_id ON products(user_id,marketplace,id)");
     $pdo->exec("CREATE INDEX IF NOT EXISTS idx_orders_market_date ON orders(user_id,marketplace,order_date)");
 
+    $pdo->exec("CREATE INDEX IF NOT EXISTS idx_products_variant_model ON products(user_id,marketplace,variant_model_key)");
     // integrations: siparişlerin son otomatik senkron zamanı (auto-sync throttle)
     $icols = array_column($pdo->query("PRAGMA table_info(integrations)")->fetchAll(PDO::FETCH_ASSOC), 'name');
     if (!in_array('last_orders_sync', $icols, true)) {

@@ -64,7 +64,20 @@ final class TrendyolClient
             foreach ($item['variants'] as $v) {
                 $barcode = trim((string)($v['barcode'] ?? ''));
                 if ($barcode === '') throw new UnexpectedValueException('Trendyol V2 barkodu eksik.');
+                $model=trim((string)($item['productMainId']??''));
+                $brand=(string)($item['brand']['id']??'');$category=(string)($item['category']['id']??'');
+                $read=static function($attrs):array{
+                    $values=[];
+                    if(is_array($attrs))foreach($attrs as $a)if(is_array($a)&&in_array(mb_strtolower(trim((string)($a['attributeName']??'')),'UTF-8'),['boyut/ebat','boyut / ebat','ebat','boyut','ölçü'],true)){
+                        $v=trim((string)($a['attributeValue']??''));if($v!=='')$values[$v]=true;
+                    }
+                    return array_keys($values);
+                };
+                $sizes=$read($v['attributes']??[]);if(!$sizes)$sizes=$read($item['attributes']??[]);
                 $out[] = [
+                    'variantModelCode'=>$model!==''?$model:null,
+                    'variantModelKey'=>$model!==''&&$brand!==''&&$category!==''?hash('sha256',json_encode([$model,$brand,$category],JSON_THROW_ON_ERROR)):null,
+                    'variantSize'=>count($sizes)===1?(string)$sizes[0]:null,
                     'barcode' => $barcode,
                     'title' => (string)($item['title'] ?? $barcode),
                     'brand' => (string)($item['brand']['name'] ?? ''),

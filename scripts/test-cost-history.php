@@ -46,5 +46,16 @@ $oldOrder=['marketplace'=>'trendyol','order_date'=>cost_effective_day('2021-01-0
 $tests['first sale baseline covers older imported orders']=cost_history_overlay($db,1,[$oldOrder])[0]['lines'][0]['cost_snapshot']===90.0&&$res['catalog_updated']===1;
 $tests['first sale retry idempotent']=cost_history_save($db,1,$baseline,false,'first_sale',true)['unchanged']===1;
 try{cost_history_save($db,1,cost_history_first_sale_values(['001'],'90','10'),true,'first_sale',true);$tests['conflicting later history blocked']=false;}catch(InvalidArgumentException $e){$tests['conflicting later history blocked']=true;}
+require_once __DIR__.'/../includes/curtain_cost.php';
+$tests['curtain width only']=curtain_dimensions('150 x 200')===[150.0,200.0]&&curtain_dimensions('240×140 cm')===[240.0,140.0]&&curtain_dimensions('150x200x300')===null;
+$insCurtain=$db->prepare("INSERT INTO products(user_id,marketplace,name,barcode,category,rate,variant_model_key,variant_model_code,variant_size) VALUES(?,?,?,?,?,?,?,?,?)");
+$first=0;for($i=0;$i<550;$i++){$insCurtain->execute([1,'trendyol','Synthetic curtain','CUR-'.$i,'Perde',20,'model-a','A',($i%2===0?'150 x 200':'240 x 140')]);if($i===0)$first=(int)$db->lastInsertId();}
+$insCurtain->execute([2,'trendyol','Other tenant','CUR-other','Perde',20,'model-a','A','150 x 200']);
+$insCurtain->execute([1,'trendyol','Different model','CUR-other','Perde',20,'model-b','B','150 x 200']);
+$cp=curtain_cost_preview($db,1,$first,'150','30','10','today');
+$tests['550 exact model variants and width costs']=count($cp['rows'])===550&&$cp['total']===550&&$cp['display'][0]['calculated']===270.0&&count(array_filter($cp['rows'],static fn($r)=>$r['cost']===432.0))===275;
+$save=cost_history_save($db,1,$cp['rows'],false,'group',true);
+$tests['550 costs written atomically by barcode']=$save['inserted']===550&&$save['catalog_updated']===550;
+$tests['preview hash changes when cost changed']=curtain_cost_preview($db,1,$first,'150','30','10','today')['hash']!==$cp['hash'];
 foreach($tests as $n=>$ok)echo ($ok?'PASS':'FAIL')." $n\n";
 exit(in_array(false,$tests,true)?1:0);
