@@ -31,7 +31,7 @@ function xlsx_read(string $path,bool $percentText=false): array {
                 $idx=0;foreach($styles->cellXfs->xf??[] as $xf){if(isset($percentFormats[(int)$xf['numFmtId']]))$percentStyles[$idx]=true;$idx++;}
             }
         }
-        $sheet=$read('xl/worksheets/sheet1.xml');$headers=null;$rows=[];$headerRow=0;
+        $sheet=$read('xl/worksheets/sheet1.xml');$headers=null;$rows=[];$rowNumbers=[];$headerRow=0;
         foreach($sheet->sheetData->row as $row){
             $cells=[];$max=0;
             foreach($row->c as $c){
@@ -54,10 +54,10 @@ function xlsx_read(string $path,bool $percentText=false): array {
                 continue;
             }
             if(!array_filter($arr,static fn($v)=>trim($v)!==''))continue;
-            $rows[]=$arr;if(count($rows)>50000)throw new RuntimeException('Excel en fazla 50.000 veri satırı içerebilir.');
+            $rows[]=$arr;$rowNumbers[]=(int)$row['r'];if(count($rows)>50000)throw new RuntimeException('Excel en fazla 50.000 veri satırı içerebilir.');
         }
         if($headers===null)throw new RuntimeException('Barkod başlığı bulunamadı.');
-        return ['header_row'=>$headerRow,'headers'=>$headers,'rows'=>$rows];
+        return ['header_row'=>$headerRow,'headers'=>$headers,'rows'=>$rows,'row_numbers'=>$rowNumbers];
     }finally{$zip->close();}
 }
 

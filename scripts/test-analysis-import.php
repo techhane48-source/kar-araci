@@ -108,6 +108,17 @@ tariff_export_xlsx($orig,$out,['b:001'=>['tsf'=>400.0,'choice'=>'3 Günlük Fiya
 $after=xlsx_read($out,true);$z=new ZipArchive();$z->open($out);$patched=$z->getFromName('xl/worksheets/sheet1.xml');
 $tests['original workbook updates selected row only']=$after['rows'][0][21]==='400.00'&&$after['rows'][0][22]==='3 Günlük Fiyat'&&$after['rows'][1][21]===''&&$after['rows'][1][22]==='7 Günlük Fiyat';
 $tests['external ids styles and validation preserved']=$after['rows'][0][23]==='SYNTHETIC-EXTERNAL-ID'&&str_contains($patched,'dataValidations')&&str_contains($patched,'r="V2" s="2"')&&$z->getFromName('docProps/custom.xml')==='synthetic untouched';$z->close();
+$pc=campaign_export_columns(['Plus Fiyat Seçimi','Tarife Seçimi','3 Gün Tarih Aralığı','4 Gün Tarih Aralığı','İptal'],'plus');
+$quote=['conditional'=>true,'plus_profit'=>20.0,'plus_price'=>150.0,'period'=>'26 Kasım 08.00-29 Kasım 07.59'];
+$plan=campaign_export_plan('plus','period3_plus',$quote,['','','3 Günlük Fiyat (26 Kasım 08.00-29 Kasım 07.59)','',''],$pc);
+$tests['Plus exact original date choice']=$plan===[0=>150.0,1=>'3 Günlük Fiyat (26 Kasım 08.00-29 Kasım 07.59)'];
+$tests['prefilled selection rejected']=campaign_export_plan('plus','period3_plus',$quote,['100','','3 Günlük Fiyat (26 Kasım 08.00-29 Kasım 07.59)','',''],$pc)===null;
+$fc=campaign_export_columns(['Güncellenecek Fiyat','Senin Belirlediğin Flaş Fiyatı'],'flash');
+$tests['flash exact selection']=campaign_export_plan('flash','flash24',['conditional'=>true,'normal_profit'=>10.0],['',''],$fc)===[0=>'24 Saat'];
+$ec=campaign_export_columns(['YENİ TSF (FİYAT GÜNCELLE)','Tarife Sonuna Kadar Uygula'],'etiket');
+$tests['star draft does not lock price']=campaign_export_plan('etiket','star2',['conditional'=>true,'normal_profit'=>10.0,'normal_price'=>150.0],['','Evet'],$ec)===[0=>150.0,1=>'Hayır'];
+$patch=$dir.'/campaign-patch.xlsx';campaign_patch_xlsx($orig,$patch,[3=>[21=>350.0,22=>'4 Günlük Fiyat']]);$pd=xlsx_read($patch,true);
+$tests['exact row coordinates and untouched row']=$pd['row_numbers']===[2,3]&&$pd['rows'][0][21]===''&&$pd['rows'][1][21]==='350.00'&&$pd['rows'][1][22]==='4 Günlük Fiyat';
 $bulk=analysis_schema(['Barkod','Fiyat'],'bulk');
 $rows=(static function(){for($i=0;$i<20000;$i++)yield ['001','200'];})();
 $stats=analysis_save(db(),1,'bulk','bulk',$bulk,$rows,$products);

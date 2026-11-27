@@ -6,6 +6,7 @@ require_once __DIR__.'/xlsx.php';
 require_once __DIR__.'/tariff_apply.php';
 require_once __DIR__.'/campaign_rules.php';
 require_once __DIR__.'/campaign_link.php';
+require_once __DIR__.'/campaign_export.php';
 
 const ANALYSIS_MAX_ROWS=20000;
 const ANALYSIS_MAX_COLS=128;
@@ -234,7 +235,7 @@ function analysis_save(PDO $db,int $uid,string $kind,string $module,array $schem
             $insert->execute(array_merge($args,[$stats['rows'],json_encode($r,JSON_THROW_ON_ERROR|JSON_UNESCAPED_UNICODE),$r['best'],$r['meets_target']===null?null:(int)$r['meets_target']]));
         }
         if(!$stats['rows'])throw new RuntimeException('Geçerli barkod satırı bulunamadı.');
-        if($sourceHash!==null)$stats['tariff_source']=$sourceHash;
+        if($sourceHash!==null)$stats[$module==='komisyon'?'tariff_source':'campaign_source']=$sourceHash;
         $db->prepare("INSERT INTO analysis_jobs(user_id,kind,module,headers_json,stats_json,created_at) VALUES(?,?,?,?,?,?)
             ON CONFLICT(user_id,kind,module) DO UPDATE SET headers_json=excluded.headers_json,stats_json=excluded.stats_json,created_at=excluded.created_at")
             ->execute(array_merge($args,[json_encode($schema['prices'],JSON_THROW_ON_ERROR|JSON_UNESCAPED_UNICODE),json_encode($stats,JSON_THROW_ON_ERROR),time()]));
