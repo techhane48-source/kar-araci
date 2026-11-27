@@ -368,3 +368,7 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
 .funnel-label{font-size:13px;color:var(--muted)}
 .funnel-value{text-align:right;font-weight:600;font-size:14px;font-variant-numeric:tabular-nums}
 @media(max-width:600px){.overview-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.funnel-row{grid-template-columns:minmax(0,1fr) auto;gap:4px 10px}.funnel-row>div:nth-child(2){grid-row:2;grid-column:1/-1}.funnel-value{grid-row:1;grid-column:2}}
+
+/* Prevent currency values and long navigation labels from widening the viewport. */
+.kpi-row{grid-template-columns:repeat(3,minmax(0,1fr))}.kpi,.card,.wrap{min-width:0}.kpi .k-value{overflow-wrap:anywhere}.signed-in-header .nav-auth{max-width:100%}.signed-in-header .header-inner{min-width:0}.table-card{max-width:100%}
+@media(max-width:600px){.wrap{padding:24px 12px}.kpi-row{grid-template-columns:repeat(2,minmax(0,1fr))}.kpi .k-value{font-size:17px}.toolbar>div{max-width:100%}.card{max-width:100%}}

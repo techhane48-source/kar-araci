@@ -23,6 +23,11 @@ jobs:
           php-version: '8.3'
           extensions: pdo_sqlite, mbstring, openssl, curl, zip, simplexml
           coverage: none
+      - name: Install browser for isolated UI acceptance
+        if: matrix.suite == 'http'
+        run: |
+          python3 -m pip install playwright==1.52.0
+          python3 -m playwright install --with-deps chromium
       - name: Run suite (continue after individual failures)
         shell: bash
         env:
@@ -60,7 +65,7 @@ jobs:
               run_test php scripts/test-large-catalog.php
               ;;
             http)
-              run_test python3 scripts/test-http-smoke.py
+              run_test env KAR_BROWSER_TEST=1 python3 scripts/test-http-smoke.py
               run_test python3 scripts/run-legacy-http-tests.py
               ;;
             calculator)

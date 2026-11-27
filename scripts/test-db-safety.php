@@ -32,6 +32,11 @@ $st=$db->query("SELECT state,last_success FROM sync_status WHERE job='test'")->f
 $tests['failure retains success']=$st['state']==='failed'&&$st['last_success']===$last;
 $outer=with_marketplace_lock($uid,'trendyol',static fn()=>with_marketplace_lock($uid,'trendyol',static fn()=>['ok'=>true]));
 $tests['concurrent sync blocked']=!$outer['ok'];
+$db->exec("INSERT INTO return_inventory_checks(user_id,item_id,claim_id,order_number,outbound_package,line_id,barcode,claim_modified_ms,cost_units,condition,recovery_units,checked_at) VALUES (".$uid.",'I','C','O','P','L','B',1,500000,'unusable',0,1)");
+$db->exec('ALTER TABLE return_inventory_checks DROP COLUMN group_line_id');
+$db->exec('PRAGMA user_version=9');migrate();
+$row=$db->query("SELECT group_line_id,condition,cost_units FROM return_inventory_checks WHERE item_id='I'")->fetch();
+$tests['v9 migration preserves explicit exception and marks legacy group unknown']=(int)$db->query('PRAGMA user_version')->fetchColumn()===10&&$row['group_line_id']===null&&$row['condition']==='unusable'&&(int)$row['cost_units']===500000;
 migrate();
 $tests['repeat migration']=true;
 foreach($tests as $name=>$ok)echo ($ok?'PASS':'FAIL')." $name\n";

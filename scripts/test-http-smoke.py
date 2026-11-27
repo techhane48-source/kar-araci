@@ -22,7 +22,8 @@ with tempfile.TemporaryDirectory(prefix="karfiyat-http-") as tmp:
         proc = subprocess.Popen(["php", "-d", "auto_prepend_file=" + str(prepend), "-S", "127.0.0.1:18765", "-t", str(root / "public_html")], stdout=log, stderr=log, cwd=root)
         try:
             base = "http://127.0.0.1:18765/"
-            opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar()))
+            jar = http.cookiejar.CookieJar()
+            opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(jar))
             def request(path, data=None, as_json=False):
                 body = None if data is None else (json.dumps(data).encode() if as_json else urllib.parse.urlencode(data).encode())
                 req = urllib.request.Request(base + path, data=body)
@@ -127,6 +128,32 @@ with tempfile.TemporaryDirectory(prefix="karfiyat-http-") as tmp:
             print("PASS private scenario preview, selection, unknown VAT and unchanged persisted cost")
             status, page = request("iade-kontrol.php")
             assert status == 200 and "normal iadeler için işlem gerekmez" in page
+            with sqlite3.connect(db) as con:
+                con.execute("INSERT INTO trendyol_claim_items(user_id,claim_id,item_id,order_number,outbound_package,return_package,line_id,barcode,product_name,status,reason,platform_reason,created_ms,modified_ms,group_line_id) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                            (uid,"CI-CLAIM","CI-ITEM","CI-ORDER","CI-PACKAGE","CI-RETURN","L1","CI001","CI product","Accepted","","",now*1000,now*1000,""))
+            status, page = request("iade-kontrol.php")
+            assert status == 200 and "Otomatik: satışa uygun varsayımı" in page and "Satılamaz olarak işaretle" in page
+            if os.environ.get("KAR_BROWSER_TEST") == "1":
+                from playwright.sync_api import sync_playwright
+                with sync_playwright() as pw:
+                    browser = pw.chromium.launch(headless=True)
+                    context = browser.new_context(viewport={"width":390,"height":844})
+                    context.route("**/*", lambda route: route.continue_() if route.request.url.startswith(base) else route.abort())
+                    context.add_cookies([{"name":c.name,"value":c.value,"url":base} for c in jar])
+                    view = context.new_page()
+                    for width in (390, 1440):
+                        view.set_viewport_size({"width":width,"height":900})
+                        view.goto(base+"dashboard.php",wait_until="domcontentloaded")
+                        assert view.locator("#returns-overview").is_visible()
+                        assert view.evaluate("document.documentElement.scrollWidth <= innerWidth + 2"), ("dashboard overflow",width)
+                    view.set_viewport_size({"width":390,"height":844})
+                    view.goto(base+"iade-kontrol.php",wait_until="domcontentloaded")
+                    view.get_by_role("button",name="Satılamaz olarak işaretle").click()
+                    view.get_by_text("Satılamaz olarak işaretlendi; stok değer kaybı",exact=False).wait_for()
+                    view.get_by_role("button",name="İşareti kaldır").click()
+                    view.get_by_text("Otomatik: satışa uygun varsayımı",exact=False).wait_for()
+                    browser.close()
+                print("PASS Chromium desktop/mobile dashboard and one-click return exception")
             print("PASS exception-only return interface")
             print("PASS populated dashboard, order finance and cargo views")
             print("PASS registration, CSRF rejection, saved VAT and withholding settings")
